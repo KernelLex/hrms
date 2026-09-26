@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+/*
+  Design tokens — DESIGN_LANGUAGE.md §2, §5, §6, §8.
+  Near-black ink on white, separated by hairlines. Red only for problems.
+  This is a light-only system by design; there is no dark theme.
+*/
+
+:root {
+  --ink: #171717;
+  --ink-hover: #404040;
+  --text-secondary: #525252;
+  --text-muted: #737373;
+  --text-faint: #a1a1a1;
+  --decor: #d4d4d4;
+  --control: #e5e5e5;
+  --line: #ebebeb;
+  --soft: #f5f5f5;
+  --canvas: #fafafa;
+  --surface: #ffffff;
+
+  --danger: #e7000b;
+  --danger-mark: #fb2c36;
+  --danger-strong: #c10007;
+  --danger-soft: #fef2f2;
+  --danger-line: #ffc9c9;
+
+  --shadow-dialog: 0 25px 50px -12px rgb(0 0 0 / 0.1);
+  --shadow-menu: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --shadow-toast: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  --scrim: rgb(0 0 0 / 0.32);
+
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-hover: var(--ink-hover);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-decor: var(--decor);
+  --color-control: var(--control);
+  --color-line: var(--line);
+  --color-soft: var(--soft);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+
+  --color-danger: var(--danger);
+  --color-danger-mark: var(--danger-mark);
+  --color-danger-strong: var(--danger-strong);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-line: var(--danger-line);
+
+  --shadow-dialog: var(--shadow-dialog);
+  --shadow-menu: var(--shadow-menu);
+  --shadow-toast: var(--shadow-toast);
+
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+}
+
+/*
+  Tailwind's default radius scale already matches §5:
+  rounded-lg 8px, rounded-xl 12px, rounded-2xl 16px, rounded-3xl 24px.
+  No override needed.
+*/
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--ink);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* §3 — every amount, count and date that sits in a column or changes */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* §8 — dialog entrance */
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+dialog[open] {
+  animation: dialog-in 180ms var(--ease-enter);
+}
+
+dialog[open]::backdrop {
+  background: var(--scrim);
+  animation: scrim-in 180ms var(--ease-enter);
+}
+
+/* §8 — when the user has asked for less motion, keep only the fade */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes dialog-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* §11 — printed documents: ink only, sized for A4 */
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}

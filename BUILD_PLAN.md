@@ -90,7 +90,7 @@ Vercel, Turso and Cloudflare (R2 enabled), plus push access to `github.com/Kerne
 | Database | Turso (libSQL) via `@libsql/client` | HTTP-based, so serverless functions need no connection pool |
 | Queries | Drizzle ORM + drizzle-kit | First-class libSQL support, and `drizzle-kit generate` emits real SQL migration files we commit and review |
 | Objects | Cloudflare R2, S3-compatible, `@aws-sdk/client-s3` | Presigned URLs, no egress fees |
-| Auth | Auth.js v5, credentials provider | Seeded users, JWT cookie. Prototype-grade on purpose |
+| Auth | `jose` signed session cookie | One credentials provider, seeded users, three fixed roles — Auth.js would add adapters and beta churn for no gain |
 | Hosting | Vercel | Push to `main` deploys; branches get preview URLs |
 
 **On Drizzle versus hand-written DDL.** You previously asked to own the full DDL. Drizzle keeps that: the TypeScript schema is the source of truth, `drizzle-kit generate` emits plain `.sql` migration files into `db/migrations/`, and those are committed and readable. What you gain is type-safe queries across 51 CRUD surfaces, which is most of this build. If you would rather hand-write the SQL and drop Drizzle to a query builder only, that is a one-line change to this plan.
@@ -116,34 +116,45 @@ Turso is SQLite. These are not stylistic preferences — getting any of them wro
 
 ## 4. Repository layout
 
+Everything lives under `src/` so the `@/*` path alias reaches it.
+
 ```
 hrms/
   README.md                  product document
   BUILD_PLAN.md              this file
   DESIGN_LANGUAGE.md         visual system, unchanged
   HR MODULE/                 original blueprint + HTML mockups, kept as reference
-  db/
-    schema/                  Drizzle schema, one file per module
-    migrations/              generated .sql, committed
-    seed/                    demo org, employees, wage types, tax slabs, holidays
+  drizzle.config.ts
   src/
+    db/
+      schema/                Drizzle schema, one file per module, re-exported by index.ts
+      migrations/            generated .sql, committed
+      seed/run.ts            demo org, employees, wage types, tax slabs, holidays
+      migrate.ts             applies migrations against file: or Turso
+      load-env.ts            .env.local loader for standalone scripts
     app/
-      (auth)/sign-in/
-      (app)/
+      sign-in/               no shell
+      (app)/                 route group, everything behind the shell
         page.tsx             role-aware home
         org/ core-hr/ time/ payroll/ recruitment/ performance/ tax/
-      api/
+      api/health/            liveness + database reachability
+      actions/               server actions, grouped by module
       layout.tsx
       globals.css            design tokens from DESIGN_LANGUAGE.md §15
     components/
-      ui.tsx shell.tsx forms.tsx inputs.tsx tables.tsx progress.tsx charts.tsx
+      ui.tsx                 buttons, cards, badges, tables, figures, tabs, empty states
+      inputs.tsx             fields, selects, chips, form grid, error block
+      shell.tsx              sidebar, mobile drawer, top bar, brand mark
+      placeholder.tsx        honest stub for unbuilt modules
     lib/
       db.ts                  libSQL client
-      auth.ts
-      r2.ts                  presigned upload/download
+      auth.ts                session, hasRole, requireRole
+      nav.ts                 role-filtered navigation
       money.ts               paise <-> display, the only place formatting happens
-      repositories/
+      utils.ts
+      r2.ts                  presigned upload/download (phase 9)
       engines/               timeslice.ts quota.ts payroll.ts tax.ts
+    proxy.ts                 optimistic auth redirect (Next 16 renamed middleware)
   .env.example
 ```
 
@@ -285,7 +296,19 @@ Phase 9 is not optional polish. §16 requires empty, loading and error states to
 
 ---
 
-## 12. Conventions
+## 12. Gotchas hit while building
+
+Recorded so they are not rediscovered.
+
+**PowerShell 5.1 writes a BOM.** `Set-Content -Encoding utf8` prefixes the file with `EF BB BF`. In `.env.local` that turns the first key into `﻿TURSO_DATABASE_URL`, so the first variable silently goes missing while every later one loads — a confusing failure. Write files with `[System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))`, and note that `File.ReadAllText` strips BOMs on read, so a BOM check must inspect raw bytes.
+
+**`tsx` cannot resolve extensionless re-exports in `.mts`.** A namespace import of `src/db/schema` comes back empty under the ESM loader, so `db.query.*` appears undefined. This is a script-runner quirk, not an app bug — Turbopack resolves them correctly, confirmed by `/api/health` reporting `relationalQueryApi: true`. Standalone scripts should use `.ts`, as `migrate.ts` and `seed/run.ts` do.
+
+**winget needs `--source winget --accept-source-agreements`** on this machine, and cannot install machine-wide without admin. See §1.
+
+---
+
+## 13. Conventions
 
 - Commit messages describe the change and carry **no** co-author or tool attribution.
 - Money crosses no boundary as a float. Paise in, formatted string out, one helper.
