@@ -1,6 +1,6 @@
 # Project status
 
-**Last updated:** 26 Sept 2026 · **Current phase:** 7 of 9 (performance, next) — paused here at the user's request
+**Last updated:** 26 Sept 2026 · **Current phase:** 8 of 9 (tax and Form 16, next)
 
 Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUILD_PLAN.md); for what the product does see [README.md](README.md).
 
@@ -10,12 +10,12 @@ Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUI
 
 | | |
 |---|---|
-| Phases complete | 7 of 10 (phases 0 to 6) |
-| Real screens built | 28 of 38 |
-| Placeholder screens | 3 |
-| Database tables | 53 of ~61 |
+| Phases complete | 8 of 10 (phases 0 to 7) |
+| Real screens built | 33 of 38 |
+| Placeholder screens | 1 |
+| Database tables | 59 of ~61 |
 | Engines built | 4 of 4, plus time evaluation |
-| Cross-module transactions | 1 of 2 (hire conversion) |
+| Cross-module transactions | 2 of 2 |
 | Deployed | yes, but gated — see blockers |
 
 ---
@@ -56,8 +56,8 @@ Installed per-user under `C:\Users\AMOG\tools` because the account is not an adm
 | 4 | Time and absence — TM-01…05, quota engine | done |
 | 5 | Payroll — PY-01…05, payroll engine | done |
 | 6 | Recruitment — RC-01…05, hire conversion | done |
-| 7 | Performance — PM-01…05, increment push | **next** |
-| 8 | Tax and Form 16 — TDS-01…05, tax engine | not started |
+| 7 | Performance — PM-01…05, increment push | done |
+| 8 | Tax and Form 16 — TDS-01…05 screens | **next** (engine already done) |
 | 9 | Finish — dashboards, command menu, R2, print, a11y | not started |
 
 ---
@@ -154,6 +154,27 @@ Other behaviour:
 - **A hired candidate cannot be deleted or rejected**, so the audit trail survives.
 - The pipeline uses a progress track — ink for reached, `control` for unreached, `danger-mark` for rejected — rather than the mockup's four differently coloured pills, which carry no meaning in greyscale.
 
+**Performance and increments — all five screens and the increment push (phase 7).** Cycles, goals, self and manager ratings, calibration, and the increment recommendation that becomes a salary.
+
+The push is the point of the module. An approved increment goes through the time-slice engine rather than updating the salary in place, so the old figure is delimited rather than destroyed and the next payroll run picks the new one up because it reads whatever is valid in the period. Verified end to end by `/api/health/increment-check` — 9 of 9 pass:
+
+- a finalised rating produces a draft increment, sized from the rating
+- a draft cannot be pushed; only an approved one can
+- basic pay ends with two records, not one overwritten
+- the old salary is delimited to the day before the effective date
+- payroll reads ₹60,000 in January and ₹65,400 in June, either side of the change
+- the new record names the cycle it came from
+- pushing twice does nothing
+
+Other behaviour:
+
+- **Opening a cycle creates an appraisal for every active employee**, so the rating screens start with rows rather than an empty list someone populates by hand.
+- **Goal weightings are capped at 100% per person**, and the screen says who is short.
+- **A manager rating needs the self review first**, and a manager can only rate their own reports.
+- **Calibration keeps the manager's rating separately** from the moderated one, so agreeing a different number does not erase what the manager thought.
+- **Only a finalised calibration earns an increment.**
+- **The employee sees the calibrated rating, not the manager's**, and only once it is finalised.
+
 ---
 
 ## What is left
@@ -167,7 +188,7 @@ Other behaviour:
 | ~~Time and absence~~ | ~~TM-01…05~~ — done | — |
 | ~~Payroll~~ | ~~PY-01…05~~ — done | — |
 | ~~Recruitment~~ | ~~RC-01…05~~ — done | — |
-| Performance | PM-01…05 | — |
+| ~~Performance~~ | ~~PM-01…05~~ — done | — |
 | Tax and Form 16 | TDS-01…05 | — |
 
 ### Engines — all four done
@@ -177,14 +198,14 @@ Other behaviour:
 3. ~~**Time evaluation**~~ — produces the unpaid-day count payroll prorates against.
 4. ~~**Payroll** and **tax**~~ — 13 of 13 checks pass.
 
-### Cross-module transactions — 1 of 2
+### Cross-module transactions — both done
 
-- ~~**Hire conversion**~~ — done. Recruitment creates the employee and six infotypes atomically, using the same path as the Core HR hire action.
-- **Increment push** — performance writes a new basic-pay slice payroll then reads.
+- ~~**Hire conversion**~~ — recruitment creates the employee and six infotypes atomically, using the same path as the Core HR hire action.
+- ~~**Increment push**~~ — performance writes a new basic-pay record through the time-slice engine; 9 of 9 checks pass.
 
-### Remaining tables — about 8
+### Remaining tables
 
-`pm_*` (6), `app_document` (1). The `tds_*` tables landed early with the tax engine, `rc_*` with recruitment.
+`app_document` (1), for R2 objects in phase 9.
 
 ---
 

@@ -1,12 +1,9 @@
-import { ModulePlaceholder } from "@/components/placeholder";
+import { redirect } from "next/navigation";
+import { getSession, hasRole } from "@/lib/auth";
 
-export default function Page() {
-  return (
-    <ModulePlaceholder
-      title="Performance"
-      subtitle="Appraisal cycles, goals, ratings, calibration and increments."
-      phase={7}
-      screens="Five screens: cycle setup, goal setting, ratings, calibration and increment recommendation."
-    />
-  );
+export default async function PerformanceIndex() {
+  const session = await getSession();
+  if (hasRole(session, "HR_ADMIN")) redirect("/performance/cycles");
+  if (hasRole(session, "MANAGER")) redirect("/performance/ratings");
+  redirect("/performance/mine");
 }

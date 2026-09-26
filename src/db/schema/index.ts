@@ -6,3 +6,4 @@ export * from "./time";
 export * from "./payroll";
 export * from "./tax";
 export * from "./recruitment";
+export * from "./performance";

@@ -36,6 +36,13 @@
       "when": 1790438084263,
       "tag": "0004_hesitant_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790438729807,
+      "tag": "0005_bizarre_tattoo",
+      "breakpoints": true
     }
   ]
 }

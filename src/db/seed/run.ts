@@ -3,7 +3,7 @@
  *
  * The data mirrors the reference mockups in `HR MODULE/` so the screens have
  * recognisable content: Acme Manufacturing, an IT department, and the three
- * positions the org chart draws Ã¢â‚¬â€ one of them vacant, which is what
+ * positions the org chart draws ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â one of them vacant, which is what
  * recruitment opens a requisition against later.
  *
  * Safe to re-run: every insert is an upsert on the primary key.
@@ -17,6 +17,7 @@ import { seedPersonnel } from "./personnel";
 import { seedTime } from "./time";
 import { seedPayroll } from "./payroll";
 import { seedRecruitment } from "./recruitment";
+import { seedPerformance } from "./performance";
 
 loadEnv();
 
@@ -86,7 +87,7 @@ async function main() {
     ])
     .onConflictDoNothing();
 
-  // Parents must land before children Ã¢â‚¬â€ the tree is self-referencing.
+  // Parents must land before children ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the tree is self-referencing.
   await db
     .insert(s.omOrgUnit)
     .values([
@@ -102,7 +103,7 @@ async function main() {
     ])
     .onConflictDoNothing();
 
-  // Likewise for positions Ã¢â‚¬â€ a reporting line points at another position.
+  // Likewise for positions ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a reporting line points at another position.
   await db
     .insert(s.omPosition)
     .values([
@@ -182,12 +183,13 @@ async function main() {
   const timeNotes = await seedTime(db);
   const payrollNotes = await seedPayroll(db);
   const recruitmentNotes = await seedRecruitment(db);
+  const performanceNotes = await seedPerformance(db);
 
   console.log("Seeded:");
   console.log("  2 companies, 2 personnel areas, 2 sub-areas, 2 jobs");
   console.log("  3 org units, 4 positions, 2 reporting lines");
   console.log(`  3 users, all with password ${DEMO_PASSWORD}`);
-  for (const n of [...personnelNotes, ...timeNotes, ...payrollNotes, ...recruitmentNotes]) console.log(n);
+  for (const n of [...personnelNotes, ...timeNotes, ...payrollNotes, ...recruitmentNotes, ...performanceNotes]) console.log(n);
   client.close();
 }
 
