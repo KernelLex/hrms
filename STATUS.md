@@ -15,7 +15,7 @@ Updated at the end of every phase. The original build, phases 0 to 9, is in [BUI
 | Database tables | 69 |
 | Engines | 4 of 4, plus time evaluation and the job runner |
 | Cross-module transactions | 2 of 2 |
-| Automated tests | **133 passing**, in 18 files, `npm test` |
+| Automated tests | **134 passing**, in 18 files, `npm test` |
 | UI audit | **156 of 156** role, screen and width combinations clean, `npm run audit:ui` |
 | CI | GitHub Actions on every push: typecheck, lint, tests, build, UI audit |
 | Live | https://hrms-amogh24.vercel.app |
@@ -98,7 +98,7 @@ The extended plan, [build_plan_extended_features.md](build_plan_extended_feature
 
 ### Continuous integration
 
-GitHub Actions runs on every push and pull request: typecheck, lint, the 133 tests, a production build, then the built app is started on a fresh local database and `npm run audit:ui` walks every screen as every role at both widths. Any failure fails the run.
+GitHub Actions runs on every push and pull request: typecheck, lint, the 134 tests, a production build, then the built app is started on a fresh local database and `npm run audit:ui` walks every screen as every role at both widths. Any failure fails the run.
 
 ### Fixed on the way
 
@@ -116,7 +116,7 @@ Role dashboards, the command menu, documents, print, loading and error states, 3
 
 | Check | Result |
 |---|---|
-| `npm test` | 133 passing: time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, and now notifications, leave decisions, the job queue, background payroll, the change log and its wording |
+| `npm test` | 134 passing: time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, and now notifications, leave decisions, the job queue, background payroll, the change log and its wording |
 | Mutation check | Six deliberate bugs in the payroll and tax engines (no marginal relief, ignoring tax already deducted, no retro, ignoring hire dates, spreading bonus tax, paying arrears twice) — each fails at least one test |
 | `npm run audit:ui` | 156 of 156 clean, as all three roles at 1280 and 375 pixels, including the inbox, preferences, change logs and outbox |
 | `npx tsc --noEmit`, `npm run lint`, `next build` | clean |

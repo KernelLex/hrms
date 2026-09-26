@@ -2,7 +2,7 @@
 
 What it would take to run real people's pay on this system, rather than a demo organisation of three.
 
-The prototype is feature-complete against its blueprint, tested (133 automated tests, a mutation check on the payroll engine, and an accessibility and phone-width audit of every screen, all run by CI on every push), and deployed. Every change is logged with who made it and what it was before. None of that makes it production software. This document lists the gap, in the order it has to close.
+The prototype is feature-complete against its blueprint, tested (134 automated tests, a mutation check on the payroll engine, and an accessibility and phone-width audit of every screen, all run by CI on every push), and deployed. Every change is logged with who made it and what it was before. None of that makes it production software. This document lists the gap, in the order it has to close.
 
 **How to read it.** Items are grouped by when they must be done:
 

@@ -139,6 +139,12 @@ export const HANDLERS: Record<string, JobHandler> = {
       await requeueJob("payroll.run", { runId: Number(run.id) }, `payroll.run:${run.id}`);
     }
 
+    // An email that arrived as the delivery job was finishing is sent now.
+    const waiting = await rawClient().execute(
+      "SELECT 1 FROM app_outbox WHERE status IN ('queued', 'sending') LIMIT 1",
+    );
+    if (waiting.rows.length > 0) await requeueJob("outbox.deliver", null, "outbox.deliver");
+
     const month = new Date(Date.now() - 30 * 86_400_000).toISOString();
     await rawClient().batch(
       [

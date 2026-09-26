@@ -137,9 +137,9 @@ export async function hasDueJobs(): Promise<boolean> {
  * queue. A job still queued or running is left alone, so there is never more
  * than one job for the key — a payroll run is worked by one job at a time.
  */
-export async function requeueJob(kind: string, payload: unknown, dedupeKey: string): Promise<void> {
+export function requeueStatement(kind: string, payload: unknown, dedupeKey: string): InStatement {
   const now = new Date().toISOString();
-  await rawClient().execute({
+  return {
     sql: `INSERT INTO app_job (kind, payload, dedupe_key, status, attempts, max_attempts, run_after, created_at)
           VALUES (?1, ?2, ?3, 'queued', 0, 5, ?4, ?4)
           ON CONFLICT (dedupe_key) DO UPDATE
@@ -147,5 +147,9 @@ export async function requeueJob(kind: string, payload: unknown, dedupeKey: stri
                 finished_at = NULL, locked_at = NULL, lock_token = NULL, payload = ?2
             WHERE app_job.status IN ('done', 'failed')`,
     args: [kind, payload === null ? null : JSON.stringify(payload), dedupeKey, now],
-  });
+  };
+}
+
+export async function requeueJob(kind: string, payload: unknown, dedupeKey: string): Promise<void> {
+  await rawClient().execute(requeueStatement(kind, payload, dedupeKey));
 }

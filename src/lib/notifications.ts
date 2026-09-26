@@ -3,7 +3,7 @@ import type { InStatement } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { today } from "@/db/schema/_shared";
 import { queueEmailStatement, renderEmail } from "@/lib/email";
-import { enqueueStatement } from "@/lib/jobs/queue";
+import { requeueStatement } from "@/lib/jobs/queue";
 
 /**
  * Notifications: what the system tells a person, in their inbox and — if
@@ -127,9 +127,9 @@ export async function notificationStatements(items: NotificationItem[]): Promise
   }
 
   if (anyEmail) {
-    // One delivery job per minute is plenty; more would only queue behind it.
-    const minute = at.slice(0, 16);
-    statements.push(enqueueStatement("outbox.deliver", null, { dedupeKey: `outbox.deliver:${minute}` }));
+    // One delivery job, put back in the queue whenever it has finished. A
+    // job already queued or running will reach these emails too.
+    statements.push(requeueStatement("outbox.deliver", null, "outbox.deliver"));
   }
   return statements;
 }

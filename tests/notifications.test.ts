@@ -98,6 +98,19 @@ describe("leave notifications", () => {
     expect(await notificationsFor(report.userId)).toHaveLength(1);
   });
 
+  it("delivers an email that arrives after the delivery job has finished", async () => {
+    const { report } = await team();
+    // The delivery job runs to completion on an earlier email...
+    await decideLeaveRequest({}, form({ id: await ask(report), decision: "Approved" }));
+    await processJobs(5_000);
+    // ...and a later one is still picked up, not left queued.
+    await decideLeaveRequest({}, form({ id: await ask(report, "2027-03-01", "2027-03-02"), decision: "Rejected" }));
+    await processJobs(5_000);
+    const mail = await outboxFor(report.email);
+    expect(mail).toHaveLength(2);
+    expect(mail.map((m) => m.status)).toEqual(["recorded", "recorded"]);
+  });
+
   it("respects a person's preferences", async () => {
     const { report } = await team();
     actAs(report.session);
