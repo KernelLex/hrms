@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { navForRoles, roleLabel } from "@/lib/nav";
 import { Shell } from "@/components/shell";
+import { ToastProvider } from "@/components/toast";
 import { signOutAction } from "@/app/actions/auth";
 
 export default async function AppLayout({
@@ -13,13 +14,15 @@ export default async function AppLayout({
   if (!session) redirect("/sign-in");
 
   return (
-    <Shell
-      groups={navForRoles(session.roles)}
-      name={session.displayName}
-      role={roleLabel(session.roles)}
-      signOutAction={signOutAction}
-    >
-      {children}
-    </Shell>
+    <ToastProvider>
+      <Shell
+        groups={navForRoles(session.roles)}
+        name={session.displayName}
+        role={roleLabel(session.roles)}
+        signOutAction={signOutAction}
+      >
+        {children}
+      </Shell>
+    </ToastProvider>
   );
 }

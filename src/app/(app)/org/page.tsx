@@ -1,12 +1,5 @@
-import { ModulePlaceholder } from "@/components/placeholder";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return (
-    <ModulePlaceholder
-      title="Org structure"
-      subtitle="Companies, locations, jobs, departments and positions."
-      phase={2}
-      screens="Eight screens: company, personnel area and sub-area, job, org unit, position, reporting lines and the org chart."
-    />
-  );
+export default function OrgIndex() {
+  redirect("/org/companies");
 }

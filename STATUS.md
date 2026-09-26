@@ -1,6 +1,6 @@
 # Project status
 
-**Last updated:** 26 Sept 2026 · **Current phase:** 2 of 9 (org management, starting)
+**Last updated:** 26 Sept 2026 · **Current phase:** 3 of 9 (core HR, next)
 
 Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUILD_PLAN.md); for what the product does see [README.md](README.md).
 
@@ -10,9 +10,9 @@ Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUI
 
 | | |
 |---|---|
-| Phases complete | 2 of 10 (phase 0 and 1) |
-| Real screens built | 0 of 38 |
-| Placeholder screens | 11 |
+| Phases complete | 3 of 10 (phases 0, 1 and 2) |
+| Real screens built | 8 of 38 |
+| Placeholder screens | 10 |
 | Database tables | 10 of ~61 |
 | Engines built | 0 of 4 |
 | Deployed | yes, but gated — see blockers |
@@ -50,8 +50,8 @@ Installed per-user under `C:\Users\AMOG\tools` because the account is not an adm
 |---|---|---|
 | 0 | Toolchain and repo | done |
 | 1 | Foundation — design system, shell, auth, data layer | done |
-| 2 | Org management — OM-01…08 | **in progress** |
-| 3 | Core HR — CH-01…05, time-slice engine | not started |
+| 2 | Org management — OM-01…08 | done |
+| 3 | Core HR — CH-01…05, time-slice engine | **next** |
 | 4 | Time and absence — TM-01…05, quota engine | not started |
 | 5 | Payroll — PY-01…05, payroll engine | not started |
 | 6 | Recruitment — RC-01…05, hire conversion | not started |
@@ -81,15 +81,27 @@ Installed per-user under `C:\Users\AMOG\tools` because the account is not an adm
 
 **Health endpoint** — `/api/health` reports database reachability, excluded from the auth redirect.
 
+**Org management — all eight screens (phase 2).** Companies, personnel areas, sub-areas, jobs, departments, positions, reporting lines and the org chart, reached through a tab bar with live counts. Full create, edit and delete on each, driven by a shared master-data screen so the eight cannot drift apart visually.
+
+Behaviour worth noting:
+
+- **Cycle guards.** A department cannot become its own ancestor and a position cannot end up in its own reporting chain; both walk the parent chain before saving.
+- **Deletes name what blocks them.** "CO01 still has 2 personnel areas. Remove or reassign them first." rather than a foreign key error.
+- **Reporting lines are append-only.** Recording one writes the dated history row and moves the position's live manager in the same action; deleting one falls back to the previous line.
+- **Codes lock once in use**, since other records point at them.
+- **The org chart is derived**, never stored — it walks `parent_code` and `reports_to_code`. A position whose manager sits in another department is shown at the top of its own department rather than vanishing.
+
+Verified: 8 of 8 data integrity checks pass (no cycles, valid references, foreign keys reject orphans, insert/update/delete round-trip), and all eight screens render real seeded data over HTTP as an authenticated HR admin.
+
 ---
 
 ## What is left
 
-### Screens — 38 total, 0 built
+### Screens — 38 total, 8 built
 
 | Module | Screens | Nested tabs |
 |---|---|---|
-| Org management | OM-01…08 | — |
+| ~~Org management~~ | ~~OM-01…08~~ — done | — |
 | Core HR | CH-01…05 | 8 infotype tabs on CH-02 |
 | Time and absence | TM-01…05 | 4 across TM-01 and TM-05 |
 | Payroll | PY-01…05 | 6 across PY-02 and PY-05 |
