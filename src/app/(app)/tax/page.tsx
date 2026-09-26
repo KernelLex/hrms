@@ -1,12 +1,7 @@
-import { ModulePlaceholder } from "@/components/placeholder";
+import { redirect } from "next/navigation";
+import { getSession, hasRole } from "@/lib/auth";
 
-export default function Page() {
-  return (
-    <ModulePlaceholder
-      title="Tax and Form 16"
-      subtitle="Declarations, the deduction register and the annual certificate."
-      phase={8}
-      screens="Five screens: section master, employee declarations, deduction register, Form 16 Part A and Part B."
-    />
-  );
+export default async function TaxIndex() {
+  const session = await getSession();
+  redirect(hasRole(session, "HR_ADMIN") ? "/tax/sections" : "/tax/declarations");
 }

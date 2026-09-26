@@ -18,6 +18,7 @@ import {
   UserPlus,
   Target,
   ClipboardCheck,
+  FileBadge,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ const ICONS: Record<string, LucideIcon> = {
   UserPlus,
   Target,
   ClipboardCheck,
+  FileBadge,
 };
 
 /* -------------------------------------------------------------- brand mark */

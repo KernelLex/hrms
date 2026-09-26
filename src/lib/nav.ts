@@ -47,6 +47,8 @@ export const NAV: NavGroup[] = [
       { label: "Payroll", href: "/payroll", icon: "Banknote", roles: HR },
       { label: "Tax and Form 16", href: "/tax", icon: "ReceiptText", roles: HR },
       { label: "My payslips", href: "/payroll/my-payslips", icon: "FileText", roles: ALL },
+      { label: "My tax declaration", href: "/tax/declarations", icon: "ReceiptText", roles: ALL },
+      { label: "My Form 16", href: "/tax/form16", icon: "FileBadge", roles: ALL },
     ],
   },
   {

@@ -1,8 +1,8 @@
 # Project status
 
-**Last updated:** 26 Sept 2026 · **Current phase:** 8 of 9 (tax and Form 16, next)
+**Last updated:** 26 Sept 2026 · **Current phase:** 9 of 9 (finish, next)
 
-Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUILD_PLAN.md); for what the product does see [README.md](README.md).
+Updated at the end of every milestone. For the plan see [BUILD_PLAN.md](BUILD_PLAN.md); for what the product does see [README.md](README.md).
 
 ---
 
@@ -10,13 +10,16 @@ Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUI
 
 | | |
 |---|---|
-| Phases complete | 8 of 10 (phases 0 to 7) |
-| Real screens built | 33 of 38 |
-| Placeholder screens | 1 |
-| Database tables | 59 of ~61 |
-| Engines built | 4 of 4, plus time evaluation |
+| Phases complete | 9 of 10 (phases 0 to 8) |
+| Screens built | **38 of 38** |
+| Placeholder screens | 0 |
+| Database tables | 59 |
+| Engines | 4 of 4, plus time evaluation |
 | Cross-module transactions | 2 of 2 |
-| Deployed | yes, but gated — see blockers |
+| Automated checks passing | 45 of 45 |
+| Live | https://hrms-amogh24.vercel.app |
+
+Every screen in the original blueprint now exists and works against live data. What remains is phase 9: the cross-cutting finish.
 
 ---
 
@@ -24,14 +27,14 @@ Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUI
 
 | Service | Status | Detail |
 |---|---|---|
-| GitHub | working | `KernelLex/hrms`, pushes on every phase |
+| GitHub | working | `KernelLex/hrms`, a commit and push per phase |
 | Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated and seeded |
-| Vercel | deployed | project `amogh24/hrms`, production build green |
+| Vercel | working | `amogh24/hrms`, production green, deploys on push |
 | Cloudflare R2 | **blocked** | R2 not enabled on the account (API error 10042) |
 
 ### Local toolchain
 
-Installed per-user under `C:\Users\AMOG\tools` because the account is not an administrator. See BUILD_PLAN §1.
+Installed per-user under `C:\Users\AMOG\tools`, because the account is not an administrator. See BUILD_PLAN §1.
 
 | Tool | Version |
 |---|---|
@@ -41,11 +44,21 @@ Installed per-user under `C:\Users\AMOG\tools` because the account is not an adm
 | GitHub CLI | 2.101.0 |
 | Vercel CLI | 60.1.3 |
 | Wrangler | 4.141.0 |
-| Turso CLI | not installable on Windows — dashboard used instead |
+| Turso CLI | not installable on Windows — the dashboard is used instead |
+
+### Demo accounts
+
+All three use the password `demo1234`.
+
+| Username | Role | Sees |
+|---|---|---|
+| `hr.admin` | HR administrator | the whole back office |
+| `ravi.kumar` | Manager and employee | approvals, their team's appraisals, and their own records |
+| `arjun.mehta` | Employee | their own leave, payslips, declaration and appraisal |
 
 ---
 
-## Phase progress
+## Phases
 
 | # | Phase | Status |
 |---|---|---|
@@ -54,166 +67,134 @@ Installed per-user under `C:\Users\AMOG\tools` because the account is not an adm
 | 2 | Org management — OM-01…08 | done |
 | 3 | Core HR — CH-01…05, time-slice engine | done |
 | 4 | Time and absence — TM-01…05, quota engine | done |
-| 5 | Payroll — PY-01…05, payroll engine | done |
+| 5 | Payroll — PY-01…05, payroll and tax engines | done |
 | 6 | Recruitment — RC-01…05, hire conversion | done |
 | 7 | Performance — PM-01…05, increment push | done |
-| 8 | Tax and Form 16 — TDS-01…05 screens | **next** (engine already done) |
-| 9 | Finish — dashboards, command menu, R2, print, a11y | not started |
+| 8 | Tax and Form 16 — TDS-01…05 | done |
+| 9 | Finish — dashboards, command menu, R2, print, a11y | **next** |
 
 ---
 
 ## What is built
 
-**Design system** — all tokens from DESIGN_LANGUAGE.md §2/§5/§6/§8. Buttons in four variants and three sizes, cards, tables, figure rows, badges and status dots across five tones, key-value lists, tabs, avatars, notices, empty states, and the full form control set. Light-only, ink and greys, red reserved for problems.
+### Foundation
 
-**Shell** — 240px white sidebar with a hairline edge, mobile drawer behind a scrim, navigation filtered by role so the three personas get different products.
+The design system carries every token from `DESIGN_LANGUAGE.md`: buttons in four variants and three sizes, cards, tables, figure rows, badges and status dots across five tones, key–value lists, tabs, avatars, notices, empty states, progress tracks, and the form controls. Light-only, ink and greys, red reserved for problems.
 
-**Auth** — signed session cookie via `jose`, three roles, optimistic redirect in `proxy.ts`, real enforcement in `requireRole`. Three seeded accounts, all with password `demo1234`:
+The shell is a 240px white sidebar with a hairline edge and a mobile drawer behind a scrim, with navigation filtered by role so the three personas get genuinely different products rather than one product with things greyed out.
 
-| Username | Role |
-|---|---|
-| `hr.admin` | HR administrator |
-| `ravi.kumar` | Manager and employee |
-| `arjun.mehta` | Employee |
+Authentication is a signed session cookie via `jose`. Every Server Function re-checks the caller's role, because a Server Function is reachable by direct POST and not only through the UI.
 
-**Data** — 10 tables (`om_*`, `sec_*`), generated migrations committed, seed mirroring the reference mockups: 2 companies, 2 personnel areas, 2 sub-areas, 2 jobs, 3 org units, 4 positions (2 vacant), 2 reporting lines. Foreign key enforcement verified on both SQLite and Turso.
+### Org management (8 screens)
 
-**Money handling** — integer paise throughout, with formatting helpers. SQLite has no `DECIMAL` and `REAL` would drift a payroll run.
+Companies, personnel areas, sub-areas, jobs, departments, positions, reporting lines and the org chart.
 
-**Health endpoint** — `/api/health` reports database reachability, excluded from the auth redirect.
+- Cycle guards on both hierarchies: a department cannot become its own ancestor, a position cannot enter its own reporting chain.
+- Deletes name what blocks them — "CO01 still has 2 personnel areas. Remove or reassign them first." — rather than surfacing a foreign key error.
+- Reporting lines are append-only: saving writes the dated history row and moves the position's live manager together.
+- The org chart is derived by walking both hierarchies, never stored. A position managed from another department renders at the top of its own rather than disappearing.
 
-**Org management — all eight screens (phase 2).** Companies, personnel areas, sub-areas, jobs, departments, positions, reporting lines and the org chart, reached through a tab bar with live counts. Full create, edit and delete on each, driven by a shared master-data screen so the eight cannot drift apart visually.
+### Core HR (5 screens, 8 infotype tabs)
 
-Behaviour worth noting:
+The hire action, maintain master data, the as-of-date viewer, employee search and mass update.
 
-- **Cycle guards.** A department cannot become its own ancestor and a position cannot end up in its own reporting chain; both walk the parent chain before saving.
-- **Deletes name what blocks them.** "CO01 still has 2 personnel areas. Remove or reassign them first." rather than a foreign key error.
-- **Reporting lines are append-only.** Recording one writes the dated history row and moves the position's live manager in the same action; deleting one falls back to the previous line.
-- **Codes lock once in use**, since other records point at them.
-- **The org chart is derived**, never stored — it walks `parent_code` and `reports_to_code`. A position whose manager sits in another department is shown at the top of its own department rather than vanishing.
+The time-slice engine underneath is what the whole model rests on. Writing a record for a date delimits whatever was true before it, inside one transaction, handling all four overlap cases — including the one people forget, where a short correction inserted into an open-ended record splits it in three and leaves the later period carrying its own original value.
 
-Verified: 8 of 8 data integrity checks pass (no cycles, valid references, foreign keys reject orphans, insert/update/delete round-trip), and all eight screens render real seeded data over HTTP as an authenticated HR admin.
+Arjun Mehta reads **₹65,000 on 1 June 2024 and ₹72,000 on 1 June 2025**, from two dated records rather than one mutable field.
 
-**Core HR — all five screens and the time-slice engine (phase 3).** The hire action, maintain master data across eight infotype tabs, the as-of-date viewer, employee search and mass update.
+### Time and absence (5 screens)
 
-**The time-slice engine** is the part everything later depends on. Writing a record for a date delimits whatever was true before it rather than overwriting it, inside one transaction. It handles all four overlap cases, including the one people forget: a short correction inserted into the middle of an open-ended record splits it in three and leaves the later period carrying its own original value.
+Absences, attendance, quotas, time evaluation, work schedules and holidays for HR; an approval queue for managers; self-service leave for employees.
 
-Verified by `/api/health/timeslice-check` — 6 of 6 pass:
+- Working days, not calendar days: 23–27 January spans five calendar days but costs two days of entitlement.
+- Balances move on approval, not submission — a request that may never be granted holds no days.
+- Half days are exact, stored in half-day units rather than 0.5 floats.
+- Managers see only their direct reports, so the queue is finishable.
 
-- predecessor delimited on a later insert
-- as-of read returns the historical value, not the current one
-- a straddling insert splits the record into three
-- the period after a correction keeps its own value
-- deleting a slice extends its predecessor over the gap
-- no overlapping slices remain
+### Payroll (5 screens)
 
-Proof it works end to end: Arjun Mehta's as-of viewer reads ₹65,000 on 1 June 2024 and ₹72,000 on 1 June 2025, from two dated records rather than one mutable field.
+Periods, wage types, recurring and one-off payments, the run, payslips, and the bank file, ledger posting and statutory remittance that follow.
 
-Also in this phase: the hire action creates the employee and five infotypes atomically and marks the position occupied; terminating frees the chair again; mass update routes every row through the engine so a bulk change leaves the same clean history a single edit does.
+Gross to net in the order each step feeds the next: basic pay valid in the period, prorated for unpaid absence, percentage allowances on the prorated basic, recurring and one-off payments, then provident fund and income tax.
 
-**Time and absence — all five screens, the quota engine and time evaluation (phase 4).** Absences, attendance, quotas, time evaluation, work schedules and holidays for HR; an approval queue for managers; self-service leave for employees.
+- The control record bites: an open period refuses to run, a period cannot be posted without a run, a posted period is final.
+- Anyone who cannot be paid is reported with the missing record named, not silently skipped.
+- Payslip lines sum exactly to the totals, because the totals are derived from the lines.
+- The ledger journal balances by construction, both sides built from the same result lines.
 
-The chain closes end to end: an employee applies, their manager approves, the approval writes the absence record and decrements the quota in the same action, and an unpaid absence becomes the unpaid-day count payroll will prorate against.
+### Recruitment (5 screens)
 
-Details that matter:
+Requisitions, candidates, the pipeline, interviews, and the hire conversion.
 
-- **Working days, not calendar days.** Leave skips weekends and public holidays, so 23–27 January spans five calendar days but costs two days of entitlement.
-- **Balances move on approval, not submission.** A pending request that may never be granted does not hold days.
-- **Half days are exact.** Quotas are stored in half-day units, never as 0.5 floats.
-- **An overdraw is refused with the numbers in the message** — "That needs 20 days but only 7 remain."
-- **Deleting an absence that came from a request** hands the days back and cancels the request.
-- **Managers see only their direct reports**, so the queue is finishable rather than company-wide.
+The conversion creates the employee and six infotypes in one transaction, fills the position, and closes the requisition once its openings are used. It takes the same path as the Core HR hire action deliberately: two ways of creating an employee would drift apart, and one would end up missing an infotype payroll needs.
 
-Verified by `/api/health/quota-check` — 7 of 7 pass.
+### Performance (5 screens)
 
-**Payroll and tax — all five screens and both engines (phase 5).** Payroll periods, wage types, recurring and one-off payments, the run, payslips, and the bank file, ledger posting and statutory remittance that follow it.
+Cycles, goals, self and manager ratings, calibration, and the increment recommendation.
 
-The run works gross to net in the order each step feeds the next: basic pay valid in the period, prorated for unpaid absence, then percentage allowances computed on the prorated basic, then recurring and one-off payments, then provident fund and tax.
+An approved increment becomes a new basic-pay record through the time-slice engine rather than an update in place, so the old salary is delimited and the next payroll run picks the new one up because it reads whatever is valid in the period.
 
-The tax engine landed here rather than in phase 8, because payroll needs real TDS and a stub would have been thrown away. Slabs are data for both regimes, so a rate change is a row edit.
+- Calibration keeps the manager's rating separately from the moderated one, so agreeing a different number does not erase what they thought.
+- The employee is shown the calibrated rating, not the manager's, and only once finalised.
 
-- **The control record bites.** An open period refuses to run; a period cannot be posted without a run; a posted period is final.
-- **Anyone who cannot be paid is reported, not skipped.** No bank details produces an error row naming the missing record, rather than a run that quietly pays fewer people.
-- **Payslip lines sum exactly to the totals**, because they are the same numbers — the totals are derived from the lines.
-- **PF respects the ₹15,000 wage ceiling.**
-- **The ledger journal balances** by construction: both sides come from the same result lines, and the screen says so if they ever disagree.
-- **Statutory due dates fall out of the posting date**, and overdue money is the one thing on that screen shown in red.
+### Tax and Form 16 (5 screens)
 
-Verified by `/api/health/payroll-check` — 13 of 13 pass, including cumulative slab arithmetic (₹40,000 on ₹10,00,000, not a flat rate) and 4% cess on tax after rebate.
+Sections and rates, declarations, the quarterly deduction register, and the certificate.
 
-**Recruitment — all five screens and the hire conversion (phase 6).** Requisitions, candidates, the pipeline, interview scheduling, and the conversion that turns an offered candidate into an employee.
+The register is built from what payroll actually deducted — read from the stored result lines rather than recomputed — so the register, the payslips and the certificate all quote the same numbers. Part A summarises what was deducted and deposited; Part B recomputes the year's liability from the same gross and the employee's declaration, so the two halves reconcile and the balance at the bottom is a real figure.
 
-The conversion is the point of the module. It creates the employee and six infotypes in one transaction, marks the position filled, moves the application to hired, records which candidate became which employee, and closes the requisition once its openings are used up. It deliberately does exactly what the Core HR hire action does — two ways of creating an employee would drift apart, and one of them would end up missing an infotype payroll needs.
+- Tax slabs are data for both regimes, so a rate change is a row edit.
+- Under the new regime, declared exemptions are stored but not applied, so switching regime loses nothing.
+- Tax deducted but not recorded as deposited is flagged in red on the register and on the certificate — it is money owed to the government.
+- 80C is capped at ₹1,50,000 and 80D at ₹25,000 at entry.
 
-Other behaviour:
+---
 
-- **Requisitions only open against vacant positions**, and the department and job follow from the position rather than being re-entered.
-- **Stages advance one step at a time** and every move is written to a history table, so the pipeline is a record rather than a single mutable field.
-- **Moving to offered asks for the salary**, which is then carried into the conversion.
-- **A position filled between offer and conversion** blocks the conversion with an explanation rather than failing at the database.
-- **A hired candidate cannot be deleted or rejected**, so the audit trail survives.
-- The pipeline uses a progress track — ink for reached, `control` for unreached, `danger-mark` for rejected — rather than the mockup's four differently coloured pills, which carry no meaning in greyscale.
+## Verification
 
-**Performance and increments — all five screens and the increment push (phase 7).** Cycles, goals, self and manager ratings, calibration, and the increment recommendation that becomes a salary.
+Each engine has a harness under `/api/health/*`. They create throwaway data and remove it afterwards. All require an authenticated HR session.
 
-The push is the point of the module. An approved increment goes through the time-slice engine rather than updating the salary in place, so the old figure is delimited rather than destroyed and the next payroll run picks the new one up because it reads whatever is valid in the period. Verified end to end by `/api/health/increment-check` — 9 of 9 pass:
+| Harness | Checks | Covers |
+|---|---|---|
+| `/api/health` | — | database reachability, used by deployment checks |
+| `/api/health/timeslice-check` | 6 of 6 | delimiting, as-of reads, the three-way split, gap healing |
+| `/api/health/quota-check` | 7 of 7 | working days, overdraw refusal, half-day exactness |
+| `/api/health/payroll-check` | 13 of 13 | gross to net, cumulative slabs, 87A rebate, 4% cess |
+| `/api/health/increment-check` | 9 of 9 | the push into basic pay, and that it cannot double-apply |
+| `/api/health/form16-check` | 10 of 10 | quarterly bucketing, and Part A reconciling with Part B |
 
-- a finalised rating produces a draft increment, sized from the rating
-- a draft cannot be pushed; only an approved one can
-- basic pay ends with two records, not one overwritten
-- the old salary is delimited to the day before the effective date
-- payroll reads ₹60,000 in January and ₹65,400 in June, either side of the change
-- the new record names the cycle it came from
-- pushing twice does nothing
+**45 of 45 passing.** Two of these initially passed vacuously — a cess assertion where tax was zero, and a Form 16 case where the salary fell under the rebate limit — and were rewritten with figures that actually exercise the arithmetic. A check that cannot fail is not a check.
 
-Other behaviour:
-
-- **Opening a cycle creates an appraisal for every active employee**, so the rating screens start with rows rather than an empty list someone populates by hand.
-- **Goal weightings are capped at 100% per person**, and the screen says who is short.
-- **A manager rating needs the self review first**, and a manager can only rate their own reports.
-- **Calibration keeps the manager's rating separately** from the moderated one, so agreeing a different number does not erase what the manager thought.
-- **Only a finalised calibration earns an increment.**
-- **The employee sees the calibrated rating, not the manager's**, and only once it is finalised.
+These are harnesses, not a test suite. Phase 9 should replace them with a real runner.
 
 ---
 
 ## What is left
 
-### Screens — 38 total, 23 built
+### Phase 9 — the finish
 
-| Module | Screens | Nested tabs |
-|---|---|---|
-| ~~Org management~~ | ~~OM-01…08~~ — done | — |
-| ~~Core HR~~ | ~~CH-01…05~~ — done | 8 infotype tabs — done |
-| ~~Time and absence~~ | ~~TM-01…05~~ — done | — |
-| ~~Payroll~~ | ~~PY-01…05~~ — done | — |
-| ~~Recruitment~~ | ~~RC-01…05~~ — done | — |
-| ~~Performance~~ | ~~PM-01…05~~ — done | — |
-| Tax and Form 16 | TDS-01…05 | — |
+- **Role dashboards.** The home screen shows real figures for HR but a placeholder notice for managers and employees.
+- **Command menu.** Ctrl-K, per DESIGN_LANGUAGE §9.
+- **R2 documents.** Resume uploads, stored payslip and Form 16 PDFs, the bank transfer file as a download. Needs the `app_document` table and R2 enabled.
+- **Print stylesheets.** Payslips and Form 16 render to the printed-document pattern on screen; the print path needs a proper pass.
+- **Empty, loading and error states.** Empty states exist throughout; loading and error boundaries do not.
+- **375px pass.** The shell adapts and tables scroll sideways, but no screen has been walked at phone width.
+- **Accessibility pass.** Focus states, labels and status-without-colour are built in; nothing has been checked with a screen reader.
+- **A real test runner**, replacing the `/api/health/*` harnesses.
 
-### Engines — all four done
+### Known gaps worth naming
 
-1. ~~**Time-slice**~~ — 6 of 6 checks pass.
-2. ~~**Quota**~~ — 7 of 7 checks pass.
-3. ~~**Time evaluation**~~ — produces the unpaid-day count payroll prorates against.
-4. ~~**Payroll** and **tax**~~ — 13 of 13 checks pass.
-
-### Cross-module transactions — both done
-
-- ~~**Hire conversion**~~ — recruitment creates the employee and six infotypes atomically, using the same path as the Core HR hire action.
-- ~~**Increment push**~~ — performance writes a new basic-pay record through the time-slice engine; 9 of 9 checks pass.
-
-### Remaining tables
-
-`app_document` (1), for R2 objects in phase 9.
+- **No pagination anywhere.** Every list loads every row. Fine at seed scale, wrong at a thousand employees.
+- **Some list pages issue a query per row** — the approvals screen fetches a balance per pending request, and the ledger posting aggregates by looping results. Correct, but N+1.
+- **No audit trail on reads**, only on writes.
+- **Payroll runs synchronously** in the request. A few hundred employees would exceed a serverless timeout.
+- **Off-cycle payroll, retroactive runs and mid-period joiners** are not handled; the run assumes a whole month.
 
 ---
 
 ## Blockers
 
-**Vercel Deployment Protection is on.** The production build is green but every request returns Vercel's SSO page instead of the app. Disable at Vercel → `hrms` → Settings → Deployment Protection → Vercel Authentication. Note this makes the app publicly reachable; it still has its own sign-in, but the demo passwords are printed on that page.
-
-**R2 is not enabled.** `wrangler r2 bucket create` fails with API error 10042 — R2 must be switched on in the Cloudflare dashboard first, which usually needs a payment method even on the free tier. Not needed until phase 9.
+**R2 is not enabled.** `wrangler r2 bucket create` fails with API error 10042 — R2 must be switched on in the Cloudflare dashboard first, which usually needs a payment method even on the free tier. Blocks the document parts of phase 9 and nothing else.
 
 **The Turso auth token was pasted into a chat transcript.** Rotate it in the dashboard before this is anything other than a prototype.
 
@@ -224,5 +205,8 @@ Other behaviour:
 - **Next.js 16, not 15.** Turbopack is default, `params`/`cookies`/`headers` are async, and middleware is now `proxy.ts`.
 - **`jose` cookie, not Auth.js.** One credentials provider and three fixed roles did not justify the adapter surface.
 - **One table per infotype, not a JSON blob.** Payroll needs typed, indexed, foreign-keyed salary values.
-- **Database connects lazily.** Throwing at module scope failed the Vercel build while collecting page data.
-- **The mockups supply features, not appearance.** Their green accent, uppercase headings and per-row pills all contradict DESIGN_LANGUAGE.md and were discarded. See BUILD_PLAN §8.
+- **Money is integer paise; quotas are half-day units.** SQLite has no `DECIMAL`, and `REAL` would drift across a payroll run.
+- **The database connects lazily.** Throwing at module scope failed the Vercel build while it collected page data.
+- **`readEnv` strips a BOM from every environment variable.** PowerShell prepends one when piping to a native command's stdin, which silently corrupted the Turso URL on Vercel and is invisible in any dashboard.
+- **The tax engine landed in phase 5, not 8**, because payroll needed real TDS and a stub would have been thrown away.
+- **The mockups supply features, not appearance.** Their green accent, uppercase headings and per-row coloured pills all contradict `DESIGN_LANGUAGE.md` and were discarded. See BUILD_PLAN §8.
