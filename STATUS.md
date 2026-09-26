@@ -1,6 +1,6 @@
 # Project status
 
-**Last updated:** 26 Sept 2026 · **Current phase:** 4 of 9 (time and absence, next)
+**Last updated:** 26 Sept 2026 · **Current phase:** 5 of 9 (payroll, next)
 
 Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUILD_PLAN.md); for what the product does see [README.md](README.md).
 
@@ -10,11 +10,11 @@ Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUI
 
 | | |
 |---|---|
-| Phases complete | 4 of 10 (phases 0 to 3) |
-| Real screens built | 13 of 38 |
-| Placeholder screens | 9 |
-| Database tables | 21 of ~61 |
-| Engines built | 1 of 4 (time-slice) |
+| Phases complete | 5 of 10 (phases 0 to 4) |
+| Real screens built | 18 of 38 |
+| Placeholder screens | 6 |
+| Database tables | 30 of ~61 |
+| Engines built | 2 of 4, plus time evaluation |
 | Deployed | yes, but gated — see blockers |
 
 ---
@@ -52,8 +52,8 @@ Installed per-user under `C:\Users\AMOG\tools` because the account is not an adm
 | 1 | Foundation — design system, shell, auth, data layer | done |
 | 2 | Org management — OM-01…08 | done |
 | 3 | Core HR — CH-01…05, time-slice engine | done |
-| 4 | Time and absence — TM-01…05, quota engine | **next** |
-| 5 | Payroll — PY-01…05, payroll engine | not started |
+| 4 | Time and absence — TM-01…05, quota engine | done |
+| 5 | Payroll — PY-01…05, payroll engine | **next** |
 | 6 | Recruitment — RC-01…05, hire conversion | not started |
 | 7 | Performance — PM-01…05, increment push | not started |
 | 8 | Tax and Form 16 — TDS-01…05, tax engine | not started |
@@ -110,6 +110,21 @@ Proof it works end to end: Arjun Mehta's as-of viewer reads ₹65,000 on 1 June 
 
 Also in this phase: the hire action creates the employee and five infotypes atomically and marks the position occupied; terminating frees the chair again; mass update routes every row through the engine so a bulk change leaves the same clean history a single edit does.
 
+**Time and absence — all five screens, the quota engine and time evaluation (phase 4).** Absences, attendance, quotas, time evaluation, work schedules and holidays for HR; an approval queue for managers; self-service leave for employees.
+
+The chain closes end to end: an employee applies, their manager approves, the approval writes the absence record and decrements the quota in the same action, and an unpaid absence becomes the unpaid-day count payroll will prorate against.
+
+Details that matter:
+
+- **Working days, not calendar days.** Leave skips weekends and public holidays, so 23–27 January spans five calendar days but costs two days of entitlement.
+- **Balances move on approval, not submission.** A pending request that may never be granted does not hold days.
+- **Half days are exact.** Quotas are stored in half-day units, never as 0.5 floats.
+- **An overdraw is refused with the numbers in the message** — "That needs 20 days but only 7 remain."
+- **Deleting an absence that came from a request** hands the days back and cancels the request.
+- **Managers see only their direct reports**, so the queue is finishable rather than company-wide.
+
+Verified by `/api/health/quota-check` — 7 of 7 pass.
+
 ---
 
 ## What is left
@@ -120,7 +135,7 @@ Also in this phase: the hire action creates the employee and five infotypes atom
 |---|---|---|
 | ~~Org management~~ | ~~OM-01…08~~ — done | — |
 | ~~Core HR~~ | ~~CH-01…05~~ — done | 8 infotype tabs — done |
-| Time and absence | TM-01…05 | 4 across TM-01 and TM-05 |
+| ~~Time and absence~~ | ~~TM-01…05~~ — done | — |
 | Payroll | PY-01…05 | 6 across PY-02 and PY-05 |
 | Recruitment | RC-01…05 | — |
 | Performance | PM-01…05 | — |
@@ -128,10 +143,11 @@ Also in this phase: the hire action creates the employee and five infotypes atom
 
 51 distinct form surfaces once nested tabs are counted.
 
-### Engines — 1 of 4
+### Engines — 2 of 4, plus time evaluation
 
 1. ~~**Time-slice**~~ — done, 6 of 6 checks pass.
-2. **Quota** — entitlement generation, decrement on approval. Blocks time.
+2. ~~**Quota**~~ — done, 7 of 7 checks pass.
+3. ~~**Time evaluation**~~ — done; produces the unpaid-day count payroll prorates against.
 3. **Payroll** — gross to net with proration, PF and TDS. Blocks payroll.
 4. **Tax** — slab-based, both regimes, feeding Form 16 Part B.
 
@@ -140,9 +156,9 @@ Also in this phase: the hire action creates the employee and five infotypes atom
 - **Hire conversion** — recruitment creates an employee plus four infotypes atomically.
 - **Increment push** — performance writes a new basic-pay slice payroll then reads.
 
-### Remaining tables — about 40
+### Remaining tables — about 31
 
-`pt_*` (9 more), `py_*` (12), `rc_*` (6), `pm_*` (6), `tds_*` (6), `app_document` (1).
+`py_*` (12), `rc_*` (6), `pm_*` (6), `tds_*` (6), `app_document` (1).
 
 ---
 

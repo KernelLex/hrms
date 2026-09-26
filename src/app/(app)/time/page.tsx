@@ -1,12 +1,8 @@
-import { ModulePlaceholder } from "@/components/placeholder";
+import { redirect } from "next/navigation";
+import { getSession, hasRole } from "@/lib/auth";
 
-export default function Page() {
-  return (
-    <ModulePlaceholder
-      title="Time and absence"
-      subtitle="Absences, attendance, quotas, schedules and the holiday calendar."
-      phase={4}
-      screens="Five screens: time data, absence requests, quotas, time evaluation, schedules and holidays."
-    />
-  );
+export default async function TimeIndex() {
+  const session = await getSession();
+  // HR runs the back office; everyone else lands on their own leave.
+  redirect(hasRole(session, "HR_ADMIN") ? "/time/absences" : "/time/my-leave");
 }

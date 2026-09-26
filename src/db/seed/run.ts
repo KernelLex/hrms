@@ -14,6 +14,7 @@ import bcrypt from "bcryptjs";
 import { loadEnv } from "../load-env";
 import * as s from "../schema";
 import { seedPersonnel } from "./personnel";
+import { seedTime } from "./time";
 
 loadEnv();
 
@@ -176,12 +177,13 @@ async function main() {
 
   // Core HR depends on the org structure and the users above.
   const personnelNotes = await seedPersonnel(db);
+  const timeNotes = await seedTime(db);
 
   console.log("Seeded:");
   console.log("  2 companies, 2 personnel areas, 2 sub-areas, 2 jobs");
   console.log("  3 org units, 4 positions, 2 reporting lines");
   console.log(`  3 users, all with password ${DEMO_PASSWORD}`);
-  for (const n of personnelNotes) console.log(n);
+  for (const n of [...personnelNotes, ...timeNotes]) console.log(n);
   client.close();
 }
 

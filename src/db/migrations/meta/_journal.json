@@ -15,6 +15,13 @@
       "when": 1790435874366,
       "tag": "0001_rainy_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790436713847,
+      "tag": "0002_damp_christian_walker",
+      "breakpoints": true
     }
   ]
 }
