@@ -9,12 +9,9 @@ out/
 build/
 dist/
 
-# environment
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# environment — every .env except the committed template
+.env*
+!.env.example
 
 # local database
 *.db

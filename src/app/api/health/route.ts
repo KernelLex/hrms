@@ -9,6 +9,8 @@ import { omCompany, secAppUser } from "@/db/schema";
  * Deliberately reports no data beyond row counts, and is excluded from the
  * proxy's auth redirect so a deployment check can reach it.
  */
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const [companies] = await db.select({ n: count() }).from(omCompany);
