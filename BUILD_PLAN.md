@@ -67,11 +67,30 @@ Then the npm globals:
 npm i -g vercel
 ```
 
-### Turso CLI — deliberately skipped
+### Cloud CLIs
 
-The Turso CLI is not in the winget catalogue, and on Windows it is distributed for WSL. No WSL distro is installed here, and installing one just to create a database is not worth it.
+| CLI | Version | How | Auth |
+|---|---|---|---|
+| Vercel | 60.1.3 | `npm i -g vercel` | `vercel login` — interactive |
+| Wrangler (R2) | 4.141.0 | `npm i -g wrangler` | `wrangler login` — interactive |
+| Turso | **not installable here** | see below | dashboard only |
 
-We do not need it. The database is created once in the Turso dashboard, and every migration after that runs through `drizzle-kit`, which talks to Turso over HTTPS from Node. If the CLI becomes genuinely useful later, install a WSL distro then.
+Both npm CLIs run natively on Windows and are installed. Their logins open a browser, so they have to be run by hand once — an automated shell cannot complete the OAuth round trip.
+
+### Turso CLI — not available on this machine
+
+Verified against the release feed for `tursodatabase/turso-cli` v1.0.32. The published assets are:
+
+```
+turso-cli_Darwin_arm64.tar.gz   turso-cli_Linux_arm64.tar.gz
+turso-cli_Darwin_x86_64.tar.gz  turso-cli_Linux_x86_64.tar.gz
+```
+
+There is **no Windows binary**. The documented `curl -sSfL https://get.tur.so/install.sh | bash` therefore needs WSL, and `wsl --install` requires administrator rights this account does not have. That route is closed.
+
+It costs us nothing. The CLI only creates databases and mints tokens — both are available from the Turso dashboard, and everything afterwards (`drizzle-kit`, `db:migrate`, `db:seed`, the app itself) speaks to Turso over HTTPS from Node, which works fine on Windows. Local development runs against `file:./local.db` and needs no account at all.
+
+If the CLI is ever genuinely needed, the options are a WSL distro (needs admin) or running it from a Linux CI job.
 
 ### Accounts to have ready
 
