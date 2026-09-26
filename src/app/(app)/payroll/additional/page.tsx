@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { asc, eq, desc } from "drizzle-orm";
+import { asc, eq, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pyAdditionalPayment, pyWageType } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
@@ -9,6 +9,8 @@ import { saveAdditionalPayment, deleteAdditionalPayment } from "@/app/actions/pa
 import { formatINR, toRupees } from "@/lib/money";
 import { TwoLine } from "@/components/ui";
 import { PayrollTabs } from "../tabs";
+import { formatDate } from "@/lib/dates";
+import { Pagination, pageFrom } from "@/components/pagination";
 
 const COLUMNS: Column[] = [
   { key: "employee", label: "Employee" },
@@ -18,10 +20,12 @@ const COLUMNS: Column[] = [
 ];
 
 /** PY-02 — IT0015 one-off payments, paid in a single period. */
-export default async function AdditionalPage() {
+export default async function AdditionalPage(props: { searchParams: Promise<{ page?: string }> }) {
+  const { page, limit, offset } = pageFrom((await props.searchParams).page);
   const session = await getSession();
   if (!hasRole(session, "HR_ADMIN")) redirect("/payroll/my-payslips");
 
+  const [{ n: total }] = await db.select({ n: count() }).from(pyAdditionalPayment);
   const [rows, wageTypes, employees] = await Promise.all([
     db
       .select({
@@ -35,7 +39,9 @@ export default async function AdditionalPage() {
       })
       .from(pyAdditionalPayment)
       .innerJoin(pyWageType, eq(pyWageType.code, pyAdditionalPayment.wageTypeCode))
-      .orderBy(desc(pyAdditionalPayment.paymentDate)),
+      .orderBy(desc(pyAdditionalPayment.paymentDate))
+      .limit(limit)
+      .offset(offset),
     db
       .select()
       .from(pyWageType)
@@ -79,6 +85,8 @@ export default async function AdditionalPage() {
     <>
       <PayrollTabs />
       <MasterScreen
+        total={total}
+        footer={<Pagination page={page} total={total} path="/payroll/additional" noun="payments" />}
         title="One-off payments"
         subtitle="Bonuses, arrears and reimbursements, paid in the period their date falls in."
         entity="one-off payment"
@@ -92,14 +100,14 @@ export default async function AdditionalPage() {
         emptyHint="Add a bonus or reimbursement for a single period."
         rows={rows.map((r) => ({
           id: String(r.id),
-          describe: `${name.get(r.employeeId) ?? "Employee"}, ${r.wageTypeName} on ${r.paymentDate}`,
+          describe: `${name.get(r.employeeId) ?? "Employee"}, ${r.wageTypeName} on ${formatDate(r.paymentDate)}`,
           cells: {
             employee: (
               <TwoLine value={name.get(r.employeeId) ?? "—"} sub={numberOf.get(r.employeeId)} />
             ),
             wageType: <span className="text-secondary">{r.wageTypeName}</span>,
             amount: <span className="font-medium text-ink">{formatINR(r.amountPaise)}</span>,
-            date: <span className="tabular text-secondary">{r.paymentDate}</span>,
+            date: <span className="tabular text-secondary">{formatDate(r.paymentDate)}</span>,
           },
           values: {
             employeeId: String(r.employeeId),

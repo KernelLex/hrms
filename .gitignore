@@ -43,3 +43,9 @@ coverage/
 Thumbs.db
 .idea/
 *.swp
+
+# test runner database
+.vitest/
+
+# local development database, a seeded copy for testing changes
+.local/

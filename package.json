@@ -10,10 +10,14 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed/run.ts",
-    "db:reset": "tsx src/db/migrate.ts && tsx src/db/seed/run.ts"
+    "db:reset": "tsx src/db/migrate.ts && tsx src/db/seed/run.ts",
+    "audit:ui": "tsx scripts/ui-audit.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
+    "aws4fetch": "^1.0.20",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.3",
     "jose": "^6.2.12",
@@ -25,16 +29,19 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
-    "@types/node": "^20",
+    "@types/node": "^24.19.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.11",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "playwright-core": "^1.63.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.2"
   }
 }

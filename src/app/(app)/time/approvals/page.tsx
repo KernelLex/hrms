@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { ptLeaveRequest, ptAbsenceType } from "@/db/schema";
+import { ptLeaveRequest, ptAbsenceType, ptAbsenceQuota } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
 import {
   listEmployees,
   listDirectReports,
   fullName,
 } from "@/lib/repositories/employees";
-import { balancesFor, formatDays } from "@/lib/engines/quota";
+import { formatDays } from "@/lib/engines/quota";
+import { formatDateRange } from "@/lib/dates";
 import {
   Card,
   PageHeader,
@@ -71,21 +72,34 @@ export default async function ApprovalsPage() {
   const pending = requests.filter((r) => r.status === "Pending");
   const decided = requests.filter((r) => r.status !== "Pending").slice(0, 10);
 
-  const employees = await listEmployees();
+  // Names, and every requester's annual balance, in one read each rather
+  // than one per request.
+  const year = new Date().getUTCFullYear();
+  const requesters = [...new Set(pending.map((r) => r.employeeId))];
+  const [employees, quotas] = await Promise.all([
+    listEmployees(),
+    requesters.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({
+            employeeId: ptAbsenceQuota.employeeId,
+            entitled: ptAbsenceQuota.entitledHalfDays,
+            used: ptAbsenceQuota.usedHalfDays,
+          })
+          .from(ptAbsenceQuota)
+          .where(
+            and(
+              inArray(ptAbsenceQuota.employeeId, requesters),
+              eq(ptAbsenceQuota.year, year),
+              eq(ptAbsenceQuota.quotaTypeCode, "ANNUAL"),
+            ),
+          ),
+  ]);
   const name = new Map(employees.map((e) => [e.id, fullName(e)]));
   const numberOf = new Map(employees.map((e) => [e.id, e.employee_number]));
-
-  const year = new Date().getUTCFullYear();
-  const balances = new Map<number, string>();
-  for (const r of pending) {
-    if (balances.has(r.employeeId)) continue;
-    const b = await balancesFor(r.employeeId, year);
-    const annual = b.find((x) => x.quotaTypeCode === "ANNUAL");
-    balances.set(
-      r.employeeId,
-      annual ? `${formatDays(annual.balanceUnits)} days left` : "no quota",
-    );
-  }
+  const balances = new Map(
+    quotas.map((q) => [q.employeeId, `${formatDays(q.entitled - q.used)} days left`]),
+  );
 
   return (
     <>
@@ -135,13 +149,13 @@ export default async function ApprovalsPage() {
                   </Td>
                   <Td>
                     <span className="tabular text-secondary">
-                      {r.fromDate === r.toDate ? r.fromDate : `${r.fromDate} to ${r.toDate}`}
+                      {formatDateRange(r.fromDate, r.toDate)}
                     </span>
                   </Td>
                   <Td numeric>{r.payrollDays}</Td>
                   <Td>
                     <span className="text-[13px] text-muted">
-                      {balances.get(r.employeeId)}
+                      {balances.get(r.employeeId) ?? "no quota"}
                     </span>
                   </Td>
                   <Td>
@@ -152,7 +166,7 @@ export default async function ApprovalsPage() {
                   <Td className="text-right whitespace-nowrap">
                     <DecisionButtons
                       id={r.id}
-                      describe={`${name.get(r.employeeId) ?? "This employee"}, ${r.payrollDays} day${r.payrollDays === 1 ? "" : "s"} from ${r.fromDate}`}
+                      describe={`${name.get(r.employeeId) ?? "This employee"}, ${r.payrollDays} day${r.payrollDays === 1 ? "" : "s"}, ${formatDateRange(r.fromDate, r.toDate)}`}
                     />
                   </Td>
                 </Tr>
@@ -187,7 +201,7 @@ export default async function ApprovalsPage() {
                     </Td>
                     <Td>
                       <span className="tabular text-secondary">
-                        {r.fromDate === r.toDate ? r.fromDate : `${r.fromDate} to ${r.toDate}`}
+                        {formatDateRange(r.fromDate, r.toDate)}
                       </span>
                     </Td>
                     <Td numeric>{r.payrollDays}</Td>

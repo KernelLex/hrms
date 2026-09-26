@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptAbsence, ptAbsenceType } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
@@ -8,6 +8,8 @@ import { MasterScreen, type Column, type FieldDef } from "@/components/master-sc
 import { saveAbsence, deleteAbsence } from "@/app/actions/time";
 import { Status, TwoLine } from "@/components/ui";
 import { TimeTabs } from "../tabs";
+import { formatDate, formatDateRange } from "@/lib/dates";
+import { Pagination, pageFrom } from "@/components/pagination";
 
 const COLUMNS: Column[] = [
   { key: "employee", label: "Employee" },
@@ -19,10 +21,12 @@ const COLUMNS: Column[] = [
 ];
 
 /** TM-01 — absence records (IT2001). */
-export default async function AbsencesPage() {
+export default async function AbsencesPage(props: { searchParams: Promise<{ page?: string }> }) {
+  const { page, limit, offset } = pageFrom((await props.searchParams).page);
   const session = await getSession();
   if (!hasRole(session, "HR_ADMIN")) redirect("/time/my-leave");
 
+  const [{ n: total }] = await db.select({ n: count() }).from(ptAbsence);
   const [rows, types, employees] = await Promise.all([
     db
       .select({
@@ -40,7 +44,9 @@ export default async function AbsencesPage() {
       })
       .from(ptAbsence)
       .innerJoin(ptAbsenceType, eq(ptAbsenceType.code, ptAbsence.absenceTypeCode))
-      .orderBy(desc(ptAbsence.startDate)),
+      .orderBy(desc(ptAbsence.startDate))
+      .limit(limit)
+      .offset(offset),
     db.select().from(ptAbsenceType).orderBy(asc(ptAbsenceType.code)),
     listEmployees(),
   ]);
@@ -85,6 +91,8 @@ export default async function AbsencesPage() {
     <>
       <TimeTabs />
       <MasterScreen
+        total={total}
+        footer={<Pagination page={page} total={total} path="/time/absences" noun="absences" />}
         title="Absences"
         subtitle="Every absence on record. Approved leave requests land here automatically; these are the ones HR enters directly."
         entity="absence"
@@ -98,7 +106,7 @@ export default async function AbsencesPage() {
         emptyHint="Record an absence, or approve a leave request to create one."
         rows={rows.map((r) => ({
           id: String(r.id),
-          describe: `${name.get(r.employeeId) ?? "Employee"}, ${r.typeName} from ${r.startDate}`,
+          describe: `${name.get(r.employeeId) ?? "Employee"}, ${r.typeName} from ${formatDate(r.startDate)}`,
           cells: {
             employee: (
               <TwoLine value={name.get(r.employeeId) ?? "—"} sub={numberOf.get(r.employeeId)} />
@@ -106,7 +114,7 @@ export default async function AbsencesPage() {
             type: <span className="text-secondary">{r.typeName}</span>,
             range: (
               <span className="tabular text-secondary">
-                {r.startDate === r.endDate ? r.startDate : `${r.startDate} to ${r.endDate}`}
+                {formatDateRange(r.startDate, r.endDate)}
               </span>
             ),
             days: r.isHalfDay ? "0.5" : String(r.payrollDays),

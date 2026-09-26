@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { asc, desc, eq, count } from "drizzle-orm";
+import { asc, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { rcRequisition, rcApplication, omPosition, omOrgUnit } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";

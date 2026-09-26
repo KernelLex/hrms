@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
  *
  * Equal segments, 4px tall with pill ends and 6px gaps. Reached segments are
  * ink, unreached are `control`, and a failed one is `danger-mark`. Labels sit
- * beneath: current in ink weight 500, done in secondary, upcoming in faint,
- * failed in danger.
+ * beneath: current in ink weight 500, done in secondary, the count in muted
+ * (faint fails WCAG AA at 12px), failed in danger.
  *
  * The mockup used four differently coloured pills for the same thing, which
  * carries no meaning in greyscale.
@@ -48,7 +48,7 @@ export function StageTrack({
         ) : (
           <span className="font-medium text-ink">{stages[currentIndex]}</span>
         )}
-        <span className="text-faint">
+        <span className="text-muted">
           {" "}
           — {currentIndex + 1} of {stages.length}
         </span>

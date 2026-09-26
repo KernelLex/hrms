@@ -25,6 +25,7 @@ import { Dialog } from "@/components/dialog";
 import { useToast } from "@/components/toast";
 import type { FieldDef } from "@/components/master-screen";
 import type { ActionState } from "@/app/actions/core-hr";
+import { formatDateRange, todayInIndia } from "@/lib/dates";
 
 export type HistoryRow = {
   id: string;
@@ -141,7 +142,7 @@ export function InfotypeEditor({
                   {sliced ? (
                     <Td>
                       <span className="tabular text-secondary">
-                        {r.validFrom} to {r.validTo === "9999-12-31" ? "open" : r.validTo}
+                        {r.validFrom ? formatDateRange(r.validFrom, r.validTo) : "—"}
                       </span>
                     </Td>
                   ) : null}
@@ -227,7 +228,7 @@ export function InfotypeEditor({
                 </Field>
               </>
             ) : (
-              <input type="hidden" name="validFrom" value={new Date().toISOString().slice(0, 10)} />
+              <input type="hidden" name="validFrom" value={todayInIndia()} />
             )}
 
             {fields.map((f) => {

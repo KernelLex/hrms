@@ -1,5 +1,6 @@
 import "server-only";
 import { rawClient } from "@/lib/db";
+import { today } from "@/db/schema/_shared";
 
 /**
  * Employee reads that resolve time-sliced infotypes to a single date.
@@ -46,9 +47,7 @@ const AS_OF_SELECT = `
   LEFT JOIN om_org_unit  ou  ON ou.code  = o.org_unit_code
 `;
 
-export function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+export { today };
 
 export async function listEmployees(
   asOf: string = today(),
@@ -101,4 +100,90 @@ export async function listDirectReports(
     args: [asOf, position],
   });
   return result.rows as unknown as EmployeeRow[];
+}
+
+/* ------------------------------------------------------------ searching */
+
+export type EmployeeFilter = {
+  /** Matches name, employee number, position or department. */
+  q?: string;
+  status?: string;
+  unit?: string;
+  /** Restrict to these employees — a manager's direct reports. */
+  onlyIds?: number[];
+};
+
+/**
+ * WHERE clause for a filter. Placeholders are numbered from 2, because ?1 is
+ * the as-of date that AS_OF_SELECT already uses.
+ */
+function filterSql(filter: EmployeeFilter): { where: string; args: (string | number)[] } {
+  const clauses: string[] = [];
+  const args: (string | number)[] = [];
+  const bind = (value: string | number) => {
+    args.push(value);
+    return `?${args.length + 1}`;
+  };
+
+  const q = filter.q?.trim().toLowerCase();
+  if (q) {
+    // Every word must match somewhere, so "ravi it" finds Ravi in IT.
+    for (const word of q.split(/\s+/)) {
+      clauses.push(`lower(
+        coalesce(e.employee_number, '') || ' ' || coalesce(p.first_name, '') || ' ' ||
+        coalesce(p.last_name, '') || ' ' || coalesce(pos.title, '') || ' ' || coalesce(ou.name, '')
+      ) LIKE ${bind(`%${word.replace(/[%_]/g, "")}%`)}`);
+    }
+  }
+  if (filter.status) clauses.push(`e.employment_status = ${bind(filter.status)}`);
+  if (filter.unit) clauses.push(`ou.name = ${bind(filter.unit)}`);
+  if (filter.onlyIds) {
+    clauses.push(
+      filter.onlyIds.length === 0
+        ? "0"
+        : `e.id IN (${filter.onlyIds.map((id) => bind(id)).join(", ")})`,
+    );
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", args };
+}
+
+/**
+ * One page of employees matching a filter, and how many match in total.
+ *
+ * Filtering and paging happen in SQL rather than by loading every employee and
+ * slicing in JavaScript, which is fine at three people and wrong at three
+ * thousand.
+ */
+export async function searchEmployees(
+  filter: EmployeeFilter,
+  page: { limit: number; offset: number },
+  asOf: string = today(),
+): Promise<{ rows: EmployeeRow[]; total: number }> {
+  const { where, args } = filterSql(filter);
+  const limit = Math.max(1, Math.floor(page.limit));
+  const offset = Math.max(0, Math.floor(page.offset));
+
+  const client = rawClient();
+  const [rows, count] = await Promise.all([
+    client.execute({
+      sql: `${AS_OF_SELECT} ${where} ORDER BY e.employee_number LIMIT ${limit} OFFSET ${offset}`,
+      args: [asOf, ...args],
+    }),
+    client.execute({
+      sql: `SELECT COUNT(*) AS n FROM (${AS_OF_SELECT} ${where})`,
+      args: [asOf, ...args],
+    }),
+  ]);
+  return {
+    rows: rows.rows as unknown as EmployeeRow[],
+    total: Number(count.rows[0].n),
+  };
+}
+
+/** Department names in use, for the list's filter. */
+export async function listDepartmentNames(): Promise<string[]> {
+  const result = await rawClient().execute(
+    "SELECT DISTINCT name FROM om_org_unit WHERE is_active = 1 ORDER BY name",
+  );
+  return result.rows.map((r) => String(r.name));
 }

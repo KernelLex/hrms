@@ -1,24 +1,18 @@
 import "server-only";
-import { and, eq, gte, lte } from "drizzle-orm";
-import { db } from "@/lib/db";
-import {
-  ptAbsence,
-  ptAbsenceType,
-  ptAttendance,
-  ptAttendanceType,
-  ptTimeEvaluation,
-  paEmployee,
-  now,
-} from "@/db/schema";
-import { workingDaysBetween } from "./quota";
+import { sql } from "drizzle-orm";
+import { db, rawClient } from "@/lib/db";
+import { ptTimeEvaluation, now } from "@/db/schema";
 
 /**
  * Time evaluation, equivalent to SAP's PT60.
  *
- * Turns raw absence and attendance records into the per-period totals payroll
- * needs. The number that matters downstream is `unpaidDays` — payroll prorates
- * basic pay against it, so an unpaid absence actually costs the employee money
- * rather than just appearing on a report.
+ * Turns raw absence and attendance records into the per-period totals a
+ * manager or payroll clerk reads: working days, days present and absent,
+ * unpaid days and overtime. Payroll computes its own unpaid days from the same
+ * absences, date by date, so the two always agree.
+ *
+ * The whole period is read in three statements — holidays, absences,
+ * attendance — however many people there are, and written back in one upsert.
  */
 
 export type EvaluationRow = {
@@ -38,17 +32,17 @@ function monthRange(year: number, month: number): { from: string; to: string } {
   return { from, to };
 }
 
-/** Overlap between an absence and the period, in working days. */
-async function absentWorkingDaysInPeriod(
-  absenceStart: string,
-  absenceEnd: string,
-  periodFrom: string,
-  periodTo: string,
-): Promise<number> {
-  const from = absenceStart > periodFrom ? absenceStart : periodFrom;
-  const to = absenceEnd < periodTo ? absenceEnd : periodTo;
-  if (to < from) return 0;
-  return workingDaysBetween(from, to);
+function workingDates(from: string, to: string, holidays: Set<string>): string[] {
+  const out: string[] = [];
+  const cursor = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  while (cursor <= end) {
+    const d = cursor.toISOString().slice(0, 10);
+    const day = cursor.getUTCDay();
+    if (day !== 0 && day !== 6 && !holidays.has(d)) out.push(d);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return out;
 }
 
 export async function evaluatePeriod(opts: {
@@ -59,122 +53,114 @@ export async function evaluatePeriod(opts: {
 }): Promise<EvaluationRow[]> {
   const { year, month, persist = true } = opts;
   const { from, to } = monthRange(year, month);
-  const workingDays = await workingDaysBetween(from, to);
+  const only = opts.employeeIds?.length ? opts.employeeIds : null;
+  const filter = only ? `AND employee_id IN (${only.map(() => "?").join(", ")})` : "";
+  const ids = only ?? [];
 
-  const employees = await db
-    .select({ id: paEmployee.id, number: paEmployee.employeeNumber })
-    .from(paEmployee);
-  const targets = opts.employeeIds?.length
-    ? employees.filter((e) => opts.employeeIds!.includes(e.id))
-    : employees;
+  const [holidays, employees, absences, attendance] = await rawClient().batch(
+    [
+      { sql: "SELECT date FROM pt_holiday WHERE date BETWEEN ? AND ?", args: [from, to] },
+      {
+        // Everyone employed at some point in the month.
+        sql: `SELECT id, employee_number, hire_date, termination_date FROM pa_employee
+              WHERE hire_date <= ? AND (termination_date IS NULL OR termination_date >= ?)
+              ${only ? `AND id IN (${only.map(() => "?").join(", ")})` : ""}
+              ORDER BY employee_number`,
+        args: [to, from, ...ids],
+      },
+      {
+        sql: `SELECT a.employee_id, a.start_date, a.end_date, a.is_half_day, t.is_paid
+              FROM pt_it2001_absence a JOIN pt_absence_type t ON t.code = a.absence_type_code
+              WHERE a.start_date <= ? AND a.end_date >= ? ${filter.replace("employee_id", "a.employee_id")}`,
+        args: [to, from, ...ids],
+      },
+      {
+        sql: `SELECT a.employee_id, SUM(a.hours) AS hours
+              FROM pt_it2002_attendance a
+              JOIN pt_attendance_type t ON t.code = a.attendance_type_code AND t.is_overtime = 1
+              WHERE a.date BETWEEN ? AND ? ${filter.replace("employee_id", "a.employee_id")}
+              GROUP BY a.employee_id`,
+        args: [from, to, ...ids],
+      },
+    ],
+    "read",
+  );
 
-  const results: EvaluationRow[] = [];
-  const evaluatedAt = now();
+  const holidaySet = new Set(holidays.rows.map((r) => String(r.date)));
+  const periodDates = workingDates(from, to, holidaySet);
+  const overtimeOf = new Map(attendance.rows.map((r) => [Number(r.employee_id), Number(r.hours)]));
+  const absencesOf = new Map<number, typeof absences.rows>();
+  for (const a of absences.rows) {
+    const list = absencesOf.get(Number(a.employee_id)) ?? [];
+    list.push(a);
+    absencesOf.set(Number(a.employee_id), list);
+  }
 
-  for (const e of targets) {
-    const absences = await db
-      .select({
-        startDate: ptAbsence.startDate,
-        endDate: ptAbsence.endDate,
-        isHalfDay: ptAbsence.isHalfDay,
-        isPaid: ptAbsenceType.isPaid,
-      })
-      .from(ptAbsence)
-      .innerJoin(ptAbsenceType, eq(ptAbsenceType.code, ptAbsence.absenceTypeCode))
-      .where(
-        and(
-          eq(ptAbsence.employeeId, e.id),
-          lte(ptAbsence.startDate, to),
-          gte(ptAbsence.endDate, from),
-        ),
-      );
+  const results: EvaluationRow[] = employees.rows.map((e) => {
+    const id = Number(e.id);
+    const windowFrom = String(e.hire_date) > from ? String(e.hire_date) : from;
+    const windowTo =
+      e.termination_date && String(e.termination_date) < to ? String(e.termination_date) : to;
+    const employed = periodDates.filter((d) => d >= windowFrom && d <= windowTo);
 
-    let absentDays = 0;
-    let unpaidDays = 0;
-    for (const a of absences) {
-      const days = a.isHalfDay
-        ? 0.5
-        : await absentWorkingDaysInPeriod(a.startDate, a.endDate, from, to);
-      absentDays += days;
-      if (!a.isPaid) unpaidDays += days;
-    }
-
-    const overtime = await db
-      .select({ hours: ptAttendance.hours, isOvertime: ptAttendanceType.isOvertime })
-      .from(ptAttendance)
-      .innerJoin(
-        ptAttendanceType,
-        eq(ptAttendanceType.code, ptAttendance.attendanceTypeCode),
-      )
-      .where(
-        and(
-          eq(ptAttendance.employeeId, e.id),
-          gte(ptAttendance.date, from),
-          lte(ptAttendance.date, to),
-        ),
-      );
-
-    const overtimeHours = overtime
-      .filter((o) => o.isOvertime)
-      .reduce((sum, o) => sum + o.hours, 0);
-
-    const row: EvaluationRow = {
-      employeeId: e.id,
-      employeeNumber: e.number,
-      workingDays,
-      presentDays: Math.max(0, workingDays - absentDays),
-      absentDays,
-      unpaidDays,
-      overtimeHours,
-    };
-    results.push(row);
-
-    if (persist) {
-      const existing = await db.query.ptTimeEvaluation.findFirst({
-        where: and(
-          eq(ptTimeEvaluation.employeeId, e.id),
-          eq(ptTimeEvaluation.periodYear, year),
-          eq(ptTimeEvaluation.periodMonth, month),
-        ),
-      });
-      const values = {
-        employeeId: e.id,
-        periodYear: year,
-        periodMonth: month,
-        workingDays,
-        presentDays: Math.round(row.presentDays),
-        absentDays: Math.round(row.absentDays),
-        unpaidDays: Math.round(row.unpaidDays),
-        overtimeHours,
-        evaluatedAt,
-      };
-      if (existing) {
-        await db
-          .update(ptTimeEvaluation)
-          .set(values)
-          .where(eq(ptTimeEvaluation.id, existing.id));
-      } else {
-        await db.insert(ptTimeEvaluation).values(values);
+    // Each working day counts once, however many absences cover it.
+    const absent = new Map<string, { share: number; unpaid: boolean }>();
+    for (const a of absencesOf.get(id) ?? []) {
+      const start = String(a.start_date);
+      const end = String(a.end_date);
+      const half = Number(a.is_half_day) === 1;
+      for (const d of employed) {
+        if (d < start || d > end || (half && d !== start)) continue;
+        const prev = absent.get(d);
+        absent.set(d, {
+          share: Math.min(1, (prev?.share ?? 0) + (half ? 0.5 : 1)),
+          unpaid: (prev?.unpaid ?? false) || Number(a.is_paid) !== 1,
+        });
       }
     }
+    const absentDays = [...absent.values()].reduce((s, v) => s + v.share, 0);
+    const unpaidDays = [...absent.values()].filter((v) => v.unpaid).reduce((s, v) => s + v.share, 0);
+
+    return {
+      employeeId: id,
+      employeeNumber: String(e.employee_number),
+      workingDays: employed.length,
+      presentDays: Math.max(0, employed.length - absentDays),
+      absentDays,
+      unpaidDays,
+      overtimeHours: overtimeOf.get(id) ?? 0,
+    };
+  });
+
+  if (persist && results.length > 0) {
+    const evaluatedAt = now();
+    await db
+      .insert(ptTimeEvaluation)
+      .values(
+        results.map((r) => ({
+          employeeId: r.employeeId,
+          periodYear: year,
+          periodMonth: month,
+          workingDays: r.workingDays,
+          presentDays: Math.round(r.presentDays),
+          absentDays: Math.round(r.absentDays),
+          unpaidDays: Math.round(r.unpaidDays),
+          overtimeHours: r.overtimeHours,
+          evaluatedAt,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [ptTimeEvaluation.employeeId, ptTimeEvaluation.periodYear, ptTimeEvaluation.periodMonth],
+        set: {
+          workingDays: sql`excluded.working_days`,
+          presentDays: sql`excluded.present_days`,
+          absentDays: sql`excluded.absent_days`,
+          unpaidDays: sql`excluded.unpaid_days`,
+          overtimeHours: sql`excluded.overtime_hours`,
+          evaluatedAt: sql`excluded.evaluated_at`,
+        },
+      });
   }
 
   return results;
-}
-
-/** Unpaid working days in a period — what payroll prorates against. */
-export async function unpaidDaysInPeriod(
-  employeeId: number,
-  year: number,
-  month: number,
-): Promise<{ unpaidDays: number; workingDays: number }> {
-  const [row] = await evaluatePeriod({
-    year,
-    month,
-    employeeIds: [employeeId],
-    persist: false,
-  });
-  return row
-    ? { unpaidDays: row.unpaidDays, workingDays: row.workingDays }
-    : { unpaidDays: 0, workingDays: 0 };
 }

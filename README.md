@@ -12,9 +12,11 @@ Modelled on how SAP HCM organises the same problem, built to be operated by peop
 
 **Managers** approve their team's leave, rate their team's performance, and recommend increments.
 
-**Employees** apply for leave, watch their own balances, read their payslips, declare their tax investments, and download their Form 16.
+**Employees** see what the company holds about them, apply for leave, watch their own balances, read their payslips, declare their tax investments, and download their Form 16.
 
-Each role opens to a different home screen showing only what that person has to decide or act on.
+Each role opens to a different home screen showing only what that person has to decide or act on: one card of what needs attention, the four figures that matter to them, and what is coming up this fortnight.
+
+While this is a prototype, the sign-in page lists one demo account per role, and a click signs straight in.
 
 ---
 
@@ -28,15 +30,26 @@ Employee master data held the way SAP holds it: every fact about a person is a d
 
 Hiring is a guided action rather than a form. Choose the action, the org assignment, the personal details and the starting pay, and the underlying records are created together or not at all.
 
+HR keeps each person's documents — offer letters, identity and address proofs — on their record, and every time someone opens a person's pay, bank details, tax or documents, it is logged. HR sees that log on the record; the employee sees it on their own profile, under "Who has viewed your records".
+
 ### Time and absence
 Leave types, annual entitlements, and a request that actually travels: an employee applies, their manager approves or rejects, the balance moves, and unpaid leave reaches payroll as a deduction. Attendance, overtime, shift patterns and the public holiday calendar sit alongside it.
+
+A team calendar shows who is away on which day, including requests still waiting on a decision.
 
 ### Payroll
 A payroll period opens, locks for processing, and closes once posted — so nobody edits the inputs to a run that has already been paid.
 
-The run itself works gross to net: basic pay, allowances, recurring deductions, one-off payments, unpaid-leave proration, provident fund and tax, ending in a net figure and a payslip that itemises every line. Employees missing bank details are flagged rather than silently skipped.
+The run itself works gross to net: basic pay for the days each person was employed, allowances, recurring and one-off payments, unpaid-leave proration, arrears, provident fund and tax, ending in a net figure and a payslip that itemises every line. Employees missing bank details are flagged rather than silently skipped.
 
-Downstream it produces the bank transfer file, the journal entries for the finance ledger, and the statutory remittances owed to each authority.
+- **Joiners, leavers and mid-month raises** are paid for exactly the working days each rate applied.
+- **Corrections to months already paid** — a raise backdated by an increment, unpaid leave recorded late — are paid or recovered as arrears in the next run, once.
+- **Tax is spread evenly across the year**, from what has been paid and deducted so far; tax on a bonus is taken in the month it is paid.
+- **Off-cycle runs** pay a bonus or a final settlement outside the monthly run, even after the month is posted.
+- **Before posting**, the run lists everyone new or whose pay moved by 10% or more since last month, with the likely reason.
+- Runs are calculated in small batches, so a large organisation never meets a time limit, and an interrupted run resumes where it stopped.
+
+Downstream it produces the bank transfer file as a download, the journal entries for the finance ledger by cost centre, and the statutory remittances owed to each authority. Any run exports to a spreadsheet with a column per wage type.
 
 ### Recruitment
 Requisitions against vacant positions, candidates and their applications, a pipeline from applied through screened, interviewed and offered, and interview rounds with feedback and ratings.
@@ -51,7 +64,10 @@ A finalised rating becomes an increment recommendation. Approve it and it become
 ### Tax and Form 16
 Investment declarations under the old and new regimes, a quarterly register of tax deducted and deposited with challan references, and both halves of the annual certificate — Part A's quarterly summary and Part B's full computation from gross salary through exemptions and deductions to tax payable.
 
-Part B reconciles against Part A, so the certificate an employee files with is internally consistent.
+Part B reconciles against Part A, so the certificate an employee files with is internally consistent. Section 87A's rebate includes the new regime's marginal relief just above ₹12 lakh.
+
+### Reports
+Headcount and payroll cost by department, leave taken by kind, joiners, leavers and attrition — the numbers someone asks for in a meeting — and CSV exports of the employee list, payroll runs and the tax register.
 
 ---
 
@@ -77,6 +93,8 @@ The full specification is in [DESIGN_LANGUAGE.md](DESIGN_LANGUAGE.md).
 
 ## Status
 
-Prototype under construction. The seven modules are being built in dependency order, starting with org management, and each phase ships to a live deployment as it completes.
+A working prototype. All seven modules and every screen in the original blueprint are built, with role dashboards, a command menu (Ctrl K), print-ready payslips and certificates, and phone layouts, and it deploys to a live URL on every push.
 
-Developer documentation, including the environment setup and the phase plan, is in [BUILD_PLAN.md](BUILD_PLAN.md).
+It is not production software yet — the statutory scope is partial and the authentication is a demo's. What it would take is written down in [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md), and what could come next in [ROADMAP.md](ROADMAP.md).
+
+Where the build stands is in [STATUS.md](STATUS.md). Developer documentation — environment setup, the data model, the engines and the phase plan — is in [BUILD_PLAN.md](BUILD_PLAN.md).

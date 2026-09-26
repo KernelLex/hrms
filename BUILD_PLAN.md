@@ -92,6 +92,19 @@ It costs us nothing. The CLI only creates databases and mints tokens — both ar
 
 If the CLI is ever genuinely needed, the options are a WSL distro (needs admin) or running it from a Linux CI job.
 
+### The second machine
+
+Phase 9 was built on a different Windows 11 machine (`C:\Users\Admin`), with a standard installer setup rather than the portable one above:
+
+| Tool | Version | Note |
+|---|---|---|
+| Node.js | 24.16.0 | `C:\Program Files\nodejs` |
+| Git | Git for Windows | Git Bash is the shell the scripts assume |
+| GitHub CLI | logged in as `tfthushaar` | pushes and commits use that account |
+| Wrangler | 4.141 through `npx` | logged in to the Cloudflare account of thushaarr.bsc23@rvu.edu.in; R2 not enabled there either |
+| Chrome and Edge | 153 | `npm run audit:ui` drives whichever is installed |
+| Python | 3.12 | used only for one-off edits, not by the project |
+
 ### Accounts to have ready
 
 Vercel, Turso and Cloudflare (R2 enabled), plus push access to `github.com/KernelLex/hrms`. All three have free tiers that comfortably cover this prototype.
@@ -108,9 +121,11 @@ Vercel, Turso and Cloudflare (R2 enabled), plus push access to `github.com/Kerne
 | Icons | `lucide-react` | Named in the design language, outline, 24px grid |
 | Database | Turso (libSQL) via `@libsql/client` | HTTP-based, so serverless functions need no connection pool |
 | Queries | Drizzle ORM + drizzle-kit | First-class libSQL support, and `drizzle-kit generate` emits real SQL migration files we commit and review |
-| Objects | Cloudflare R2, S3-compatible, `@aws-sdk/client-s3` | Presigned URLs, no egress fees |
+| Objects | Cloudflare R2 through `aws4fetch`, or the database until R2 is enabled | Presigned downloads, no egress fees; `aws4fetch` signs S3 requests with no dependencies, where the AWS SDK is megabytes |
 | Auth | `jose` signed session cookie | One credentials provider, seeded users, three fixed roles — Auth.js would add adapters and beta churn for no gain |
 | Hosting | Vercel | Push to `main` deploys; branches get preview URLs |
+| Tests | Vitest | Runs the engines against a fresh SQLite file migrated and seeded each run, so tests never touch Turso |
+| UI audit | `playwright-core` and `@axe-core/playwright` | Drives the installed Chrome through every screen as every role at 1280 and 375 pixels, with axe for WCAG A and AA |
 
 **On Drizzle versus hand-written DDL.** You previously asked to own the full DDL. Drizzle keeps that: the TypeScript schema is the source of truth, `drizzle-kit generate` emits plain `.sql` migration files into `db/migrations/`, and those are committed and readable. What you gain is type-safe queries across 51 CRUD surfaces, which is most of this build. If you would rather hand-write the SQL and drop Drizzle to a query builder only, that is a one-line change to this plan.
 
@@ -135,44 +150,69 @@ Turso is SQLite. These are not stylistic preferences — getting any of them wro
 
 ## 4. Repository layout
 
-Everything lives under `src/` so the `@/*` path alias reaches it.
+Everything the app runs lives under `src/` so the `@/*` path alias reaches it.
 
 ```
 hrms/
   README.md                  product document
+  STATUS.md                  where the build stands
   BUILD_PLAN.md              this file
+  PRODUCTION_READINESS.md    what stands between the prototype and real payroll
+  ROADMAP.md                 features that could come next
   DESIGN_LANGUAGE.md         visual system, unchanged
   HR MODULE/                 original blueprint + HTML mockups, kept as reference
   drizzle.config.ts
+  vitest.config.mts          the test runner, pointed at .vitest/test.db
+  scripts/
+    ui-audit.ts              npm run audit:ui — every screen, role and width, with axe
+    dev-session.ts           a signed session cookie for scripted checks
+  tests/                     npm test — engines, repositories, Server Functions, exports
+    support/                 global setup (migrate + seed), auth mocks, fixtures
   src/
     db/
       schema/                Drizzle schema, one file per module, re-exported by index.ts
-      migrations/            generated .sql, committed
-      seed/run.ts            demo org, employees, wage types, tax slabs, holidays
+      migrations/            generated .sql, committed (hand edits marked in the file)
+      seed/index.ts          the demo organisation, as a function
+      seed/run.ts            npm run db:seed
       migrate.ts             applies migrations against file: or Turso
       load-env.ts            .env.local loader for standalone scripts
     app/
-      sign-in/               no shell
+      sign-in/               no shell; one-click demo accounts
       (app)/                 route group, everything behind the shell
         page.tsx             role-aware home
+        me/                  the employee's own profile
+        reports/             HR reports
         org/ core-hr/ time/ payroll/ recruitment/ performance/ tax/
-      api/health/            liveness + database reachability
-      actions/               server actions, grouped by module
-      layout.tsx
+        loading.tsx error.tsx not-found.tsx
+      api/
+        health/              liveness + database reachability
+        documents/[id]/      permission-checked, logged downloads
+        payroll/bank-file/   the NEFT file as CSV
+        export/              employees, payroll runs, the tax register as CSV
+      actions/               Server Functions, grouped by module
+      layout.tsx global-error.tsx not-found.tsx
       globals.css            design tokens from DESIGN_LANGUAGE.md §15
     components/
       ui.tsx                 buttons, cards, badges, tables, figures, tabs, empty states
       inputs.tsx             fields, selects, chips, form grid, error block
       shell.tsx              sidebar, mobile drawer, top bar, brand mark
-      placeholder.tsx        honest stub for unbuilt modules
+      command-menu.tsx       Ctrl K
+      home.tsx               needs attention, coming up
+      charts.tsx             bar lists
+      pagination.tsx         paging through the URL
+      documents.tsx          a person's documents
+      master-screen.tsx      list, dialog, edit and delete for master data
+      payslip.tsx form16.tsx the printed documents
     lib/
       db.ts                  libSQL client
       auth.ts                session, hasRole, requireRole
-      nav.ts                 role-filtered navigation
-      money.ts               paise <-> display, the only place formatting happens
-      utils.ts
-      r2.ts                  presigned upload/download (phase 9)
-      engines/               timeslice.ts quota.ts payroll.ts tax.ts
+      nav.ts commands.ts     role-filtered navigation and command menu entries
+      money.ts dates.ts csv.ts   formatting at the edge, and CSV safety
+      storage.ts             documents in R2 or the database
+      access-log.ts          who read whose records
+      demo.ts                the demo accounts
+      engines/               timeslice.ts quota.ts payroll.ts tax.ts time-evaluation.ts
+      repositories/          SQL reads: employees, home, profile, calendar, reports, variance
     proxy.ts                 optimistic auth redirect (Next 16 renamed middleware)
   .env.example
 ```
@@ -181,7 +221,7 @@ hrms/
 
 ## 5. Data model
 
-61 tables, prefixed by module. Every infotype table carries the same time-slice contract: `employee_id, valid_from, valid_to, seq, created_by, created_at`.
+63 tables, prefixed by module. Every infotype table carries the same time-slice contract: `employee_id, valid_from, valid_to, seq, created_by, created_at`.
 
 **Why one table per infotype rather than one table with a JSON blob.** The blueprint suggests `employee_infotype_records` with `data_json`. Reject it: payroll must read basic pay as a typed, indexed, foreign-keyed value, and a blob turns every engine query into string parsing. One table per infotype is also what SAP does — PA0001, PA0002, PA0008.
 
@@ -190,17 +230,19 @@ hrms/
 | `om_` | company, personnel_area, personnel_sub_area, job, org_unit, position, reporting_line |
 | `pa_` | employee, it0000_action, it0001_org_assignment, it0002_personal_data, it0006_address, it0007_planned_working_time, it0008_basic_pay, it0009_bank_details, it0021_family_member, it0105_communication |
 | `pt_` | absence_type, attendance_type, quota_type, it2001_absence, it2002_attendance, it2006_absence_quota, leave_request, work_schedule_rule, holiday, time_evaluation_result |
-| `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, payroll_run, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line, gl_posting, gl_posting_line, statutory_remittance |
+| `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line, gl_posting, gl_posting_line, statutory_remittance |
 | `rc_` | requisition, candidate, application, application_stage_history, interview, hire_conversion |
 | `pm_` | appraisal_template, appraisal_cycle, goal, appraisal, calibration, increment_recommendation |
 | `tds_` | section_master, tax_slab, employee_declaration, deduction_register, form16_part_a, form16_part_b |
 | `sec_` | app_user, role, user_role |
-| `app_` | document — registry of every R2 object: key, content type, size, owning entity, uploaded_by |
+| `app_` | document — registry of every stored file: key, content type, size, hash, owning entity, uploaded_by, and where the bytes live · document_content — the bytes, for files stored in the database · access_log — who read whose records |
 
 Two tables exist that the mockups do not show but the features require:
 
 - **`py_payroll_result_line`** — the per-wage-type gross-to-net detail. Without it the payslip has nothing real to render and PY-03's totals are decoration.
 - **`tds_tax_slab`** — old and new regime slabs per financial year. Without it Form 16 Part B's tax figure can only be hardcoded, which the mockup does.
+
+Phase 9 added `py_run_member` (the people a run is to calculate, so it can proceed in batches and resume), `app_document_content` and `app_access_log`, and columns for run type and progress, the run that paid each one-off payment, the period an arrears line corrects, and working days employed.
 
 ---
 
@@ -210,8 +252,11 @@ The line between a prototype and a clickable mockup. Everything else is CRUD.
 
 1. **Time-slice** (`timeslice.ts`) — writing a new infotype row delimits the previous one to `valid_from - 1` in the same transaction, guarded by a partial unique index on `(employee_id, valid_from)`. Exposes an as-of-date read. Powers CH-02 history, CH-03's as-of viewer, and every salary lookup.
 2. **Quota** (`quota.ts`) — generates entitlement rows; approving leave decrements used, rejection restores it. Balance is derived, never stored loose.
-3. **Payroll** (`payroll.ts`) — basic pay as of period end → wage-type rules (fixed, % of basic, formula) → recurring and one-off payments landing in the period → unpaid-leave proration from absences → PF and TDS → net. Writes result and result lines. Emits the error row when bank details are missing, exactly as PY-03 shows.
-4. **Tax** (`tax.ts`) — slab-based, old versus new regime, standard deduction, 87A rebate, 4% cess. Feeds both the monthly TDS wage type and Form 16 Part B, so Part B reconciles against Part A instead of being hardcoded.
+3. **Payroll** (`payroll.ts`) — basic pay for each working day employed, slice by slice, less unpaid days → percentage allowances → recurring and one-off payments → arrears for earlier posted months whose inputs changed after they were paid → PF and TDS → net. Writes result and result lines. Emits the error row when bank details are missing, exactly as PY-03 shows.
+   - **Runs in batches.** `startRun` fixes the people to calculate; `processRunBatch` calculates the next twenty, each person's reads in one batch and writes in one atomic batch.
+   - **Regular and off-cycle.** An off-cycle run pays one-off payments still owed, even after the period is posted. Each one-off is paid exactly once.
+   - **TDS** projects the year from what has been paid, subtracts what has been deducted, and spreads the rest; tax on a one-off amount is taken in the month it is paid.
+4. **Tax** (`tax.ts`) — slab-based, old versus new regime, standard deduction, 87A rebate with the new regime's marginal relief, 4% cess. Feeds both the monthly TDS and Form 16 Part B, so Part B reconciles against Part A instead of being hardcoded.
 
 Two cross-module transactions: **hire conversion** (RC-05 creates employee plus IT0000/0001/0002/0008 and flips the position's vacancy flag, atomically) and **increment push** (PM-05 writes a new basic-pay slice the next payroll run picks up).
 
@@ -230,6 +275,8 @@ Two cross-module transactions: **hire conversion** (RC-05 creates employee plus 
 | Recruitment | RC-01…05 | — |
 | Performance | PM-01…05 | — |
 | Tax / Form 16 | TDS-01…05 | — |
+
+Phase 9 added seven screens outside the blueprint: the employee's own profile, HR reports, the team calendar, the employee record's Documents and Access log tabs, and the not-found and error screens. Two more gained tabs of their own: payroll runs switch between the regular run and each off-cycle run, and the run screen carries the variance check.
 
 ---
 
@@ -259,20 +306,27 @@ Specific screen translations:
 
 Red appears only where it is earned: PY-03's missing-bank-details error, overdue statutory remittances, and a negative Form 16 balance.
 
+**One deliberate departure.** DESIGN_LANGUAGE.md puts navigation group labels, tab counts and upcoming stage labels in `text-faint`. At 12px that measures 2.6 : 1 and fails WCAG AA, and the same document's §13 says text people must read is `text-muted` or darker. The accessibility pass sided with §13.
+
 **No employee photos.** §Avatars is explicit — initials on a `soft` circle, never photographs. R2 stores documents only.
 
 ---
 
 ## 9. Cloudflare R2
 
-| What | Produced by |
-|---|---|
-| Candidate resumes | RC-02, upload replacing the mockup's "Resume Link" text field |
-| Payslip PDFs | PY-04 |
-| Form 16 Part A and Part B PDFs | TDS-04, TDS-05 |
-| Bank transfer files (NEFT CSV) | PY-05 |
+| What | Produced by | Stored? |
+|---|---|---|
+| Candidate resumes | RC-02, replacing the mockup's "Resume Link" text field | Yes |
+| Employee documents | The employee record's Documents tab | Yes |
+| Payslips | PY-04 | No — rendered from the result lines, printed or saved as PDF |
+| Form 16 Parts A and B | TDS-04, TDS-05 | No — rendered from the certificate record |
+| Bank transfer files (NEFT CSV) | PY-05 | No — rendered from the transfer lines on download |
 
-Uploads and downloads both go through presigned URLs so file bytes never pass through a Vercel function. Every object is registered in `app_document`; nothing is referenced by bare key.
+Every stored object is registered in `app_document`; nothing is referenced by bare key. Generated documents are rendered from the records they come from, because posted records do not change and a stored copy could only agree with them or be wrong.
+
+`src/lib/storage.ts` stores in R2 when all four R2 variables are set, and in `app_document_content` otherwise. Each row records which, so switching needs no migration. Uploads pass through a Server Function (4 MB cap, under Vercel's 4.5 MB request limit) and are recognised by their first bytes, not their name; downloads from R2 redirect to a presigned URL valid for five minutes, so the bytes never pass through a Vercel function.
+
+**Status: pending.** R2 is not enabled on either Cloudflare account tried (API error 10042). The steps to finish are in STATUS.md.
 
 ---
 
@@ -286,9 +340,19 @@ R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
 R2_BUCKET=
 AUTH_SECRET=
+DEMO_SIGN_IN=          # "off" to remove one-click sign-in
 ```
 
-Three databases: local development, Vercel preview, Vercel production. Never point local development at the production database. `.env.example` is committed; `.env.local` is not.
+Three databases: local development, Vercel preview, Vercel production. Never point local development at the production database.
+
+**Where this stands.** There is one Turso database, and `.env.local` points at it. For work that changes data, run against a local copy instead:
+
+```bash
+TURSO_DATABASE_URL=file:.local/dev.db npm run db:reset   # migrate and seed a local file
+TURSO_DATABASE_URL=file:.local/dev.db npx next dev       # the app against it
+```
+
+A value already in the environment wins over `.env.local`, for both Next.js and the scripts. `.env.example` is committed; `.env.local` is not.
 
 ---
 
@@ -307,7 +371,7 @@ Each phase ends with a commit and a push to `main`, which triggers a Vercel depl
 | 6 | Recruitment | RC-01…05, pipeline, hire conversion | An offered candidate becomes an employee with infotypes created |
 | 7 | Performance | PM-01…05, calibration, increment push | An approved increment writes a new basic-pay slice the next run picks up |
 | 8 | Tax and Form 16 | TDS-01…05, tax engine, Part A and Part B | Part B's tax reconciles against Part A's deducted total |
-| 9 | Finish | Role dashboards, Ctrl-K command menu, R2 document storage, print stylesheets, empty/loading/error states, 375px pass, accessibility pass | §16 review checklist passes on every screen |
+| 9 | Finish | Role dashboards, Ctrl-K command menu, document storage, print stylesheets, empty/loading/error states, 375px pass, accessibility pass, a test runner, and the known gaps from phase 8 | §16 review checklist passes on every screen — **done**; the audit script checks what can be checked mechanically, and R2 waits on the account |
 
 Phase order follows the blueprint's own recommendation, and it is right: every module foreign-keys into Org Management and Core HR, so those land first.
 
@@ -325,6 +389,22 @@ Recorded so they are not rediscovered.
 
 **winget needs `--source winget --accept-source-agreements`** on this machine, and cannot install machine-wide without admin. See §1.
 
+**Unlayered CSS beats every Tailwind utility.** Tailwind 4 puts utilities in `@layer utilities`, and CSS outside any layer outranks all layers whatever the specificity. A global `:focus-visible` rule therefore could not be switched off by `focus-visible:outline-none`, and every text field drew an outline on top of its border and ring. Base rules belong in `@layer base`.
+
+**An `sr-only` label can widen the page.** It is absolutely positioned; inside a table's scroll wrapper that is not `position: relative`, it escapes the clip at its static position past the right edge and makes the whole page scroll sideways at 375px. The table wrapper is `relative`.
+
+**A grid with no column template grows to fit its content.** `lg:grid-cols-[1fr_320px]` alone leaves one implicit `auto` column on phones, which widens to a table's min-content. Use `grid-cols-1` and `minmax(0,1fr)`.
+
+**A local SQLite file does not enforce foreign keys**, and the libsql client opens a pool of connections with no hook to switch them on. Anything that relies on `ON DELETE CASCADE` works on Turso and silently leaves orphans locally. The payroll engine deletes a run's dependents explicitly.
+
+**drizzle-kit drops `ON DELETE` from `ALTER TABLE … ADD COLUMN … REFERENCES`.** Migration 0006 restores it by hand; read generated SQL before applying it.
+
+**Git Bash rewrites arguments that look like paths.** `/` becomes `C:/Program Files/Git/`. Prefix a command with `MSYS_NO_PATHCONV=1` when passing URL paths to a script.
+
+**A "use server" file may only export async functions.** Constants a Server Function shares with the client go in a plain module (`src/lib/document-kinds.ts`).
+
+**`after()` needs a request.** Tests call route handlers and Server Functions directly, so the test setup replaces `after` with an immediate call.
+
 ---
 
 ## 13. Conventions
@@ -333,3 +413,7 @@ Recorded so they are not rediscovered.
 - Money crosses no boundary as a float. Paise in, formatted string out, one helper.
 - Every table write that changes employee master data goes through the time-slice engine, never a bare insert.
 - Sentence case in UI copy, buttons are a verb plus an object, no emojis. §12 of the design language governs all user-visible text.
+- Dates are formatted by `src/lib/dates.ts` and nowhere else: "26 Sept 2026", "2:30 pm", India time.
+- Engine and repository changes come with tests, and a test that cannot fail is not a test: check that it fails when the code is broken.
+- Before pushing: `npx tsc --noEmit`, `npm run lint`, `npm test`, and `npm run audit:ui` against a running dev server.
+- Hand-written SQL reads live in `src/lib/repositories/`; a list that grows with headcount is paged in SQL, never sliced in JavaScript.

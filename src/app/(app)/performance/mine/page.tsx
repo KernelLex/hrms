@@ -25,6 +25,7 @@ import {
 } from "@/components/ui";
 import { Target } from "lucide-react";
 import { SelfReviewForm } from "./form";
+import { formatDate } from "@/lib/dates";
 
 /** Employee self-service: your goals and your self review. */
 export default async function MyAppraisalPage() {
@@ -103,7 +104,7 @@ export default async function MyAppraisalPage() {
         subtitle={`${current.cycleName}, ${current.periodLabel}.`}
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-col gap-6">
           <Card>
             <CardHeader
@@ -134,7 +135,7 @@ export default async function MyAppraisalPage() {
                       <Td numeric>{g.weightagePercent}%</Td>
                       <Td>
                         {g.targetDate ? (
-                          <span className="tabular text-secondary">{g.targetDate}</span>
+                          <span className="tabular text-secondary">{formatDate(g.targetDate)}</span>
                         ) : (
                           <span className="text-decor">&mdash;</span>
                         )}

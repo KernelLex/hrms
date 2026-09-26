@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { asc, desc, eq, count } from "drizzle-orm";
+import { asc, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pmAppraisalCycle, pmAppraisalTemplate, pmAppraisal } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { saveCycle, deleteCycle } from "@/app/actions/performance";
 import { Status } from "@/components/ui";
 import { PerformanceTabs } from "../tabs";
 import { OpenCycleButton } from "./actions";
+import { formatDateRange } from "@/lib/dates";
 
 const COLUMNS: Column[] = [
   { key: "name", label: "Cycle" },
@@ -79,7 +80,7 @@ export default async function CyclesPage() {
             period: <span className="text-secondary">{r.periodLabel}</span>,
             dates: (
               <span className="tabular text-secondary">
-                {r.startDate} to {r.endDate}
+                {formatDateRange(r.startDate, r.endDate)}
               </span>
             ),
             template: (

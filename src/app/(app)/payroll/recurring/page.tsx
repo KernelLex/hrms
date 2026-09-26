@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { asc, eq, desc } from "drizzle-orm";
+import { asc, eq, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pyRecurringPayment, pyWageType, OPEN_ENDED } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
@@ -9,6 +9,8 @@ import { saveRecurringPayment, deleteRecurringPayment } from "@/app/actions/payr
 import { formatINR, toRupees } from "@/lib/money";
 import { TwoLine } from "@/components/ui";
 import { PayrollTabs } from "../tabs";
+import { formatDateRange } from "@/lib/dates";
+import { Pagination, pageFrom } from "@/components/pagination";
 
 const COLUMNS: Column[] = [
   { key: "employee", label: "Employee" },
@@ -18,10 +20,12 @@ const COLUMNS: Column[] = [
 ];
 
 /** PY-02 — IT0014 recurring payments and deductions. */
-export default async function RecurringPage() {
+export default async function RecurringPage(props: { searchParams: Promise<{ page?: string }> }) {
+  const { page, limit, offset } = pageFrom((await props.searchParams).page);
   const session = await getSession();
   if (!hasRole(session, "HR_ADMIN")) redirect("/payroll/my-payslips");
 
+  const [{ n: total }] = await db.select({ n: count() }).from(pyRecurringPayment);
   const [rows, wageTypes, employees] = await Promise.all([
     db
       .select({
@@ -36,7 +40,9 @@ export default async function RecurringPage() {
       })
       .from(pyRecurringPayment)
       .innerJoin(pyWageType, eq(pyWageType.code, pyRecurringPayment.wageTypeCode))
-      .orderBy(desc(pyRecurringPayment.startDate)),
+      .orderBy(desc(pyRecurringPayment.startDate))
+      .limit(limit)
+      .offset(offset),
     db
       .select()
       .from(pyWageType)
@@ -78,6 +84,8 @@ export default async function RecurringPage() {
     <>
       <PayrollTabs />
       <MasterScreen
+        total={total}
+        footer={<Pagination page={page} total={total} path="/payroll/recurring" noun="payments" />}
         title="Recurring payments"
         subtitle="Amounts that repeat every period until an end date — a fixed allowance, or a loan repayment."
         entity="recurring payment"
@@ -106,7 +114,7 @@ export default async function RecurringPage() {
             ),
             period: (
               <span className="tabular text-secondary">
-                {r.startDate} to {r.endDate === OPEN_ENDED ? "open" : r.endDate}
+                {formatDateRange(r.startDate, r.endDate)}
               </span>
             ),
           },

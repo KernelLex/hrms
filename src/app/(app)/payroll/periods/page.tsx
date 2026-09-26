@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pyPayrollPeriod, pyPayrollRun, omPersonnelArea } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
@@ -19,6 +19,7 @@ import {
 import { CalendarRange } from "lucide-react";
 import { PayrollTabs } from "../tabs";
 import { PeriodActions, NewPeriodForm } from "./actions";
+import { formatDate } from "@/lib/dates";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -112,7 +113,7 @@ export default async function PeriodsPage() {
                       </Td>
                       <Td>
                         {p.payDate ? (
-                          <span className="tabular text-secondary">{p.payDate}</span>
+                          <span className="tabular text-secondary">{formatDate(p.payDate)}</span>
                         ) : (
                           <span className="text-decor">&mdash;</span>
                         )}

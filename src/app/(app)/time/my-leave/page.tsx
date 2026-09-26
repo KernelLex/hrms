@@ -20,6 +20,7 @@ import {
 import { CalendarCheck } from "lucide-react";
 import { RequestLeaveForm } from "./form";
 import { CancelRequest } from "./cancel";
+import { formatDateRange } from "@/lib/dates";
 
 /** Employee self-service: balances, a request form, and your own history. */
 export default async function MyLeavePage() {
@@ -148,7 +149,7 @@ export default async function MyLeavePage() {
                     </Td>
                     <Td>
                       <span className="tabular text-secondary">
-                        {r.fromDate === r.toDate ? r.fromDate : `${r.fromDate} to ${r.toDate}`}
+                        {formatDateRange(r.fromDate, r.toDate)}
                       </span>
                     </Td>
                     <Td numeric>{r.payrollDays}</Td>

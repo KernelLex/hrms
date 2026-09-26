@@ -7,6 +7,7 @@ import { MasterScreen, type Column, type FieldDef } from "@/components/master-sc
 import { saveInterview, deleteInterview } from "@/app/actions/recruitment";
 import { TwoLine } from "@/components/ui";
 import { RecruitmentTabs } from "../tabs";
+import { formatDate, formatTime } from "@/lib/dates";
 
 const COLUMNS: Column[] = [
   { key: "candidate", label: "Candidate" },
@@ -129,8 +130,8 @@ export default async function InterviewsPage() {
             interviewer: <span className="text-secondary">{r.interviewer}</span>,
             when: (
               <span className="tabular text-secondary">
-                {r.scheduledDate}
-                {r.scheduledTime ? `, ${r.scheduledTime}` : ""}
+                {formatDate(r.scheduledDate)}
+                {r.scheduledTime ? `, ${formatTime(r.scheduledTime)}` : ""}
               </span>
             ),
             mode: <span className="text-secondary">{r.mode}</span>,

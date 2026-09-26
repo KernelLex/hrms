@@ -4,6 +4,7 @@ import { omReportingLine, omPosition } from "@/db/schema";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveReportingLine, deleteReportingLine } from "@/app/actions/org";
 import { TwoLine } from "@/components/ui";
+import { formatDate } from "@/lib/dates";
 
 const COLUMNS: Column[] = [
   { key: "position", label: "Position" },
@@ -62,13 +63,13 @@ export default async function ReportingLinesPage() {
       emptyHint="Record a reporting change to start the history."
       rows={rows.map((r) => ({
         id: String(r.id),
-        describe: `${r.positionCode} reporting to ${r.reportsToCode} from ${r.effectiveFrom}`,
+        describe: `${r.positionCode} reporting to ${r.reportsToCode} from ${formatDate(r.effectiveFrom)}`,
         cells: {
           position: <TwoLine value={r.positionCode} sub={title.get(r.positionCode)} />,
           reportsTo: (
             <TwoLine value={r.reportsToCode} sub={title.get(r.reportsToCode)} />
           ),
-          effective: <span className="tabular">{r.effectiveFrom}</span>,
+          effective: <span className="tabular">{formatDate(r.effectiveFrom)}</span>,
           remarks: (
             <span className="text-secondary">
               {r.remarks ?? <span className="text-decor">&mdash;</span>}

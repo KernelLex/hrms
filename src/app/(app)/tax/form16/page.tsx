@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tdsForm16, tdsTaxSlab, tdsDeductionRegister } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";

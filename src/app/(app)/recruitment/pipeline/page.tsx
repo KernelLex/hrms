@@ -26,6 +26,7 @@ import { StageTrack } from "@/components/stage-track";
 import { Users } from "lucide-react";
 import { RecruitmentTabs } from "../tabs";
 import { PipelineActions, NewApplicationForm } from "./actions";
+import { formatDate } from "@/lib/dates";
 
 /** RC-03 — the application pipeline. */
 export default async function PipelinePage() {
@@ -137,7 +138,7 @@ export default async function PipelinePage() {
                         />
                       </Td>
                       <Td>
-                        <span className="tabular text-secondary">{r.appliedDate}</span>
+                        <span className="tabular text-secondary">{formatDate(r.appliedDate)}</span>
                       </Td>
                       <Td numeric>
                         {r.offeredSalaryPaise ? (

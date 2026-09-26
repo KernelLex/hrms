@@ -6,18 +6,17 @@ import {
   pyPayrollResultLine,
   pyPayrollRun,
   pyPayrollPeriod,
+  paEmployee,
   omCompany,
 } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
 import { getEmployee, fullName } from "@/lib/repositories/employees";
+import { logAccess } from "@/lib/access-log";
+import { formatMonth } from "@/lib/dates";
+import { periodEnd, periodStart } from "@/lib/engines/payroll";
 import { Card, PageHeader } from "@/components/ui";
 import { Payslip } from "@/components/payslip";
 import { PrintButton } from "@/components/print-button";
-
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
 
 /** PY-04 — the remuneration statement, rendered from the stored result lines. */
 export default async function PayslipPage(props: {
@@ -40,7 +39,13 @@ export default async function PayslipPage(props: {
     redirect("/payroll/my-payslips");
   }
 
-  const [lines, run, employee, companies] = await Promise.all([
+  logAccess(session, {
+    subjectEmployeeId: result.employeeId,
+    resource: "payslip",
+    resourceId: result.id,
+  });
+
+  const [lines, run, employee, companies, person] = await Promise.all([
     db
       .select()
       .from(pyPayrollResultLine)
@@ -49,6 +54,7 @@ export default async function PayslipPage(props: {
     db.query.pyPayrollRun.findFirst({ where: eq(pyPayrollRun.id, result.runId) }),
     getEmployee(result.employeeId),
     db.select().from(omCompany),
+    db.query.paEmployee.findFirst({ where: eq(paEmployee.id, result.employeeId) }),
   ]);
 
   const period = run
@@ -60,9 +66,16 @@ export default async function PayslipPage(props: {
   const company =
     companies.find((c) => c.code === employee?.company_code) ?? companies[0];
 
-  const periodLabel = period
-    ? `${MONTHS[period.month - 1]} ${period.year}`
-    : "Payroll period";
+  const periodLabel = period ? formatMonth(period.year, period.month) : "Payroll period";
+  const from = period ? periodStart(period.year, period.month) : "";
+  const to = period ? periodEnd(period.year, period.month) : "";
+  const joinedOn =
+    person && person.hireDate >= from && person.hireDate <= to ? person.hireDate : null;
+  const leftOn =
+    person?.terminationDate && person.terminationDate >= from && person.terminationDate <= to
+      ? person.terminationDate
+      : null;
+  const offCycleReason = run?.runType === "Off-cycle" ? (run.reason ?? "Off-cycle payment") : null;
 
   return (
     <>
@@ -72,12 +85,13 @@ export default async function PayslipPage(props: {
             ? { href: "/payroll/run", label: "Run payroll" }
             : { href: "/payroll/my-payslips", label: "My payslips" }
         }
-        title="Payslip"
+        title={offCycleReason ? "Off-cycle payslip" : "Payslip"}
         subtitle={`${employee ? fullName(employee) : "Employee"}, ${periodLabel}.`}
-        actions={<PrintButton />}
+        actions={<PrintButton label="Print or save as PDF" />}
+        screenOnly
       />
 
-      <Card className="overflow-hidden print:border-0">
+      <Card className="overflow-hidden print:rounded-none print:border-0">
         <Payslip
           employer={company?.name ?? "Company"}
           employerAddress={
@@ -87,13 +101,17 @@ export default async function PayslipPage(props: {
           employeeNumber={employee?.employee_number ?? "—"}
           position={employee?.position_title ?? undefined}
           period={periodLabel}
-          payDate={period?.payDate}
+          payDate={run?.payDate ?? period?.payDate}
           lines={lines}
           grossPaise={result.grossPaise}
           deductionsPaise={result.deductionsPaise}
           netPaise={result.netPaise}
           unpaidDays={result.unpaidDays}
           workingDays={result.workingDays}
+          employedDays={result.employedDays}
+          joinedOn={joinedOn}
+          leftOn={leftOn}
+          offCycleReason={offCycleReason}
         />
       </Card>
     </>

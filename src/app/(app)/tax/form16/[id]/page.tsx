@@ -3,6 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tdsForm16, tdsDeductionRegister } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
+import { logAccess } from "@/lib/access-log";
 import { getEmployee, fullName } from "@/lib/repositories/employees";
 import { Card, PageHeader } from "@/components/ui";
 import { Form16 } from "@/components/form16";
@@ -29,6 +30,12 @@ export default async function Form16CertificatePage(props: {
     redirect("/tax/form16");
   }
 
+  logAccess(session, {
+    subjectEmployeeId: certificate.employeeId,
+    resource: "Form 16",
+    resourceId: certificate.financialYear,
+  });
+
   const [quarters, employee] = await Promise.all([
     db
       .select()
@@ -49,10 +56,11 @@ export default async function Form16CertificatePage(props: {
         back={{ href: "/tax/form16", label: "Form 16" }}
         title="Form 16"
         subtitle={`${employee ? fullName(employee) : "Employee"}, financial year ${certificate.financialYear}.`}
-        actions={<PrintButton />}
+        actions={<PrintButton label="Print or save as PDF" />}
+        screenOnly
       />
 
-      <Card className="overflow-hidden print:border-0">
+      <Card className="overflow-hidden print:rounded-none print:border-0">
         <Form16
           data={{
             certificateNo: certificate.certificateNo,

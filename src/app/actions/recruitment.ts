@@ -11,7 +11,6 @@ import {
   rcApplication,
   rcApplicationStageHistory,
   rcInterview,
-  rcHireConversion,
   omPosition,
   paEmployee,
   PIPELINE_STAGES,
@@ -19,6 +18,14 @@ import {
   now,
 } from "@/db/schema";
 import { toPaise } from "@/lib/money";
+import {
+  storeDocument,
+  deleteDocument,
+  UploadError,
+  type StoredDocument,
+} from "@/lib/storage";
+import { appDocument } from "@/db/schema";
+import { todayInIndia } from "@/lib/dates";
 
 export type ActionState = { error?: string; ok?: boolean; employeeId?: number };
 
@@ -131,14 +138,19 @@ const CandidateInput = z.object({
   email: z.email("Enter a valid email address."),
   phone: z.string().nullable(),
   source: z.string().min(1),
-  resumeLink: z.string().nullable(),
+  // Rendered as a link, so only web addresses: a javascript: URL would run
+  // in HR's browser when they clicked it.
+  resumeLink: z
+    .string()
+    .regex(/^https?:\/\/\S+$/i, "A resume link must start with http:// or https://.")
+    .nullable(),
 });
 
 export async function saveCandidate(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const original = opt(form.get("originalCode"));
 
   const parsed = CandidateInput.safeParse({
@@ -174,7 +186,7 @@ export async function saveCandidate(
     // Applying is optional, but it is the usual next step.
     const requisitionId = num(form.get("requisitionId"));
     if (requisitionId) {
-      await createApplicationFor(candidate.id, requisitionId, "seed");
+      await createApplicationFor(candidate.id, requisitionId, session.username);
     }
   }
 
@@ -201,7 +213,76 @@ export async function deleteCandidate(
     return fail("That candidate was hired, so their record is kept for the audit trail.");
   }
 
+  // Documents have no foreign key to their owner, so they go explicitly.
+  const documents = await db
+    .select()
+    .from(appDocument)
+    .where(and(eq(appDocument.ownerType, "candidate"), eq(appDocument.ownerId, candidate.id)));
+  for (const d of documents) await deleteDocument(d);
+
   await db.delete(rcCandidate).where(eq(rcCandidate.id, candidate.id));
+  revalidateRecruitment();
+  return OK;
+}
+
+/**
+ * Stores a candidate's resume, replacing any earlier one. The new file is
+ * saved before the old one is removed, so a failed upload loses nothing.
+ */
+export async function uploadResume(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requireRole("HR_ADMIN");
+  const candidateId = num(form.get("candidateId"));
+  const candidate = await db.query.rcCandidate.findFirst({
+    where: eq(rcCandidate.id, candidateId),
+  });
+  if (!candidate) return fail("That candidate no longer exists.");
+
+  const file = form.get("file");
+  if (!(file instanceof File)) return fail("Choose a file to upload.");
+
+  const earlier = await db
+    .select()
+    .from(appDocument)
+    .where(
+      and(
+        eq(appDocument.ownerType, "candidate"),
+        eq(appDocument.ownerId, candidateId),
+        eq(appDocument.kind, "Resume"),
+      ),
+    );
+
+  let stored: StoredDocument;
+  try {
+    stored = await storeDocument({
+      ownerType: "candidate",
+      ownerId: candidateId,
+      kind: "Resume",
+      file,
+      uploadedBy: session.username,
+    });
+  } catch (err) {
+    if (err instanceof UploadError) return fail(err.message);
+    throw err;
+  }
+  for (const d of earlier) if (d.id !== stored.id) await deleteDocument(d);
+
+  revalidateRecruitment();
+  return OK;
+}
+
+export async function removeResume(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireRole("HR_ADMIN");
+  const doc = await db.query.appDocument.findFirst({
+    where: and(eq(appDocument.id, num(form.get("documentId"))), eq(appDocument.ownerType, "candidate")),
+  });
+  if (!doc) return fail("That file has already been removed.");
+  await deleteDocument(doc);
   revalidateRecruitment();
   return OK;
 }
@@ -221,7 +302,7 @@ async function createApplicationFor(
   });
   if (existing) return;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInIndia();
   const [application] = await db
     .insert(rcApplication)
     .values({

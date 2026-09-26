@@ -89,6 +89,10 @@ type Props = {
   allowEdit?: boolean;
   emptyHint: string;
   wideDialog?: boolean;
+  /** Under the table, inside the card: paging for lists that grow. */
+  footer?: React.ReactNode;
+  /** How many records exist in all, when the rows are one page of them. */
+  total?: number;
 };
 
 const INITIAL: ActionState = {};
@@ -107,6 +111,8 @@ export function MasterScreen({
   allowEdit = true,
   emptyHint,
   wideDialog,
+  footer,
+  total,
 }: Props) {
   const toast = useToast();
   const [editing, setEditing] = React.useState<Row | null>(null);
@@ -158,7 +164,7 @@ export function MasterScreen({
       />
 
       <Card>
-        {rows.length === 0 ? (
+        {rows.length === 0 && !total ? (
           <EmptyState
             icon={<Inbox />}
             title={`No ${entity} records yet`}
@@ -214,6 +220,7 @@ export function MasterScreen({
             </tbody>
           </Table>
         )}
+        {footer}
       </Card>
 
       {/* Create and edit share one dialog; the key remounts it so defaults reset. */}

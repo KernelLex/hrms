@@ -29,6 +29,7 @@ import {
 import { UserCheck } from "lucide-react";
 import { RecruitmentTabs } from "../tabs";
 import { ConvertForm } from "./form";
+import { formatDate } from "@/lib/dates";
 
 /** RC-05 — hire conversion, the bridge into Core HR. */
 export default async function HireConversionPage() {
@@ -177,7 +178,7 @@ export default async function HireConversionPage() {
                       <span className="text-secondary">{c.requisitionCode}</span>
                     </Td>
                     <Td>
-                      <span className="tabular text-secondary">{c.hireDate}</span>
+                      <span className="tabular text-secondary">{formatDate(c.hireDate)}</span>
                     </Td>
                     <Td numeric>{formatINR(c.offeredSalaryPaise)}</Td>
                   </Tr>

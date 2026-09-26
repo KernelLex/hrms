@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pmGoal, pmAppraisalCycle } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { MasterScreen, type Column, type FieldDef } from "@/components/master-sc
 import { saveGoal, deleteGoal } from "@/app/actions/performance";
 import { TwoLine, Notice } from "@/components/ui";
 import { PerformanceTabs } from "../tabs";
+import { formatDate } from "@/lib/dates";
 
 const COLUMNS: Column[] = [
   { key: "employee", label: "Employee" },
@@ -124,7 +125,7 @@ export default async function GoalsPage() {
               goal: r.description,
               weight: <span className="tabular">{r.weightagePercent}%</span>,
               target: r.targetDate ? (
-                <span className="tabular text-secondary">{r.targetDate}</span>
+                <span className="tabular text-secondary">{formatDate(r.targetDate)}</span>
               ) : (
                 <span className="text-decor">&mdash;</span>
               ),

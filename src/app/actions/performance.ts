@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { requireRole, requireSession, hasRole } from "@/lib/auth";
 import {
@@ -119,15 +119,17 @@ export async function openCycle(
     .where(eq(paEmployee.employmentStatus, "Active"));
 
   const updatedAt = now();
-  for (const e of employees) {
+  if (employees.length > 0) {
     await db
       .insert(pmAppraisal)
-      .values({
-        cycleId: id,
-        employeeId: e.id,
-        status: "Pending self review",
-        updatedAt,
-      })
+      .values(
+        employees.map((e) => ({
+          cycleId: id,
+          employeeId: e.id,
+          status: "Pending self review",
+          updatedAt,
+        })),
+      )
       .onConflictDoNothing();
   }
 
@@ -389,26 +391,39 @@ export async function generateIncrements(
   const createdAt = now();
   let created = 0;
 
+  // What already exists for the cycle, and everyone's pay on the effective
+  // date, read once each rather than once per person.
+  const employeeIds = finalised.map((f) => f.employeeId);
+  const [existingRecs, payRows] = await Promise.all([
+    db
+      .select()
+      .from(pmIncrementRecommendation)
+      .where(eq(pmIncrementRecommendation.cycleId, cycleId)),
+    db
+      .select({ employeeId: paBasicPay.employeeId, amount: paBasicPay.amountPaise })
+      .from(paBasicPay)
+      .where(
+        and(
+          inArray(paBasicPay.employeeId, employeeIds),
+          lte(paBasicPay.validFrom, effectiveDate),
+          gte(paBasicPay.validTo, effectiveDate),
+        ),
+      ),
+  ]);
+  const existingOf = new Map(existingRecs.map((r) => [r.employeeId, r]));
+  const payOf = new Map(payRows.map((p) => [p.employeeId, p.amount]));
+
   for (const f of finalised) {
     if (!f.calibrated) continue;
 
-    const existing = await db.query.pmIncrementRecommendation.findFirst({
-      where: and(
-        eq(pmIncrementRecommendation.cycleId, cycleId),
-        eq(pmIncrementRecommendation.employeeId, f.employeeId),
-      ),
-    });
+    const existing = existingOf.get(f.employeeId);
     // Never overwrite something already approved or pushed.
     if (existing && existing.status !== "Draft") continue;
 
-    const pay = await readAsOf<{ amount_paise: number }>(
-      SLICED_TABLES.basicPay,
-      f.employeeId,
-      effectiveDate,
-    );
-    if (!pay) continue;
+    const pay = payOf.get(f.employeeId);
+    if (pay === undefined) continue;
 
-    const current = Number(pay.amount_paise);
+    const current = Number(pay);
     const bps = DEFAULT_INCREMENT[f.calibrated] ?? 0;
     const newSalary = current + Math.round((current * bps) / 10_000);
 

@@ -11,6 +11,7 @@ import * as React from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TableScroll } from "@/components/table-scroll";
 
 /* ------------------------------------------------------------------ button */
 
@@ -72,6 +73,24 @@ export function ButtonLink({
   );
 }
 
+/** A button-shaped plain link, for downloads the client router must not intercept. */
+export function ButtonAnchor({
+  variant = "secondary",
+  size = "md",
+  className,
+  ...props
+}: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+}) {
+  return (
+    <a
+      className={cn(BUTTON_BASE, BUTTON_VARIANT[variant], BUTTON_SIZE[size], className)}
+      {...props}
+    />
+  );
+}
+
 /* -------------------------------------------------------------------- card */
 
 export function Card({
@@ -123,15 +142,18 @@ export function PageHeader({
   subtitle,
   badge,
   actions,
+  screenOnly = false,
 }: {
   back?: { href: string; label: string };
   title: string;
   subtitle?: string;
   badge?: React.ReactNode;
   actions?: React.ReactNode;
+  /** Leave the header off paper, where the document below carries its own. */
+  screenOnly?: boolean;
 }) {
   return (
-    <div className="mb-8">
+    <div className={cn("mb-8", screenOnly && "print:hidden")}>
       {back ? (
         <Link
           href={back.href}
@@ -154,7 +176,7 @@ export function PageHeader({
           ) : null}
         </div>
         {actions ? (
-          <div className="flex shrink-0 items-center gap-2">{actions}</div>
+          <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>
         ) : null}
       </div>
     </div>
@@ -227,9 +249,9 @@ export function Status({ tone, children }: { tone: Tone; children: React.ReactNo
 
 export function Table({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-x-auto">
+    <TableScroll>
       <table className="w-full border-collapse text-left">{children}</table>
-    </div>
+    </TableScroll>
   );
 }
 
@@ -401,7 +423,7 @@ export function Tab({
     >
       {children}
       {count !== undefined ? (
-        <span className="tabular text-faint">{count}</span>
+        <span className="tabular text-muted">{count}</span>
       ) : null}
     </Link>
   );

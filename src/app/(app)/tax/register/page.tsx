@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tdsDeductionRegister, tdsTaxSlab } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { formatINR } from "@/lib/money";
 import {
   Card,
   PageHeader,
+  ButtonAnchor,
   Table,
   Th,
   Tr,
@@ -21,6 +22,8 @@ import {
 import { ReceiptText } from "lucide-react";
 import { TaxTabs } from "../tabs";
 import { BuildRegisterForm, ChallanButton } from "./actions";
+import { formatDate } from "@/lib/dates";
+import { Download } from "lucide-react";
 
 const QUARTERS = ["Q1 (Apr-Jun)", "Q2 (Jul-Sep)", "Q3 (Oct-Dec)", "Q4 (Jan-Mar)"];
 
@@ -58,6 +61,14 @@ export default async function RegisterPage(props: {
       <PageHeader
         title="Deduction register"
         subtitle="What payroll actually deducted each quarter, and the challan it was deposited against. Form 16 Part A is built from this."
+        actions={
+          financialYear && rows.length > 0 ? (
+            <ButtonAnchor href={`/api/export/register?fy=${financialYear}`} download>
+              <Download />
+              Export CSV
+            </ButtonAnchor>
+          ) : undefined
+        }
       />
 
       <BuildRegisterForm
@@ -130,7 +141,7 @@ export default async function RegisterPage(props: {
                     </Td>
                     <Td>
                       {r.depositDate ? (
-                        <Status tone="done">{r.depositDate}</Status>
+                        <Status tone="done">{formatDate(r.depositDate)}</Status>
                       ) : r.tdsDeductedPaise > 0 ? (
                         /* Tax deducted but not deposited is money owed to the
                            government — a genuine problem. */

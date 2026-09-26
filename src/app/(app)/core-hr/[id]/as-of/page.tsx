@@ -1,13 +1,16 @@
 import { notFound } from "next/navigation";
-import { eq, asc } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptWorkScheduleRule, omPosition, omOrgUnit } from "@/db/schema";
 import { readAsOf, SLICED_TABLES } from "@/lib/engines/timeslice";
 import { getEmployee } from "@/lib/repositories/employees";
 import { formatINR } from "@/lib/money";
+import { getSession } from "@/lib/auth";
+import { logAccess } from "@/lib/access-log";
 import { Card, CardHeader, KeyValue, KeyValueRow, Notice } from "@/components/ui";
 import { Field, DateInput } from "@/components/inputs";
 import { Clock } from "lucide-react";
+import { formatDate, todayInIndia } from "@/lib/dates";
 
 /**
  * CH-03 — display HR master data as it stood on a date.
@@ -27,10 +30,15 @@ export default async function AsOfPage(props: {
   const asOf =
     date && /^\d{4}-\d{2}-\d{2}$/.test(date)
       ? date
-      : new Date().toISOString().slice(0, 10);
+      : todayInIndia();
 
   const employee = await getEmployee(employeeId, asOf);
   if (!employee) notFound();
+
+  const session = await getSession();
+  if (session) {
+    logAccess(session, { subjectEmployeeId: employeeId, resource: "Record as of a date", resourceId: asOf });
+  }
 
   const [personal, org, pay, bank, time, schedules, positions, units] = await Promise.all([
     readAsOf<Record<string, string>>(SLICED_TABLES.personalData, employeeId, asOf),
@@ -77,7 +85,7 @@ export default async function AsOfPage(props: {
 
       {beforeHire ? (
         <Notice icon={<Clock />}>
-          {asOf} is before this employee joined on {employee.hire_date}, so there is
+          {formatDate(asOf)} is before this employee joined on {formatDate(employee.hire_date)}, so there is
           nothing to show.
         </Notice>
       ) : (
@@ -91,7 +99,7 @@ export default async function AsOfPage(props: {
                 </KeyValueRow>
                 <KeyValueRow label="Date of birth">
                   {personal?.date_of_birth ? (
-                    <span className="tabular">{personal.date_of_birth}</span>
+                    <span className="tabular">{formatDate(personal.date_of_birth)}</span>
                   ) : null}
                 </KeyValueRow>
                 <KeyValueRow label="Gender">{personal?.gender}</KeyValueRow>

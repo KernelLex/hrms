@@ -44,7 +44,7 @@ function Row({
       </span>
       <span className="text-sm font-medium text-ink">{name}</span>
       <span className="tabular text-[13px] text-muted">{code}</span>
-      {meta ? <span className="text-[13px] text-faint">{meta}</span> : null}
+      {meta ? <span className="text-[13px] text-muted">{meta}</span> : null}
       {badge}
     </div>
   );

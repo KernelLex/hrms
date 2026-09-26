@@ -6,6 +6,7 @@ import { getSession, hasRole } from "@/lib/auth";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveHoliday, deleteHoliday } from "@/app/actions/time";
 import { TimeTabs } from "../tabs";
+import { formatDate } from "@/lib/dates";
 
 const COLUMNS: Column[] = [
   { key: "date", label: "Date" },
@@ -56,9 +57,9 @@ export default async function HolidaysPage() {
           const day = new Date(`${r.date}T00:00:00Z`).getUTCDay();
           return {
             id: String(r.id),
-            describe: `${r.name} on ${r.date}`,
+            describe: `${r.name} on ${formatDate(r.date)}`,
             cells: {
-              date: <span className="tabular font-medium text-ink">{r.date}</span>,
+              date: <span className="tabular font-medium text-ink">{formatDate(r.date)}</span>,
               name: r.name,
               region: <span className="text-secondary">{r.region}</span>,
               weekday: (

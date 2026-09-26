@@ -67,28 +67,48 @@
   No override needed.
 */
 
-html {
-  -webkit-text-size-adjust: 100%;
+/*
+  Base rules live in the base layer so utilities can override them. Unlayered
+  CSS outranks every @layer regardless of specificity, which once meant the
+  focus outline below could not be removed from text inputs, contrary to §13:
+  inputs show the ink border and soft ring instead.
+*/
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    letter-spacing: -0.005em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--ink);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
 }
 
-body {
-  background: var(--canvas);
-  color: var(--ink);
-  font-family: var(--font-sans);
-  font-feature-settings: "ss01", "cv11";
-  letter-spacing: -0.005em;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/*
+  §10 availability grid — hatched cells. "On hold" is white with 1px ink lines
+  every 5px at 135°; "maintenance" is control grey with white lines at 45°.
+*/
+.hatch-ink {
+  background-image: repeating-linear-gradient(135deg, var(--ink) 0 1px, transparent 1px 5px);
 }
 
-::selection {
-  background: var(--ink);
-  color: #fff;
-}
-
-:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+.hatch-white {
+  background-image: repeating-linear-gradient(45deg, #fff 0 1px, transparent 1px 5px);
 }
 
 /* §3 — every amount, count and date that sits in a column or changes */
@@ -108,6 +128,16 @@ body {
   }
 }
 
+/* §8 — the loading line appears only if a screen is slow */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes scrim-in {
   from {
     opacity: 0;
@@ -124,6 +154,11 @@ dialog[open] {
 dialog[open]::backdrop {
   background: var(--scrim);
   animation: scrim-in 180ms var(--ease-enter);
+}
+
+/* §6 — the command menu floats on a lighter scrim than a dialog */
+dialog[data-command-menu][open]::backdrop {
+  background: rgb(0 0 0 / 0.25);
 }
 
 /* §8 — when the user has asked for less motion, keep only the fade */
@@ -147,9 +182,34 @@ dialog[open]::backdrop {
 }
 
 /* §11 — printed documents: ink only, sized for A4 */
+@page {
+  size: A4;
+  margin: 14mm 14mm 16mm;
+}
+
 @media print {
+  html,
   body {
     background: #fff;
+  }
+
+  /* The ink letterhead mark and hairlines are the design; keep them. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* A row, a figure or a heading is never split from what it labels. */
+  tr,
+  dl > div {
+    break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
   }
 
   .no-print {

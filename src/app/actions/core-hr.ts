@@ -7,12 +7,9 @@ import { db, rawClient } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import {
   paEmployee,
-  paAction,
   paOrgAssignment,
-  paPersonalData,
   paPlannedWorkingTime,
   paBasicPay,
-  paBankDetails,
   paAddress,
   paFamilyMember,
   paCommunication,
@@ -20,6 +17,7 @@ import {
   omOrgUnit,
   OPEN_ENDED,
   now,
+  today,
 } from "@/db/schema";
 import { saveTimeSlice, deleteTimeSlice, SLICED_TABLES } from "@/lib/engines/timeslice";
 import { toPaise } from "@/lib/money";
@@ -420,7 +418,7 @@ export async function saveRepeatingInfotype(
   const code = str(form.get("infotype"));
   const id = opt(form.get("id"));
   const createdAt = now();
-  const validFrom = str(form.get("validFrom")) || new Date().toISOString().slice(0, 10);
+  const validFrom = str(form.get("validFrom")) || today();
 
   const base = {
     employeeId,

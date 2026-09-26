@@ -22,6 +22,9 @@ import {
   deleteRepeatingInfotype,
 } from "@/app/actions/core-hr";
 import { formatINR, toRupees } from "@/lib/money";
+import { getSession } from "@/lib/auth";
+import { logAccess } from "@/lib/access-log";
+import { formatDate } from "@/lib/dates";
 
 /** CH-02 — maintain HR master data, one infotype per tab. */
 export default async function InfotypePage(props: {
@@ -31,6 +34,12 @@ export default async function InfotypePage(props: {
   const employeeId = Number(id);
   const meta = infotypeByCode(infotype);
   if (!meta) notFound();
+
+  // The layout has already confirmed an HR session; record what was read.
+  const session = await getSession();
+  if (session) {
+    logAccess(session, { subjectEmployeeId: employeeId, resource: `${meta.name} (IT${meta.code})` });
+  }
 
   const [companies, areas, subAreas, units, positions, schedules] = await Promise.all([
     db.select().from(omCompany).orderBy(asc(omCompany.code)),
@@ -81,7 +90,7 @@ export default async function InfotypePage(props: {
         id: String(h.id),
         validFrom: String(h.valid_from),
         validTo: String(h.valid_to),
-        describe: `${h.first_name} ${h.last_name}, valid from ${h.valid_from}`,
+        describe: `${h.first_name} ${h.last_name}, valid from ${formatDate(String(h.valid_from))}`,
         cells: {
           name: <span className="font-medium text-ink">{`${h.first_name} ${h.last_name}`}</span>,
           dob: h.date_of_birth ? <span className="tabular">{String(h.date_of_birth)}</span> : dash,
@@ -108,7 +117,7 @@ export default async function InfotypePage(props: {
         id: String(h.id),
         validFrom: String(h.valid_from),
         validTo: String(h.valid_to),
-        describe: `Assignment to ${h.position_code}, valid from ${h.valid_from}`,
+        describe: `Assignment to ${h.position_code}, valid from ${formatDate(String(h.valid_from))}`,
         cells: {
           position: <span className="font-medium text-ink">{String(h.position_code)}</span>,
           unit: String(h.org_unit_code),
@@ -134,7 +143,7 @@ export default async function InfotypePage(props: {
         id: String(h.id),
         validFrom: String(h.valid_from),
         validTo: String(h.valid_to),
-        describe: `Working time from ${h.valid_from}`,
+        describe: `Working time from ${formatDate(String(h.valid_from))}`,
         cells: {
           schedule:
             schedules.find((s) => s.code === h.work_schedule_code)?.name ??
@@ -158,7 +167,7 @@ export default async function InfotypePage(props: {
         id: String(h.id),
         validFrom: String(h.valid_from),
         validTo: String(h.valid_to),
-        describe: `${formatINR(Number(h.amount_paise))} from ${h.valid_from}`,
+        describe: `${formatINR(Number(h.amount_paise))} from ${formatDate(String(h.valid_from))}`,
         cells: {
           amount: (
             <span className="font-medium text-ink">{formatINR(Number(h.amount_paise))}</span>
@@ -189,7 +198,7 @@ export default async function InfotypePage(props: {
         id: String(h.id),
         validFrom: String(h.valid_from),
         validTo: String(h.valid_to),
-        describe: `${h.bank_name} account from ${h.valid_from}`,
+        describe: `${h.bank_name} account from ${formatDate(String(h.valid_from))}`,
         cells: {
           bank: <span className="font-medium text-ink">{String(h.bank_name)}</span>,
           account: <span className="tabular">{String(h.account_number)}</span>,
@@ -252,7 +261,7 @@ export default async function InfotypePage(props: {
         cells: {
           relationship: <span className="font-medium text-ink">{h.relationship}</span>,
           name: h.name,
-          dob: h.dateOfBirth ? <span className="tabular">{h.dateOfBirth}</span> : dash,
+          dob: h.dateOfBirth ? <span className="tabular">{formatDate(h.dateOfBirth)}</span> : dash,
         },
         values: {
           relationship: h.relationship,

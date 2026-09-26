@@ -19,13 +19,21 @@ import {
   Target,
   ClipboardCheck,
   FileBadge,
+  CircleUser,
+  CalendarRange,
+  ChartBar,
+  Search,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui";
+import { ShortcutHint, useCommandMenu } from "@/components/command-menu";
 import type { NavGroup } from "@/lib/nav";
 
 const ICONS: Record<string, LucideIcon> = {
+  CircleUser,
+  CalendarRange,
+  ChartBar,
   Network,
   Users,
   CalendarDays,
@@ -55,6 +63,39 @@ function Brand() {
   );
 }
 
+/* ----------------------------------------------------------- search button */
+
+/** §9 Sidebar: a 36px soft search button reading "Search", with the shortcut. */
+function SearchButton() {
+  const open = useCommandMenu();
+  return (
+    <button
+      type="button"
+      onClick={open}
+      className="flex h-9 w-full items-center gap-2.5 rounded-xl bg-soft px-3 text-sm text-secondary transition-colors duration-150 hover:text-ink"
+    >
+      <Search className="size-4 shrink-0 stroke-[1.75] text-muted" aria-hidden />
+      <span className="flex-1 text-left">Search</span>
+      <ShortcutHint />
+    </button>
+  );
+}
+
+function SearchIconButton() {
+  const open = useCommandMenu();
+  return (
+    <button
+      type="button"
+      onClick={open}
+      aria-label="Search"
+      title="Search"
+      className="flex size-10 items-center justify-center rounded-lg text-ink transition-colors duration-150 hover:bg-soft"
+    >
+      <Search className="size-5 stroke-[1.75]" />
+    </button>
+  );
+}
+
 /* ---------------------------------------------------------------- nav list */
 
 function NavList({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {
@@ -64,7 +105,7 @@ function NavList({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () =
     <nav className="flex flex-col gap-6">
       {groups.map((group) => (
         <div key={group.label}>
-          <div className="px-3 pb-2 text-xs text-faint">{group.label}</div>
+          <div className="px-3 pb-2 text-xs text-muted">{group.label}</div>
           <ul className="flex flex-col gap-0.5">
             {group.items.map((item) => {
               const Icon = ICONS[item.icon] ?? Users;
@@ -162,10 +203,21 @@ export function Shell({
 
   return (
     <div className="min-h-screen">
+      {/* §13 — keyboard users skip the navigation on every page */}
+      <a
+        href="#main"
+        className="sr-only z-50 rounded-full bg-ink px-4 py-2 text-sm font-medium text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+      >
+        Skip to content
+      </a>
+
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-surface lg:flex">
-        <div className="px-5 py-5">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-surface lg:flex print:hidden">
+        <div className="px-5 pt-5 pb-4">
           <Brand />
+        </div>
+        <div className="px-4 pb-5">
+          <SearchButton />
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-4">
           <NavList groups={groups} />
@@ -174,15 +226,18 @@ export function Shell({
       </aside>
 
       {/* Mobile top bar — 56px, sticky, translucent with a hairline under */}
-      <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-surface/85 px-5 backdrop-blur-xl lg:hidden">
+      <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-surface/85 px-5 backdrop-blur-xl lg:hidden print:hidden">
         <button
           onClick={() => setDrawerOpen(true)}
           aria-label="Open menu"
-          className="flex size-9 items-center justify-center rounded-lg text-ink transition-colors duration-150 hover:bg-soft"
+          className="flex size-10 items-center justify-center rounded-lg text-ink transition-colors duration-150 hover:bg-soft"
         >
           <Menu className="size-5 stroke-[1.75]" />
         </button>
         <Brand />
+        <div className="ml-auto">
+          <SearchIconButton />
+        </div>
       </header>
 
       {/* Mobile drawer — 288px behind a 30% scrim */}
@@ -213,8 +268,8 @@ export function Shell({
       ) : null}
 
       {/* Content column — up to 1180px, centred */}
-      <main className="lg:pl-60">
-        <div className="mx-auto max-w-[1180px] px-5 pt-8 pb-16 sm:px-8 lg:px-12 lg:pt-12">
+      <main id="main" className="lg:pl-60 print:pl-0">
+        <div className="mx-auto max-w-[1180px] px-5 pt-8 pb-16 sm:px-8 lg:px-12 lg:pt-12 print:max-w-none print:p-0">
           {children}
         </div>
       </main>

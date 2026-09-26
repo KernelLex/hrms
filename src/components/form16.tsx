@@ -1,4 +1,5 @@
 import { formatINRExact } from "@/lib/money";
+import { formatDate } from "@/lib/dates";
 
 /**
  * Form 16, Parts A and B — DESIGN_LANGUAGE.md §11 "Printed documents".
@@ -130,7 +131,7 @@ export function Form16({ data, quarters }: { data: Form16Data; quarters: Quarter
           ["Employee", data.employeeName],
           ["Employee number", data.employeeNumber],
           ["Employee PAN", data.employeePan ?? "Not recorded"],
-          ["Issued", data.generatedAt.slice(0, 10)],
+          ["Issued", formatDate(data.generatedAt.slice(0, 10))],
         ].map(([label, value]) => (
           <div key={label}>
             <dt className="text-[13px] text-muted">{label}</dt>
@@ -207,7 +208,7 @@ export function Form16({ data, quarters }: { data: Form16Data; quarters: Quarter
       ) : null}
 
       {/* ------------------------------------------------------------ Part B */}
-      <h3 className="mt-8 border-t-2 border-ink pt-4 text-[15px] font-semibold">
+      <h3 className="mt-8 border-t-2 border-ink pt-4 text-[15px] font-semibold print:mt-0 print:break-before-page">
         Part B — computation of income and tax
       </h3>
 

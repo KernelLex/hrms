@@ -53,12 +53,29 @@ export function financialQuarterOf(date: string): number {
   return Math.floor(((month - 4 + 12) % 12) / 3) + 1;
 }
 
-async function slabsFor(regime: TaxRegime, financialYear: string) {
+export type Slab = { fromPaise: number; toPaise: number | null; rateBasisPoints: number };
+
+export async function slabsFor(regime: TaxRegime, financialYear: string): Promise<Slab[]> {
   return db
-    .select()
+    .select({
+      fromPaise: tdsTaxSlab.fromPaise,
+      toPaise: tdsTaxSlab.toPaise,
+      rateBasisPoints: tdsTaxSlab.rateBasisPoints,
+    })
     .from(tdsTaxSlab)
     .where(and(eq(tdsTaxSlab.regime, regime), eq(tdsTaxSlab.financialYear, financialYear)))
     .orderBy(asc(tdsTaxSlab.fromPaise));
+}
+
+/** Both regimes' slabs for a year, for callers that compute many times over. */
+export async function slabsForYear(
+  financialYear: string,
+): Promise<Record<TaxRegime, Slab[]>> {
+  const [Old, New] = await Promise.all([
+    slabsFor("Old", financialYear),
+    slabsFor("New", financialYear),
+  ]);
+  return { Old, New };
 }
 
 /** Tax on a taxable income, before rebate and cess. */
@@ -67,9 +84,11 @@ export async function taxOnIncome(
   regime: TaxRegime,
   financialYear: string,
 ): Promise<number> {
-  if (taxableIncomePaise <= 0) return 0;
-  const slabs = await slabsFor(regime, financialYear);
-  if (slabs.length === 0) return 0;
+  return taxOnIncomeWith(taxableIncomePaise, await slabsFor(regime, financialYear));
+}
+
+function taxOnIncomeWith(taxableIncomePaise: number, slabs: Slab[]): number {
+  if (taxableIncomePaise <= 0 || slabs.length === 0) return 0;
 
   let tax = 0;
   for (const slab of slabs) {
@@ -88,7 +107,7 @@ export async function taxOnIncome(
  * Part B are derived from — so the certificate reconciles with what was
  * actually deducted month by month.
  */
-export async function computeAnnualTax(opts: {
+export type AnnualTaxInput = {
   grossSalaryPaise: number;
   regime: TaxRegime;
   financialYear: string;
@@ -97,13 +116,19 @@ export async function computeAnnualTax(opts: {
   /** Chapter VI-A, chiefly 80C and 80D. Ignored under the new regime. */
   chapterViaPaise?: number;
   otherIncomePaise?: number;
-}): Promise<TaxComputation> {
-  const {
-    grossSalaryPaise,
-    regime,
-    financialYear,
-    otherIncomePaise = 0,
-  } = opts;
+};
+
+export async function computeAnnualTax(opts: AnnualTaxInput): Promise<TaxComputation> {
+  return computeAnnualTaxWith(opts, await slabsFor(opts.regime, opts.financialYear));
+}
+
+/**
+ * The same computation against slabs already loaded — payroll computes tax
+ * several times per employee, and fetching the slabs each time would be a
+ * round trip per computation.
+ */
+export function computeAnnualTaxWith(opts: AnnualTaxInput, slabs: Slab[]): TaxComputation {
+  const { grossSalaryPaise, regime, otherIncomePaise = 0 } = opts;
 
   // The new regime gives a larger standard deduction and almost nothing else.
   const section10ExemptPaise = regime === "Old" ? (opts.section10ExemptPaise ?? 0) : 0;
@@ -117,11 +142,19 @@ export async function computeAnnualTax(opts: {
     afterStandard + otherIncomePaise - chapterViaPaise,
   );
 
-  const gross = await taxOnIncome(taxableIncomePaise, regime, financialYear);
+  const gross = taxOnIncomeWith(taxableIncomePaise, slabs);
 
+  // Section 87A. Under the new regime, income just over the limit also gets
+  // marginal relief: the tax cannot exceed the income above the limit, or a
+  // ₹1 raise past ₹12 lakh would cost ₹60,000 in tax.
   const rebate = REBATE_87A[regime];
-  const rebate87aPaise =
-    taxableIncomePaise <= rebate.limitPaise ? Math.min(gross, rebate.maxPaise) : 0;
+  let rebate87aPaise = 0;
+  if (taxableIncomePaise <= rebate.limitPaise) {
+    rebate87aPaise = Math.min(gross, rebate.maxPaise);
+  } else if (regime === "New") {
+    const excess = taxableIncomePaise - rebate.limitPaise;
+    rebate87aPaise = Math.max(0, gross - excess);
+  }
 
   const afterRebate = Math.max(0, gross - rebate87aPaise);
   const cessPaise = Math.round((afterRebate * CESS_BASIS_POINTS) / 10_000);
@@ -140,39 +173,23 @@ export async function computeAnnualTax(opts: {
 }
 
 /**
- * The TDS to deduct this month.
- *
- * Projects the monthly taxable pay across the remaining year, computes the
- * annual liability, and spreads what is still owed over the months left — so
- * deductions stay even rather than landing in a lump in March.
+ * Tax on a whole year's salary, for a declaration — the regime and the amounts
+ * it claims. The payroll engine and Form 16 both go through this, so the
+ * monthly deductions and the certificate cannot use different rules.
  */
-export async function monthlyTds(opts: {
-  monthlyTaxableGrossPaise: number;
-  monthIndexInYear: number; // 1 = April
-  regime: TaxRegime;
-  financialYear: string;
-  section10ExemptPaise?: number;
-  chapterViaPaise?: number;
-  alreadyDeductedPaise?: number;
-}): Promise<number> {
-  const {
-    monthlyTaxableGrossPaise,
-    monthIndexInYear,
-    regime,
-    financialYear,
-    alreadyDeductedPaise = 0,
-  } = opts;
-
-  const projectedAnnual = monthlyTaxableGrossPaise * 12;
-  const computation = await computeAnnualTax({
-    grossSalaryPaise: projectedAnnual,
-    regime,
-    financialYear,
-    section10ExemptPaise: opts.section10ExemptPaise,
-    chapterViaPaise: opts.chapterViaPaise,
-  });
-
-  const remainingMonths = Math.max(1, 13 - monthIndexInYear);
-  const outstanding = Math.max(0, computation.totalTaxPaise - alreadyDeductedPaise);
-  return Math.round(outstanding / remainingMonths);
+export function annualTaxFor(
+  grossSalaryPaise: number,
+  declaration: {
+    regime: TaxRegime;
+    section10ExemptPaise: number;
+    chapterViaPaise: number;
+    otherIncomePaise: number;
+  },
+  financialYear: string,
+  slabs: Record<TaxRegime, Slab[]>,
+): number {
+  return computeAnnualTaxWith(
+    { grossSalaryPaise, financialYear, ...declaration },
+    slabs[declaration.regime],
+  ).totalTaxPaise;
 }

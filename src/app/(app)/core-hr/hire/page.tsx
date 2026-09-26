@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { getSession, hasRole } from "@/lib/auth";
 import { asc, eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -13,6 +15,11 @@ import { HireForm } from "./form";
 
 /** CH-01 — the hire action, equivalent to SAP's PA40. */
 export default async function HirePage() {
+  // Creating and changing employee records is HR's alone. The Server
+  // Functions check this too; the page checks so nobody sees a form they
+  // cannot submit.
+  if (!hasRole(await getSession(), "HR_ADMIN")) redirect("/");
+
   const [companies, areas, units, vacantPositions, schedules] = await Promise.all([
     db.select().from(omCompany).where(eq(omCompany.isActive, true)).orderBy(asc(omCompany.code)),
     db.select().from(omPersonnelArea).orderBy(asc(omPersonnelArea.code)),

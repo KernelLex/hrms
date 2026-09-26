@@ -4,6 +4,7 @@ import { omOrgUnit, omCompany, omPersonnelArea, OPEN_ENDED } from "@/db/schema";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveOrgUnit, deleteOrgUnit } from "@/app/actions/org";
 import { Status } from "@/components/ui";
+import { formatDateRange } from "@/lib/dates";
 
 const COLUMNS: Column[] = [
   { key: "code", label: "Code" },
@@ -81,7 +82,7 @@ export default async function DepartmentsPage() {
           company: r.companyCode,
           validity: (
             <span className="tabular text-secondary">
-              {r.validFrom} to {r.validTo === OPEN_ENDED ? "open" : r.validTo}
+              {formatDateRange(r.validFrom, r.validTo)}
             </span>
           ),
           status: (

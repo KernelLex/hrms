@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptAttendance, ptAttendanceType } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
@@ -8,6 +8,8 @@ import { MasterScreen, type Column, type FieldDef } from "@/components/master-sc
 import { saveAttendance, deleteAttendance } from "@/app/actions/time";
 import { TwoLine } from "@/components/ui";
 import { TimeTabs } from "../tabs";
+import { formatDate } from "@/lib/dates";
+import { Pagination, pageFrom } from "@/components/pagination";
 
 const COLUMNS: Column[] = [
   { key: "employee", label: "Employee" },
@@ -18,10 +20,12 @@ const COLUMNS: Column[] = [
 ];
 
 /** TM-01 — attendance records (IT2002), including overtime. */
-export default async function AttendancesPage() {
+export default async function AttendancesPage(props: { searchParams: Promise<{ page?: string }> }) {
+  const { page, limit, offset } = pageFrom((await props.searchParams).page);
   const session = await getSession();
   if (!hasRole(session, "HR_ADMIN")) redirect("/time/my-leave");
 
+  const [{ n: total }] = await db.select({ n: count() }).from(ptAttendance);
   const [rows, types, employees] = await Promise.all([
     db
       .select({
@@ -35,7 +39,9 @@ export default async function AttendancesPage() {
       })
       .from(ptAttendance)
       .innerJoin(ptAttendanceType, eq(ptAttendanceType.code, ptAttendance.attendanceTypeCode))
-      .orderBy(desc(ptAttendance.date)),
+      .orderBy(desc(ptAttendance.date))
+      .limit(limit)
+      .offset(offset),
     db.select().from(ptAttendanceType).orderBy(asc(ptAttendanceType.code)),
     listEmployees(),
   ]);
@@ -76,6 +82,8 @@ export default async function AttendancesPage() {
     <>
       <TimeTabs />
       <MasterScreen
+        total={total}
+        footer={<Pagination page={page} total={total} path="/time/attendances" noun="records" />}
         title="Attendance"
         subtitle="Overtime, business travel and training. Overtime hours feed time evaluation."
         entity="attendance record"
@@ -89,13 +97,13 @@ export default async function AttendancesPage() {
         emptyHint="Record overtime or on-duty time against an employee."
         rows={rows.map((r) => ({
           id: String(r.id),
-          describe: `${name.get(r.employeeId) ?? "Employee"}, ${r.typeName} on ${r.date}`,
+          describe: `${name.get(r.employeeId) ?? "Employee"}, ${r.typeName} on ${formatDate(r.date)}`,
           cells: {
             employee: (
               <TwoLine value={name.get(r.employeeId) ?? "—"} sub={numberOf.get(r.employeeId)} />
             ),
             type: <span className="text-secondary">{r.typeName}</span>,
-            date: <span className="tabular text-secondary">{r.date}</span>,
+            date: <span className="tabular text-secondary">{formatDate(r.date)}</span>,
             hours: String(r.hours),
             remarks: r.remarks ? (
               <span className="text-secondary">{r.remarks}</span>

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { desc } from "drizzle-orm";
+import { asc, count, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tdsEmployeeDeclaration, tdsTaxSlab } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
@@ -9,6 +9,7 @@ import { MasterScreen, type Column, type FieldDef } from "@/components/master-sc
 import { saveDeclaration, deleteDeclaration } from "@/app/actions/tax";
 import { Status, TwoLine, Notice } from "@/components/ui";
 import { TaxTabs } from "../tabs";
+import { Pagination, pageFrom } from "@/components/pagination";
 
 const COLUMNS: Column[] = [
   { key: "employee", label: "Employee" },
@@ -21,22 +22,29 @@ const COLUMNS: Column[] = [
 ];
 
 /** TDS-02 — investment declarations, which Form 16 Part B computes from. */
-export default async function DeclarationsPage() {
+export default async function DeclarationsPage(props: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const session = await getSession();
   if (!session) redirect("/sign-in");
   const isHr = hasRole(session, "HR_ADMIN");
+  const { page, limit, offset } = pageFrom((await props.searchParams).page);
 
-  const [all, employees, slabs] = await Promise.all([
+  // An employee's request reads only their own declarations, not everyone's
+  // filtered afterwards.
+  const mine = isHr ? undefined : eq(tdsEmployeeDeclaration.employeeId, session.employeeId ?? -1);
+  const [rows, [{ n: total }], employees, slabs] = await Promise.all([
     db
       .select()
       .from(tdsEmployeeDeclaration)
-      .orderBy(desc(tdsEmployeeDeclaration.financialYear)),
+      .where(mine)
+      .orderBy(desc(tdsEmployeeDeclaration.financialYear), asc(tdsEmployeeDeclaration.employeeId))
+      .limit(limit)
+      .offset(offset),
+    db.select({ n: count() }).from(tdsEmployeeDeclaration).where(mine),
     listEmployees(),
-    db.select({ fy: tdsTaxSlab.financialYear }).from(tdsTaxSlab),
+    db.selectDistinct({ fy: tdsTaxSlab.financialYear }).from(tdsTaxSlab),
   ]);
-
-  // An employee sees only their own.
-  const rows = isHr ? all : all.filter((d) => d.employeeId === session.employeeId);
 
   const years = [...new Set(slabs.map((s) => s.fy))].sort().reverse();
   const name = new Map(employees.map((e) => [e.id, fullName(e)]));
@@ -106,6 +114,8 @@ export default async function DeclarationsPage() {
         </div>
       ) : null}
       <MasterScreen
+        total={total}
+        footer={<Pagination page={page} total={total} path="/tax/declarations" noun="declarations" />}
         title={isHr ? "Tax declarations" : "My tax declaration"}
         subtitle={
           isHr

@@ -19,6 +19,7 @@ export async function seedPayroll(db: Db): Promise<string[]> {
       { code: "HRA", name: "House rent allowance", kind: "Earning", amountType: "PercentOfBasic", percentBasisPoints: 4000, fixedAmountPaise: null, formulaKey: null, isTaxable: true, isAutomatic: true, glAccount: "5010", sortOrder: 20, isActive: true },
       { code: "CONV", name: "Conveyance allowance", kind: "Earning", amountType: "PercentOfBasic", percentBasisPoints: 1000, fixedAmountPaise: null, formulaKey: null, isTaxable: true, isAutomatic: true, glAccount: "5010", sortOrder: 30, isActive: true },
       { code: "SPECIAL", name: "Special allowance", kind: "Earning", amountType: "Fixed", percentBasisPoints: null, fixedAmountPaise: null, formulaKey: null, isTaxable: true, isAutomatic: false, glAccount: "5010", sortOrder: 40, isActive: true },
+      { code: "RETRO", name: "Arrears", kind: "Earning", amountType: "Formula", percentBasisPoints: null, fixedAmountPaise: null, formulaKey: "RETRO", isTaxable: true, isAutomatic: true, glAccount: "5010", sortOrder: 45, isActive: true },
       { code: "BONUS", name: "Performance bonus", kind: "Earning", amountType: "Fixed", percentBasisPoints: null, fixedAmountPaise: null, formulaKey: null, isTaxable: true, isAutomatic: false, glAccount: "5010", sortOrder: 50, isActive: true },
       { code: "REIMB", name: "Travel reimbursement", kind: "Earning", amountType: "Fixed", percentBasisPoints: null, fixedAmountPaise: null, formulaKey: null, isTaxable: false, isAutomatic: false, glAccount: "5020", sortOrder: 60, isActive: true },
       { code: "PF", name: "Provident fund", kind: "Deduction", amountType: "PercentOfBasic", percentBasisPoints: 1200, fixedAmountPaise: null, formulaKey: "PF", isTaxable: false, isAutomatic: true, glAccount: "2120", sortOrder: 110, isActive: true },
@@ -102,7 +103,7 @@ export async function seedPayroll(db: Db): Promise<string[]> {
       .onConflictDoNothing();
   }
 
-  notes.push("  9 wage types, 3 TDS sections");
+  notes.push("  10 wage types, 3 TDS sections");
   notes.push(`  tax slabs for ${fy}${currentFy !== fy ? ` and ${currentFy}` : ""}, both regimes`);
   notes.push(`  open payroll period for ${areas.length} personnel areas`);
   return notes;

@@ -88,35 +88,28 @@ export async function generateQuotas(opts: {
   const wanted = opts.employeeIds;
   const targets = wanted?.length ? employees.filter((e) => wanted.includes(e.id)) : employees;
 
+  if (targets.length === 0) return 0;
+
+  // One upsert for everyone: new quotas start unused, existing ones keep what
+  // has been used and only change their entitlement.
   const createdAt = now();
-  let affected = 0;
-
-  for (const e of targets) {
-    const existing = await db.query.ptAbsenceQuota.findFirst({
-      where: and(
-        eq(ptAbsenceQuota.employeeId, e.id),
-        eq(ptAbsenceQuota.quotaTypeCode, quotaTypeCode),
-        eq(ptAbsenceQuota.year, year),
-      ),
-    });
-
-    if (existing) {
-      await db
-        .update(ptAbsenceQuota)
-        .set({ entitledHalfDays: daysToUnits(entitlementDays) })
-        .where(eq(ptAbsenceQuota.id, existing.id));
-    } else {
-      await db.insert(ptAbsenceQuota).values({
+  await db
+    .insert(ptAbsenceQuota)
+    .values(
+      targets.map((e) => ({
         employeeId: e.id,
         quotaTypeCode,
         year,
         entitledHalfDays: daysToUnits(entitlementDays),
         usedHalfDays: 0,
         createdAt,
-      });
-    }
-    affected += 1;
-  }
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [ptAbsenceQuota.employeeId, ptAbsenceQuota.quotaTypeCode, ptAbsenceQuota.year],
+      set: { entitledHalfDays: daysToUnits(entitlementDays) },
+    });
+  const affected = targets.length;
 
   return affected;
 }

@@ -29,8 +29,11 @@ export const NAV: NavGroup[] = [
   {
     label: "Organisation",
     items: [
+      { label: "My profile", href: "/me", icon: "CircleUser", roles: ["MANAGER", "EMPLOYEE"] },
       { label: "Org structure", href: "/org", icon: "Network", roles: HR },
-      { label: "Employees", href: "/core-hr", icon: "Users", roles: HR_MGR },
+      { label: "Employees", href: "/core-hr", icon: "Users", roles: HR },
+      { label: "Reports", href: "/reports", icon: "ChartBar", roles: HR },
+      { label: "My team", href: "/core-hr", icon: "Users", roles: ["MANAGER"] },
     ],
   },
   {
@@ -38,6 +41,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Time and absence", href: "/time", icon: "CalendarDays", roles: HR },
       { label: "Approvals", href: "/time/approvals", icon: "Inbox", roles: HR_MGR },
+      { label: "Team calendar", href: "/time/calendar", icon: "CalendarRange", roles: ["MANAGER"] },
       { label: "My leave", href: "/time/my-leave", icon: "CalendarCheck", roles: ALL },
     ],
   },
@@ -62,9 +66,16 @@ export const NAV: NavGroup[] = [
 ];
 
 export function navForRoles(roles: RoleCode[]): NavGroup[] {
+  // One entry per address: someone who is both HR and a manager sees
+  // "Employees", not that and "My team" pointing at the same screen.
+  const seen = new Set<string>();
   return NAV.map((g) => ({
     ...g,
-    items: g.items.filter((i) => i.roles.some((r) => roles.includes(r))),
+    items: g.items.filter((i) => {
+      if (!i.roles.some((r) => roles.includes(r)) || seen.has(i.href)) return false;
+      seen.add(i.href);
+      return true;
+    }),
   })).filter((g) => g.items.length > 0);
 }
 

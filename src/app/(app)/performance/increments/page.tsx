@@ -27,6 +27,7 @@ import {
 import { TrendingUp } from "lucide-react";
 import { PerformanceTabs } from "../tabs";
 import { GenerateIncrementsForm, IncrementActions, PushAllButton } from "./actions";
+import { formatDate } from "@/lib/dates";
 
 /** PM-05 — increment recommendations, and the push into basic pay. */
 export default async function IncrementsPage(props: {
@@ -154,7 +155,7 @@ export default async function IncrementsPage(props: {
                       </span>
                     </Td>
                     <Td>
-                      <span className="tabular text-secondary">{r.effectiveDate}</span>
+                      <span className="tabular text-secondary">{formatDate(r.effectiveDate)}</span>
                     </Td>
                     <Td>
                       <Status

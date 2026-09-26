@@ -13,6 +13,7 @@ import {
 import { Button, Card, CardHeader } from "@/components/ui";
 import { Field, Select, DateInput, FormGrid, FormError } from "@/components/inputs";
 import { useToast } from "@/components/toast";
+import { todayInIndia } from "@/lib/dates";
 
 export function PostingForms({
   runs,
@@ -27,7 +28,7 @@ export function PostingForms({
 }) {
   const toast = useToast();
   const router = useRouter();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInIndia();
 
   const [bankState, bankAction, bankPending] = useActionState(
     async (prev: ActionState, form: FormData): Promise<ActionState> => {

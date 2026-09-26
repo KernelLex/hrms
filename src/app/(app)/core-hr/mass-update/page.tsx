@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { getSession, hasRole } from "@/lib/auth";
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptWorkScheduleRule } from "@/db/schema";
@@ -8,6 +10,11 @@ import { formatINR } from "@/lib/money";
 
 /** CH-05 — mass data maintenance, equivalent to SAP's PA70/PA71. */
 export default async function MassUpdatePage() {
+  // Creating and changing employee records is HR's alone. The Server
+  // Functions check this too; the page checks so nobody sees a form they
+  // cannot submit.
+  if (!hasRole(await getSession(), "HR_ADMIN")) redirect("/");
+
   const [employees, schedules] = await Promise.all([
     listEmployees(),
     db.select().from(ptWorkScheduleRule).orderBy(asc(ptWorkScheduleRule.code)),

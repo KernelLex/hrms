@@ -18,6 +18,17 @@ export const PERIOD_STATUS = ["Open", "Locked", "Posted"] as const;
 export type PeriodStatus = (typeof PERIOD_STATUS)[number];
 
 export const WAGE_KIND = ["Earning", "Deduction"] as const;
+
+/**
+ * A regular run pays the month for everyone in the personnel area. An
+ * off-cycle run pays selected people outside it — a bonus, a correction, a
+ * final settlement — and can run after the period is posted.
+ */
+export const RUN_TYPE = ["Regular", "Off-cycle"] as const;
+export type RunType = (typeof RUN_TYPE)[number];
+
+/** A run is calculated in batches, so it is "In progress" until the last one. */
+export const RUN_STATUS = ["In progress", "Completed"] as const;
 export const AMOUNT_TYPE = ["Fixed", "PercentOfBasic", "Formula"] as const;
 
 export const pyWageType = sqliteTable("py_wage_type", {
@@ -91,6 +102,14 @@ export const pyAdditionalPayment = sqliteTable(
       .references(() => pyWageType.code),
     amountPaise: integer("amount_paise").notNull(),
     paymentDate: text("payment_date").notNull(),
+    /**
+     * The run that paid it. A one-off payment is paid exactly once: by the
+     * regular run of its month, or by an off-cycle run if it arrived after
+     * that. Replacing a run releases its payments again (SET NULL).
+     */
+    paidRunId: integer("paid_run_id").references(() => pyPayrollRun.id, {
+      onDelete: "set null",
+    }),
     createdAt: text("created_at").notNull(),
   },
   (t) => [index("ix_additional_employee").on(t.employeeId, t.paymentDate)],
@@ -107,12 +126,43 @@ export const pyPayrollRun = sqliteTable(
       .references(() => pyPayrollPeriod.id, { onDelete: "cascade" }),
     runAt: text("run_at").notNull(),
     runBy: text("run_by").notNull(),
+    runType: text("run_type").notNull().default("Regular"),
+    status: text("status").notNull().default("Completed"),
+    /** Why an off-cycle run was made; shown on its payslips. */
+    reason: text("reason"),
+    /** An off-cycle run's own pay date; a regular run uses the period's. */
+    payDate: text("pay_date"),
+    /** People the run set out to calculate, and how many it has done. */
+    plannedCount: integer("planned_count").notNull().default(0),
     employeeCount: integer("employee_count").notNull().default(0),
     errorCount: integer("error_count").notNull().default(0),
     grossTotalPaise: integer("gross_total_paise").notNull().default(0),
     netTotalPaise: integer("net_total_paise").notNull().default(0),
+    completedAt: text("completed_at"),
   },
   (t) => [index("ix_run_period").on(t.periodId)],
+);
+
+/**
+ * The people a run is to calculate, fixed when it starts. A batch takes the
+ * next few not yet done, so a run of thousands proceeds in steps that each
+ * fit inside a serverless time limit, and resumes where it stopped.
+ */
+export const pyRunMember = sqliteTable(
+  "py_run_member",
+  {
+    runId: integer("run_id")
+      .notNull()
+      .references(() => pyPayrollRun.id, { onDelete: "cascade" }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    done: integer("done", { mode: "boolean" }).notNull().default(false),
+  },
+  (t) => [
+    uniqueIndex("ux_run_member").on(t.runId, t.employeeId),
+    index("ix_run_member_pending").on(t.runId, t.done),
+  ],
 );
 
 export const pyPayrollResult = sqliteTable(
@@ -130,6 +180,8 @@ export const pyPayrollResult = sqliteTable(
     netPaise: integer("net_paise").notNull().default(0),
     unpaidDays: integer("unpaid_days").notNull().default(0),
     workingDays: integer("working_days").notNull().default(0),
+    /** Working days the person was employed; less than workingDays for a joiner or leaver. */
+    employedDays: integer("employed_days").notNull().default(0),
     status: text("status").notNull().default("Calculated"),
     errorMessage: text("error_message"),
   },
@@ -149,8 +201,17 @@ export const pyPayrollResultLine = sqliteTable(
     kind: text("kind").notNull(),
     amountPaise: integer("amount_paise").notNull(),
     sortOrder: integer("sort_order").notNull().default(100),
+    /**
+     * For an arrears line: the earlier period it corrects. Recalculating that
+     * period later subtracts what these lines already paid, so a correction
+     * is paid once, not every month after.
+     */
+    forPeriodId: integer("for_period_id"),
   },
-  (t) => [index("ix_line_result").on(t.resultId)],
+  (t) => [
+    index("ix_line_result").on(t.resultId),
+    index("ix_line_for_period").on(t.forPeriodId),
+  ],
 );
 
 /* ------------------------------------------------------ bank and posting */

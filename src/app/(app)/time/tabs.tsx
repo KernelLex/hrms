@@ -5,6 +5,7 @@ import { Tabs, Tab } from "@/components/ui";
 
 const ITEMS = [
   { href: "/time/absences", label: "Absences" },
+  { href: "/time/calendar", label: "Calendar" },
   { href: "/time/attendances", label: "Attendance" },
   { href: "/time/quotas", label: "Quotas" },
   { href: "/time/evaluation", label: "Time evaluation" },

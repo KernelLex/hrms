@@ -2,22 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, rawClient } from "@/lib/db";
 import { requireRole, requireSession, hasRole } from "@/lib/auth";
 import {
   tdsSectionMaster,
   tdsEmployeeDeclaration,
   tdsDeductionRegister,
   tdsForm16,
-  pyPayrollResult,
-  pyPayrollResultLine,
-  pyPayrollRun,
-  pyPayrollPeriod,
   paEmployee,
   omCompany,
   now,
 } from "@/db/schema";
-import { computeAnnualTax, financialQuarterOf } from "@/lib/engines/tax";
+import { computeAnnualTax } from "@/lib/engines/tax";
 import { toPaise } from "@/lib/money";
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -42,11 +38,6 @@ function revalidateTax() {
 }
 
 /** "2025-26" covers 1 Apr 2025 to 31 Mar 2026. */
-function financialYearBounds(fy: string): { from: string; to: string } {
-  const start = Number(fy.slice(0, 4));
-  return { from: `${start}-04-01`, to: `${start + 1}-03-31` };
-}
-
 /* ---------------------------------------------------- TDS-01 section master */
 
 export async function saveSection(
@@ -209,76 +200,57 @@ export async function buildRegister(
   const financialYear = str(form.get("financialYear"));
   if (!/^\d{4}-\d{2}$/.test(financialYear)) return fail("Choose a financial year.");
 
-  const { from, to } = financialYearBounds(financialYear);
+  const start = Number(financialYear.slice(0, 4));
 
-  // Every posted payroll result in the year, with its TDS line.
-  const rows = await db
-    .select({
-      employeeId: pyPayrollResult.employeeId,
-      grossPaise: pyPayrollResult.grossPaise,
-      year: pyPayrollPeriod.year,
-      month: pyPayrollPeriod.month,
-      tdsPaise: sql<number>`COALESCE((
-        SELECT SUM(amount_paise) FROM py_payroll_result_line
-        WHERE result_id = ${pyPayrollResult.id} AND wage_type_code = 'TDS'
-      ), 0)`,
-    })
-    .from(pyPayrollResult)
-    .innerJoin(pyPayrollRun, eq(pyPayrollRun.id, pyPayrollResult.runId))
-    .innerJoin(pyPayrollPeriod, eq(pyPayrollPeriod.id, pyPayrollRun.periodId))
-    .where(eq(pyPayrollResult.status, "Calculated"));
-
-  const inYear = rows.filter((r) => {
-    const date = `${r.year}-${String(r.month).padStart(2, "0")}-01`;
-    return date >= from && date <= to;
+  // Every paid result in the year — posted months and completed off-cycle
+  // runs, never a run still in progress or a month not yet final — summed by
+  // employee and quarter in the database rather than row by row here.
+  const buckets = await rawClient().execute({
+    sql: `SELECT r.employee_id,
+                 ((p.month + 8) % 12) / 3 + 1 AS quarter,
+                 SUM(r.gross_paise) AS gross,
+                 SUM(COALESCE((SELECT SUM(l.amount_paise) FROM py_payroll_result_line l
+                               WHERE l.result_id = r.id AND l.wage_type_code = 'TDS'), 0)) AS tds
+          FROM py_payroll_result r
+          JOIN py_payroll_run run ON run.id = r.run_id AND run.status = 'Completed'
+          JOIN py_payroll_period p ON p.id = run.period_id
+          WHERE r.status = 'Calculated'
+            AND (p.status = 'Posted' OR run.run_type = 'Off-cycle')
+            AND p.year * 100 + p.month BETWEEN ? AND ?
+          GROUP BY r.employee_id, quarter`,
+    args: [start * 100 + 4, (start + 1) * 100 + 3],
   });
 
-  if (inYear.length === 0) {
-    return fail(`No payroll results fall in ${financialYear}. Run payroll first.`);
+  if (buckets.rows.length === 0) {
+    return fail(`No posted payroll results fall in ${financialYear}. Run and post payroll first.`);
   }
 
-  // Aggregate by employee and quarter.
-  const buckets = new Map<string, { employeeId: number; quarter: number; gross: number; tds: number }>();
-  for (const r of inYear) {
-    const date = `${r.year}-${String(r.month).padStart(2, "0")}-01`;
-    const quarter = financialQuarterOf(date);
-    const key = `${r.employeeId}:${quarter}`;
-    const existing = buckets.get(key);
-    buckets.set(key, {
-      employeeId: r.employeeId,
-      quarter,
-      gross: (existing?.gross ?? 0) + r.grossPaise,
-      tds: (existing?.tds ?? 0) + Number(r.tdsPaise),
-    });
-  }
-
+  // One upsert. Challan details already entered by hand are kept.
   const updatedAt = now();
-  for (const b of buckets.values()) {
-    const existing = await db.query.tdsDeductionRegister.findFirst({
-      where: and(
-        eq(tdsDeductionRegister.employeeId, b.employeeId),
-        eq(tdsDeductionRegister.financialYear, financialYear),
-        eq(tdsDeductionRegister.quarter, b.quarter),
-      ),
-    });
-
-    if (existing) {
-      // Keep the challan details someone already entered.
-      await db
-        .update(tdsDeductionRegister)
-        .set({ grossPaidPaise: b.gross, tdsDeductedPaise: b.tds, updatedAt })
-        .where(eq(tdsDeductionRegister.id, existing.id));
-    } else {
-      await db.insert(tdsDeductionRegister).values({
-        employeeId: b.employeeId,
+  await db
+    .insert(tdsDeductionRegister)
+    .values(
+      buckets.rows.map((b) => ({
+        employeeId: Number(b.employee_id),
         financialYear,
-        quarter: b.quarter,
-        grossPaidPaise: b.gross,
-        tdsDeductedPaise: b.tds,
+        quarter: Number(b.quarter),
+        grossPaidPaise: Number(b.gross),
+        tdsDeductedPaise: Number(b.tds),
         updatedAt,
-      });
-    }
-  }
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [
+        tdsDeductionRegister.employeeId,
+        tdsDeductionRegister.financialYear,
+        tdsDeductionRegister.quarter,
+      ],
+      set: {
+        grossPaidPaise: sql`excluded.gross_paid_paise`,
+        tdsDeductedPaise: sql`excluded.tds_deducted_paise`,
+        updatedAt: sql`excluded.updated_at`,
+      },
+    });
 
   revalidateTax();
   return OK;

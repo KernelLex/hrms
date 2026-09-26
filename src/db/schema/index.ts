@@ -7,3 +7,4 @@ export * from "./payroll";
 export * from "./tax";
 export * from "./recruitment";
 export * from "./performance";
+export * from "./app";

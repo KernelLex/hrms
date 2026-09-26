@@ -10,8 +10,6 @@ import {
   pyRecurringPayment,
   pyAdditionalPayment,
   pyPayrollRun,
-  pyPayrollResult,
-  pyPayrollResultLine,
   pyBankTransferFile,
   pyBankTransferLine,
   pyGlPosting,
@@ -20,10 +18,9 @@ import {
   OPEN_ENDED,
   now,
 } from "@/db/schema";
-import { runPayroll } from "@/lib/engines/payroll";
-import { readAsOf, SLICED_TABLES } from "@/lib/engines/timeslice";
+import { startRun, processRunBatch, type RunProgress } from "@/lib/engines/payroll";
 import { toPaise } from "@/lib/money";
-import { getEmployee, fullName } from "@/lib/repositories/employees";
+import { rawClient } from "@/lib/db";
 
 export type ActionState = { error?: string; ok?: boolean; runId?: number };
 
@@ -77,9 +74,12 @@ export async function setPeriodStatus(
 
   if (target === "Posted") {
     const run = await db.query.pyPayrollRun.findFirst({
-      where: eq(pyPayrollRun.periodId, id),
+      where: and(eq(pyPayrollRun.periodId, id), eq(pyPayrollRun.runType, "Regular")),
     });
     if (!run) return fail("Run payroll before posting the period.");
+    if (run.status !== "Completed") {
+      return fail("The payroll run for this period is still in progress. Let it finish first.");
+    }
   }
 
   await db
@@ -263,16 +263,27 @@ export async function deleteAdditionalPayment(
   form: FormData,
 ): Promise<ActionState> {
   await requireRole("HR_ADMIN");
-  await db
-    .delete(pyAdditionalPayment)
-    .where(eq(pyAdditionalPayment.id, num(form.get("id"))));
+  const id = num(form.get("id"));
+  const payment = await db.query.pyAdditionalPayment.findFirst({
+    where: eq(pyAdditionalPayment.id, id),
+  });
+  if (payment?.paidRunId) {
+    return fail("That payment has been paid in a payroll run, so it stays on record.");
+  }
+  await db.delete(pyAdditionalPayment).where(eq(pyAdditionalPayment.id, id));
   revalidatePayroll();
   return OK;
 }
 
 /* ----------------------------------------------------- PY-03 run payroll */
 
-export async function runPayrollAction(
+/**
+ * Starts a run and returns at once. The screen then calls continueRun until
+ * it reports completion, so no single request has to calculate the whole
+ * organisation inside a serverless time limit, and a run interrupted by a
+ * closed tab resumes where it stopped.
+ */
+export async function startRunAction(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
@@ -281,11 +292,62 @@ export async function runPayrollAction(
   if (!periodId) return fail("Choose a period.");
 
   try {
-    const { runId } = await runPayroll({ periodId, runBy: session.username });
-    revalidatePayroll();
+    const { runId } = await startRun({ periodId, runBy: session.username });
     return { ok: true, runId };
   } catch (err) {
-    return fail(err instanceof Error ? err.message : "The payroll run failed.");
+    return fail(err instanceof Error ? err.message : "The payroll run could not start.");
+  }
+}
+
+/**
+ * An off-cycle run: selected people, outside the monthly run, paying the
+ * one-off payments still owed to them — a bonus agreed after the month was
+ * run, a final settlement.
+ */
+export async function startOffCycleAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requireRole("HR_ADMIN");
+  const periodId = num(form.get("periodId"));
+  const employeeIds = form
+    .getAll("employeeId")
+    .map((v) => Number(v))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  const reason = str(form.get("reason"));
+  const payDate = str(form.get("payDate"));
+
+  if (!periodId) return fail("Choose a period.");
+  if (employeeIds.length === 0) return fail("Choose at least one person to pay.");
+  if (!reason) return fail("Say what the run is for, such as a bonus or a final settlement.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(payDate)) return fail("Enter a pay date.");
+
+  try {
+    const { runId } = await startRun({
+      periodId,
+      runBy: session.username,
+      runType: "Off-cycle",
+      employeeIds,
+      reason,
+      payDate,
+    });
+    return { ok: true, runId };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : "The off-cycle run could not start.");
+  }
+}
+
+/** Calculates the next batch of a run. Called repeatedly by the screen. */
+export async function continueRun(
+  runId: number,
+): Promise<RunProgress | { error: string }> {
+  await requireRole("HR_ADMIN");
+  try {
+    const progress = await processRunBatch(Number(runId));
+    if (progress.completed) revalidatePayroll();
+    return progress;
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "The payroll run stopped." };
   }
 }
 
@@ -300,12 +362,33 @@ export async function generateBankFile(
   const paymentDate = str(form.get("paymentDate"));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) return fail("Enter a payment date.");
 
-  const results = await db
-    .select()
-    .from(pyPayrollResult)
-    .where(and(eq(pyPayrollResult.runId, runId), eq(pyPayrollResult.status, "Calculated")));
+  const run = await db.query.pyPayrollRun.findFirst({ where: eq(pyPayrollRun.id, runId) });
+  if (!run) return fail("That run no longer exists.");
+  if (run.status !== "Completed") return fail("That run is still in progress.");
 
-  if (results.length === 0) return fail("That run has no payable results.");
+  // Each payee with the bank account valid on the payment date, in one read.
+  const payees = await rawClient().execute({
+    sql: `SELECT r.employee_id, r.net_paise,
+                 COALESCE(p.first_name || ' ' || p.last_name, e.employee_number) AS name,
+                 b.bank_name, b.account_number, b.ifsc
+          FROM py_payroll_result r
+          JOIN pa_employee e ON e.id = r.employee_id
+          LEFT JOIN pa_it0002_personal_data p
+            ON p.employee_id = r.employee_id AND p.valid_from <= ?2 AND p.valid_to >= ?2
+          LEFT JOIN pa_it0009_bank_details b
+            ON b.employee_id = r.employee_id AND b.valid_from <= ?2 AND b.valid_to >= ?2
+          WHERE r.run_id = ?1 AND r.status = 'Calculated'
+          ORDER BY e.employee_number`,
+    args: [runId, paymentDate],
+  });
+  if (payees.rows.length === 0) return fail("That run has no payable results.");
+
+  const missing = payees.rows.filter((p) => !p.account_number);
+  if (missing.length > 0) {
+    return fail(
+      `${missing.map((p) => String(p.name)).join(", ")} ${missing.length === 1 ? "has" : "have"} no bank account valid on the payment date. Add one, or choose another date.`,
+    );
+  }
 
   await db.delete(pyBankTransferFile).where(eq(pyBankTransferFile.runId, runId));
 
@@ -315,31 +398,24 @@ export async function generateBankFile(
       runId,
       paymentDate,
       format: str(form.get("format")) || "NEFT bulk upload (CSV)",
-      totalPaise: results.reduce((s, r) => s + r.netPaise, 0),
-      lineCount: results.length,
+      totalPaise: payees.rows.reduce((s, p) => s + Number(p.net_paise), 0),
+      lineCount: payees.rows.length,
       generatedAt: now(),
       generatedBy: session.username,
     })
     .returning({ id: pyBankTransferFile.id });
 
-  for (const r of results) {
-    const bank = await readAsOf<{
-      bank_name: string;
-      account_number: string;
-      ifsc: string | null;
-    }>(SLICED_TABLES.bankDetails, r.employeeId, paymentDate);
-    const employee = await getEmployee(r.employeeId);
-
-    await db.insert(pyBankTransferLine).values({
+  await db.insert(pyBankTransferLine).values(
+    payees.rows.map((p) => ({
       fileId: file.id,
-      employeeId: r.employeeId,
-      employeeName: employee ? fullName(employee) : `Employee ${r.employeeId}`,
-      bankName: bank?.bank_name ?? "—",
-      accountNumber: bank?.account_number ?? "—",
-      ifsc: bank?.ifsc ?? null,
-      amountPaise: r.netPaise,
-    });
-  }
+      employeeId: Number(p.employee_id),
+      employeeName: String(p.name),
+      bankName: String(p.bank_name),
+      accountNumber: String(p.account_number),
+      ifsc: p.ifsc === null ? null : String(p.ifsc),
+      amountPaise: Number(p.net_paise),
+    })),
+  );
 
   revalidatePayroll();
   return OK;
@@ -359,27 +435,43 @@ export async function postToLedger(
   const postingDate = str(form.get("postingDate"));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(postingDate)) return fail("Enter a posting date.");
 
-  const results = await db
-    .select({ id: pyPayrollResult.id, net: pyPayrollResult.netPaise })
-    .from(pyPayrollResult)
-    .where(and(eq(pyPayrollResult.runId, runId), eq(pyPayrollResult.status, "Calculated")));
-  if (results.length === 0) return fail("That run has no results to post.");
+  const run = await db.query.pyPayrollRun.findFirst({ where: eq(pyPayrollRun.id, runId) });
+  if (!run) return fail("That run no longer exists.");
+  if (run.status !== "Completed") return fail("That run is still in progress.");
 
-  // Aggregate every line across the run, by wage type.
+  // Every line in the run, summed by wage type and by the cost centre of each
+  // person's org assignment at the end of the period — one read, not one per
+  // employee.
+  const aggregate = await rawClient().execute({
+    sql: `SELECT l.wage_type_code AS code, MIN(l.wage_type_name) AS name, l.kind,
+                 o.cost_center, SUM(l.amount_paise) AS amount
+          FROM py_payroll_result_line l
+          JOIN py_payroll_result r ON r.id = l.result_id AND r.status = 'Calculated'
+          JOIN py_payroll_run run ON run.id = r.run_id
+          JOIN py_payroll_period p ON p.id = run.period_id
+          LEFT JOIN pa_it0001_org_assignment o
+            ON o.employee_id = r.employee_id
+           AND o.valid_from <= date(printf('%04d-%02d-01', p.year, p.month), '+1 month', '-1 day')
+           AND o.valid_to >= date(printf('%04d-%02d-01', p.year, p.month), '+1 month', '-1 day')
+          WHERE r.run_id = ?
+          GROUP BY l.wage_type_code, l.kind, o.cost_center`,
+    args: [runId],
+  });
+  if (aggregate.rows.length === 0) return fail("That run has no results to post.");
+
+  type Total = { code: string; name: string; kind: string; costCenter: string | null; amount: number };
+  const rows: Total[] = aggregate.rows.map((r) => ({
+    code: String(r.code),
+    // Arrears lines name their month; the ledger wants the wage type.
+    name: String(r.name).replace(/ (arrears )?for [A-Z][a-z]+ \d{4}$/, ""),
+    kind: String(r.kind),
+    costCenter: r.cost_center === null ? null : String(r.cost_center),
+    amount: Number(r.amount),
+  }));
   const totals = new Map<string, { name: string; kind: string; amount: number }>();
-  for (const r of results) {
-    const rowLines = await db
-      .select()
-      .from(pyPayrollResultLine)
-      .where(eq(pyPayrollResultLine.resultId, r.id));
-    for (const l of rowLines) {
-      const existing = totals.get(l.wageTypeCode);
-      totals.set(l.wageTypeCode, {
-        name: l.wageTypeName,
-        kind: l.kind,
-        amount: (existing?.amount ?? 0) + l.amountPaise,
-      });
-    }
+  for (const r of rows) {
+    const t = totals.get(r.code);
+    totals.set(r.code, { name: r.name, kind: r.kind, amount: (t?.amount ?? 0) + r.amount });
   }
 
   const wageTypes = await db.select().from(pyWageType);
@@ -391,7 +483,7 @@ export async function postToLedger(
     .values({ runId, postingDate, postedAt: now(), postedBy: session.username })
     .returning({ id: pyGlPosting.id });
 
-  const description = "Payroll run";
+  const description = run.runType === "Off-cycle" ? "Off-cycle payroll" : "Payroll run";
   const glLines: {
     postingId: number;
     glAccount: string;
@@ -401,16 +493,16 @@ export async function postToLedger(
     costCenter: string | null;
   }[] = [];
 
-  // Earnings are an expense.
-  for (const [code, t] of totals) {
-    if (t.kind !== "Earning" || t.amount === 0) continue;
+  // Earnings are an expense, charged to the cost centre that incurred it.
+  for (const r of rows) {
+    if (r.kind !== "Earning" || r.amount === 0) continue;
     glLines.push({
       postingId: posting.id,
-      glAccount: glOf.get(code) ?? "5010",
-      description: `${description} — ${t.name}`,
-      debitPaise: t.amount,
+      glAccount: glOf.get(r.code) ?? "5010",
+      description: `${description} — ${r.name}`,
+      debitPaise: r.amount,
       creditPaise: 0,
-      costCenter: null,
+      costCenter: r.costCenter,
     });
   }
 
@@ -428,7 +520,9 @@ export async function postToLedger(
   }
 
   // What is left is owed to the employees.
-  const netTotal = results.reduce((s, r) => s + r.net, 0);
+  const earningsTotal = rows.filter((r) => r.kind === "Earning").reduce((s, r) => s + r.amount, 0);
+  const deductionsTotal = rows.filter((r) => r.kind === "Deduction").reduce((s, r) => s + r.amount, 0);
+  const netTotal = earningsTotal - deductionsTotal;
   glLines.push({
     postingId: posting.id,
     glAccount: "2110",
@@ -489,10 +583,10 @@ export async function markRemitted(
   return OK;
 }
 
-/** The most recent run for a period, used by several screens. */
+/** The regular run for a period, used by several screens. */
 export async function latestRunForPeriod(periodId: number) {
   return db.query.pyPayrollRun.findFirst({
-    where: eq(pyPayrollRun.periodId, periodId),
+    where: and(eq(pyPayrollRun.periodId, periodId), eq(pyPayrollRun.runType, "Regular")),
     orderBy: [desc(pyPayrollRun.runAt)],
   });
 }

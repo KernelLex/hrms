@@ -1,4 +1,5 @@
 import { formatINRExact } from "@/lib/money";
+import { formatDate } from "@/lib/dates";
 
 /**
  * A payslip, built to DESIGN_LANGUAGE.md §11 "Printed documents".
@@ -29,6 +30,10 @@ export function Payslip({
   netPaise,
   unpaidDays,
   workingDays,
+  employedDays,
+  joinedOn,
+  leftOn,
+  offCycleReason,
 }: {
   employer: string;
   employerAddress?: string;
@@ -43,6 +48,12 @@ export function Payslip({
   netPaise: number;
   unpaidDays: number;
   workingDays: number;
+  /** Working days employed; fewer than workingDays for a joiner or leaver. */
+  employedDays: number;
+  joinedOn?: string | null;
+  leftOn?: string | null;
+  /** Set for an off-cycle payslip: what it pays. */
+  offCycleReason?: string | null;
 }) {
   const earnings = lines.filter((l) => l.kind === "Earning" && l.amountPaise !== 0);
   const deductions = lines.filter((l) => l.kind === "Deduction" && l.amountPaise !== 0);
@@ -63,8 +74,12 @@ export function Payslip({
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[15px] font-semibold">Payslip</div>
-          <div className="text-[13px] text-muted">{period}</div>
+          <div className="text-[15px] font-semibold">
+            {offCycleReason ? "Off-cycle payslip" : "Payslip"}
+          </div>
+          <div className="text-[13px] text-muted">
+            {offCycleReason ? `${offCycleReason}, ${period}` : period}
+          </div>
         </div>
       </div>
 
@@ -74,7 +89,7 @@ export function Payslip({
           ["Employee", employeeName],
           ["Employee number", employeeNumber],
           ["Position", position ?? "—"],
-          ["Pay date", payDate ?? "—"],
+          ["Pay date", payDate ? formatDate(payDate) : "—"],
         ].map(([label, value]) => (
           <div key={label}>
             <dt className="text-[13px] text-muted">{label}</dt>
@@ -83,7 +98,14 @@ export function Payslip({
         ))}
       </dl>
 
-      {unpaidDays > 0 ? (
+      {!offCycleReason && employedDays > 0 && employedDays < workingDays ? (
+        <p className="mb-4 rounded-2xl bg-soft px-4 py-3 text-sm text-ink-hover">
+          {joinedOn ? `Joined on ${formatDate(joinedOn)}` : `Left on ${formatDate(leftOn)}`}, so
+          this period pays {employedDays} of its {workingDays} working days.
+        </p>
+      ) : null}
+
+      {!offCycleReason && unpaidDays > 0 ? (
         <p className="mb-4 rounded-2xl bg-soft px-4 py-3 text-sm text-ink-hover">
           {unpaidDays} of {workingDays} working days were unpaid this period, so
           basic pay and the allowances derived from it are prorated.

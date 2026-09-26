@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { pyPayrollResult, pyPayrollRun, pyPayrollPeriod } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { formatINR } from "@/lib/money";
+import { formatDate, formatMonth } from "@/lib/dates";
 import {
   Card,
   PageHeader,
@@ -16,13 +17,9 @@ import {
   Notice,
   FigureRow,
   Figure,
+  TwoLine,
 } from "@/components/ui";
 import { FileText } from "lucide-react";
-
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
 
 /** Employee self-service: your own payslips. */
 export default async function MyPayslipsPage() {
@@ -51,6 +48,10 @@ export default async function MyPayslipsPage() {
       year: pyPayrollPeriod.year,
       month: pyPayrollPeriod.month,
       payDate: pyPayrollPeriod.payDate,
+      runPayDate: pyPayrollRun.payDate,
+      runType: pyPayrollRun.runType,
+      reason: pyPayrollRun.reason,
+      runStatus: pyPayrollRun.status,
       periodStatus: pyPayrollPeriod.status,
     })
     .from(pyPayrollResult)
@@ -59,8 +60,14 @@ export default async function MyPayslipsPage() {
     .where(eq(pyPayrollResult.employeeId, session.employeeId))
     .orderBy(desc(pyPayrollPeriod.year), desc(pyPayrollPeriod.month));
 
-  // Only show what has actually been paid, not a run still being corrected.
-  const visible = rows.filter((r) => r.status === "Calculated" && r.periodStatus === "Posted");
+  // Only what has actually been paid: a posted month, or a completed
+  // off-cycle payment, never a run still being corrected.
+  const visible = rows.filter(
+    (r) =>
+      r.status === "Calculated" &&
+      r.runStatus === "Completed" &&
+      (r.periodStatus === "Posted" || r.runType === "Off-cycle"),
+  );
   const latest = visible[0];
   const ytdNet = visible.reduce((s, r) => s + r.netPaise, 0);
 
@@ -76,7 +83,7 @@ export default async function MyPayslipsPage() {
           <Figure
             label="Latest net pay"
             value={formatINR(latest.netPaise)}
-            hint={`${MONTHS[latest.month - 1]} ${latest.year}`}
+            hint={formatMonth(latest.year, latest.month)}
           />
           <Figure label="Latest gross" value={formatINR(latest.grossPaise)} hint="before deductions" />
           <Figure label="Latest deductions" value={formatINR(latest.deductionsPaise)} hint="tax and provident fund" />
@@ -109,13 +116,14 @@ export default async function MyPayslipsPage() {
                 {visible.map((r) => (
                   <Tr key={r.id}>
                     <Td>
-                      <span className="font-medium text-ink">
-                        {MONTHS[r.month - 1]} {r.year}
-                      </span>
+                      <TwoLine
+                        value={formatMonth(r.year, r.month)}
+                        sub={r.runType === "Off-cycle" ? `Off-cycle: ${r.reason ?? "payment"}` : undefined}
+                      />
                     </Td>
                     <Td>
-                      {r.payDate ? (
-                        <span className="tabular text-secondary">{r.payDate}</span>
+                      {(r.runPayDate ?? r.payDate) ? (
+                        <span className="tabular text-secondary">{formatDate(r.runPayDate ?? r.payDate)}</span>
                       ) : (
                         <span className="text-decor">&mdash;</span>
                       )}

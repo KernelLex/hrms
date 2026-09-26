@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   pyPayrollRun,
@@ -12,7 +12,10 @@ import {
 } from "@/db/schema";
 import { getSession, hasRole } from "@/lib/auth";
 import { formatINR } from "@/lib/money";
+import { formatDate, formatMonth, todayInIndia } from "@/lib/dates";
+import { Pagination, pageFrom } from "@/components/pagination";
 import {
+  ButtonAnchor,
   Card,
   CardHeader,
   PageHeader,
@@ -25,18 +28,13 @@ import {
   EmptyState,
   Notice,
 } from "@/components/ui";
-import { Landmark } from "lucide-react";
+import { Download, Landmark } from "lucide-react";
 import { PayrollTabs } from "../tabs";
 import { PostingForms, RemitButton } from "./forms";
 
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
 /** PY-05 — bank transfer file, ledger posting and statutory remittance. */
 export default async function PostingPage(props: {
-  searchParams: Promise<{ run?: string }>;
+  searchParams: Promise<{ run?: string; page?: string }>;
 }) {
   const session = await getSession();
   if (!hasRole(session, "HR_ADMIN")) redirect("/payroll/my-payslips");
@@ -47,6 +45,8 @@ export default async function PostingPage(props: {
     .select({
       id: pyPayrollRun.id,
       runAt: pyPayrollRun.runAt,
+      runType: pyPayrollRun.runType,
+      reason: pyPayrollRun.reason,
       netTotalPaise: pyPayrollRun.netTotalPaise,
       errorCount: pyPayrollRun.errorCount,
       year: pyPayrollPeriod.year,
@@ -56,7 +56,11 @@ export default async function PostingPage(props: {
     })
     .from(pyPayrollRun)
     .innerJoin(pyPayrollPeriod, eq(pyPayrollPeriod.id, pyPayrollRun.periodId))
+    .where(eq(pyPayrollRun.status, "Completed"))
     .orderBy(desc(pyPayrollRun.runAt));
+
+  const runLabel = (r: (typeof runs)[number]) =>
+    `${formatMonth(r.year, r.month)}, ${r.areaCode}${r.runType === "Off-cycle" ? `, off-cycle: ${r.reason ?? "payment"}` : ""}`;
 
   if (runs.length === 0) {
     return (
@@ -91,13 +95,25 @@ export default async function PostingPage(props: {
       .orderBy(asc(pyStatutoryRemittance.dueDate)),
   ]);
 
-  const [bankLines, glLines] = await Promise.all([
+  // A bank file has a line per person paid, so it is read a page at a time.
+  const { page, limit, offset } = pageFrom(params.page);
+  const [bankLines, bankLineCount, glLines] = await Promise.all([
     bankFile
       ? db
           .select()
           .from(pyBankTransferLine)
           .where(eq(pyBankTransferLine.fileId, bankFile.id))
+          .orderBy(asc(pyBankTransferLine.employeeName))
+          .limit(limit)
+          .offset(offset)
       : Promise.resolve([]),
+    bankFile
+      ? db
+          .select({ n: count() })
+          .from(pyBankTransferLine)
+          .where(and(eq(pyBankTransferLine.fileId, bankFile.id)))
+          .then((r) => r[0].n)
+      : Promise.resolve(0),
     posting
       ? db.select().from(pyGlPostingLine).where(eq(pyGlPostingLine.postingId, posting.id))
       : Promise.resolve([]),
@@ -106,20 +122,20 @@ export default async function PostingPage(props: {
   const totalDebit = glLines.reduce((s, l) => s + l.debitPaise, 0);
   const totalCredit = glLines.reduce((s, l) => s + l.creditPaise, 0);
   const balanced = totalDebit === totalCredit;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInIndia();
 
   return (
     <>
       <PayrollTabs />
       <PageHeader
         title="Bank and posting"
-        subtitle={`${MONTHS[run.month - 1]} ${run.year}, ${run.areaCode}. Net payable ${formatINR(run.netTotalPaise)}.`}
+        subtitle={`${runLabel(run)}. Net payable ${formatINR(run.netTotalPaise)}.`}
       />
 
       <PostingForms
         runs={runs.map((r) => ({
           value: String(r.id),
-          label: `${MONTHS[r.month - 1]} ${r.year} — ${r.areaCode}`,
+          label: runLabel(r),
         }))}
         selectedRunId={String(run.id)}
         hasBankFile={Boolean(bankFile)}
@@ -133,8 +149,16 @@ export default async function PostingPage(props: {
             title="Bank transfer"
             description={
               bankFile
-                ? `${bankFile.lineCount} payments totalling ${formatINR(bankFile.totalPaise)}, ${bankFile.format}.`
+                ? `${bankFile.lineCount} payments totalling ${formatINR(bankFile.totalPaise)}, paid ${formatDate(bankFile.paymentDate)}. ${bankFile.format}.`
                 : "Generate the payment file once the run is correct."
+            }
+            actions={
+              bankFile ? (
+                <ButtonAnchor href={`/api/payroll/bank-file/${bankFile.id}`} size="sm" download>
+                  <Download />
+                  Download CSV
+                </ButtonAnchor>
+              ) : undefined
             }
           />
           {bankLines.length === 0 ? (
@@ -169,6 +193,15 @@ export default async function PostingPage(props: {
               </tbody>
             </Table>
           )}
+          {bankFile ? (
+            <Pagination
+              page={page}
+              total={bankLineCount}
+              path="/payroll/posting"
+              params={{ run: String(run.id) }}
+              noun="payments"
+            />
+          ) : null}
         </Card>
       </div>
 
@@ -179,7 +212,7 @@ export default async function PostingPage(props: {
             title="Ledger posting"
             description={
               posting
-                ? `Posted ${posting.postingDate} by ${posting.postedBy}.`
+                ? `Posted ${formatDate(posting.postingDate)} by ${posting.postedBy}.`
                 : "Posts salary expense and the payables it creates."
             }
           />
@@ -202,6 +235,7 @@ export default async function PostingPage(props: {
                   <tr>
                     <Th>Account</Th>
                     <Th>Description</Th>
+                    <Th>Cost centre</Th>
                     <Th numeric>Debit</Th>
                     <Th numeric>Credit</Th>
                   </tr>
@@ -215,6 +249,13 @@ export default async function PostingPage(props: {
                       <Td>
                         <span className="text-secondary">{l.description}</span>
                       </Td>
+                      <Td>
+                        {l.costCenter ? (
+                          <span className="tabular text-secondary">{l.costCenter}</span>
+                        ) : (
+                          <span className="text-decor">&mdash;</span>
+                        )}
+                      </Td>
                       <Td numeric>
                         {l.debitPaise > 0 ? formatINR(l.debitPaise) : <span className="text-decor">&mdash;</span>}
                       </Td>
@@ -224,7 +265,7 @@ export default async function PostingPage(props: {
                     </Tr>
                   ))}
                   <Tr>
-                    <Td colSpan={2}>
+                    <Td colSpan={3}>
                       <span className="font-medium text-ink">Total</span>
                     </Td>
                     <Td numeric>
@@ -281,8 +322,8 @@ export default async function PostingPage(props: {
                             overdue ? "tabular font-medium text-danger" : "tabular text-secondary"
                           }
                         >
-                          {r.dueDate}
-                          {overdue ? " — overdue" : ""}
+                          {formatDate(r.dueDate)}
+                          {overdue ? ", overdue" : ""}
                         </span>
                       </Td>
                       <Td>
