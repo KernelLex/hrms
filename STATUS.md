@@ -1,6 +1,6 @@
 # Project status
 
-**Last updated:** 26 Sept 2026 · **Current phase:** 3 of 9 (core HR, next)
+**Last updated:** 26 Sept 2026 · **Current phase:** 4 of 9 (time and absence, next)
 
 Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUILD_PLAN.md); for what the product does see [README.md](README.md).
 
@@ -10,11 +10,11 @@ Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUI
 
 | | |
 |---|---|
-| Phases complete | 3 of 10 (phases 0, 1 and 2) |
-| Real screens built | 8 of 38 |
-| Placeholder screens | 10 |
-| Database tables | 10 of ~61 |
-| Engines built | 0 of 4 |
+| Phases complete | 4 of 10 (phases 0 to 3) |
+| Real screens built | 13 of 38 |
+| Placeholder screens | 9 |
+| Database tables | 21 of ~61 |
+| Engines built | 1 of 4 (time-slice) |
 | Deployed | yes, but gated — see blockers |
 
 ---
@@ -51,8 +51,8 @@ Installed per-user under `C:\Users\AMOG\tools` because the account is not an adm
 | 0 | Toolchain and repo | done |
 | 1 | Foundation — design system, shell, auth, data layer | done |
 | 2 | Org management — OM-01…08 | done |
-| 3 | Core HR — CH-01…05, time-slice engine | **next** |
-| 4 | Time and absence — TM-01…05, quota engine | not started |
+| 3 | Core HR — CH-01…05, time-slice engine | done |
+| 4 | Time and absence — TM-01…05, quota engine | **next** |
 | 5 | Payroll — PY-01…05, payroll engine | not started |
 | 6 | Recruitment — RC-01…05, hire conversion | not started |
 | 7 | Performance — PM-01…05, increment push | not started |
@@ -93,16 +93,33 @@ Behaviour worth noting:
 
 Verified: 8 of 8 data integrity checks pass (no cycles, valid references, foreign keys reject orphans, insert/update/delete round-trip), and all eight screens render real seeded data over HTTP as an authenticated HR admin.
 
+**Core HR — all five screens and the time-slice engine (phase 3).** The hire action, maintain master data across eight infotype tabs, the as-of-date viewer, employee search and mass update.
+
+**The time-slice engine** is the part everything later depends on. Writing a record for a date delimits whatever was true before it rather than overwriting it, inside one transaction. It handles all four overlap cases, including the one people forget: a short correction inserted into the middle of an open-ended record splits it in three and leaves the later period carrying its own original value.
+
+Verified by `/api/health/timeslice-check` — 6 of 6 pass:
+
+- predecessor delimited on a later insert
+- as-of read returns the historical value, not the current one
+- a straddling insert splits the record into three
+- the period after a correction keeps its own value
+- deleting a slice extends its predecessor over the gap
+- no overlapping slices remain
+
+Proof it works end to end: Arjun Mehta's as-of viewer reads ₹65,000 on 1 June 2024 and ₹72,000 on 1 June 2025, from two dated records rather than one mutable field.
+
+Also in this phase: the hire action creates the employee and five infotypes atomically and marks the position occupied; terminating frees the chair again; mass update routes every row through the engine so a bulk change leaves the same clean history a single edit does.
+
 ---
 
 ## What is left
 
-### Screens — 38 total, 8 built
+### Screens — 38 total, 13 built
 
 | Module | Screens | Nested tabs |
 |---|---|---|
 | ~~Org management~~ | ~~OM-01…08~~ — done | — |
-| Core HR | CH-01…05 | 8 infotype tabs on CH-02 |
+| ~~Core HR~~ | ~~CH-01…05~~ — done | 8 infotype tabs — done |
 | Time and absence | TM-01…05 | 4 across TM-01 and TM-05 |
 | Payroll | PY-01…05 | 6 across PY-02 and PY-05 |
 | Recruitment | RC-01…05 | — |
@@ -111,9 +128,9 @@ Verified: 8 of 8 data integrity checks pass (no cycles, valid references, foreig
 
 51 distinct form surfaces once nested tabs are counted.
 
-### Engines — 0 of 4
+### Engines — 1 of 4
 
-1. **Time-slice** — delimit-on-insert plus as-of-date reads. Blocks Core HR.
+1. ~~**Time-slice**~~ — done, 6 of 6 checks pass.
 2. **Quota** — entitlement generation, decrement on approval. Blocks time.
 3. **Payroll** — gross to net with proration, PF and TDS. Blocks payroll.
 4. **Tax** — slab-based, both regimes, feeding Form 16 Part B.
@@ -123,9 +140,9 @@ Verified: 8 of 8 data integrity checks pass (no cycles, valid references, foreig
 - **Hire conversion** — recruitment creates an employee plus four infotypes atomically.
 - **Increment push** — performance writes a new basic-pay slice payroll then reads.
 
-### Remaining tables — about 51
+### Remaining tables — about 40
 
-`pa_*` (10), `pt_*` (10), `py_*` (12), `rc_*` (6), `pm_*` (6), `tds_*` (6), `app_document` (1).
+`pt_*` (9 more), `py_*` (12), `rc_*` (6), `pm_*` (6), `tds_*` (6), `app_document` (1).
 
 ---
 
