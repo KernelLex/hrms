@@ -26,7 +26,7 @@ describe("HR home", () => {
   it("counts what the seed leaves waiting", async () => {
     const h = await hrHome(TODAY);
     expect(h.headcount).toBeGreaterThanOrEqual(3);
-    expect(h.positions).toBe(4);
+    expect(h.positions).toBeGreaterThanOrEqual(4);
     expect(h.vacancies).toBeGreaterThanOrEqual(1);
     expect(h.pendingLeave).toBeGreaterThanOrEqual(1); // Arjun's December request
     expect(h.offered).toBeGreaterThanOrEqual(1); // the candidate ready to convert

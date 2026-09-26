@@ -5,6 +5,7 @@ import { eq, and, ne, count } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
+import { actorOf, audited, recordCreated, recordDeleted } from "@/lib/change-log";
 import {
   omCompany,
   omPersonnelArea,
@@ -91,7 +92,7 @@ export async function saveCompany(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = optional(form.get("originalCode"));
 
   const parsed = CompanyInput.safeParse({
@@ -111,9 +112,14 @@ export async function saveCompany(
       .from(omCompany)
       .where(eq(omCompany.code, v.code));
     if (dupe.n > 0) return fail(`Company ${v.code} already exists.`);
-    await db.insert(omCompany).values(v);
+    await recordCreated(actor, "om_company", await db.insert(omCompany).values(v).returning());
   } else {
-    await db.update(omCompany).set(v).where(eq(omCompany.code, original));
+    await audited(
+      actor,
+      { entity: "om_company", entityId: original },
+      () => db.query.omCompany.findFirst({ where: eq(omCompany.code, original) }),
+      () => db.update(omCompany).set(v).where(eq(omCompany.code, original)),
+    );
   }
 
   revalidateOrg();
@@ -124,7 +130,7 @@ export async function deleteCompany(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const c = str(form.get("code"));
 
   const [areas] = await db
@@ -146,7 +152,11 @@ export async function deleteCompany(
     );
   }
 
-  await db.delete(omCompany).where(eq(omCompany.code, c));
+  await recordDeleted(
+    actor,
+    "om_company",
+    await db.delete(omCompany).where(eq(omCompany.code, c)).returning(),
+  );
   revalidateOrg();
   return OK;
 }
@@ -165,7 +175,7 @@ export async function saveArea(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = optional(form.get("originalCode"));
 
   const parsed = AreaInput.safeParse({
@@ -184,9 +194,18 @@ export async function saveArea(
       .from(omPersonnelArea)
       .where(eq(omPersonnelArea.code, v.code));
     if (dupe.n > 0) return fail(`Personnel area ${v.code} already exists.`);
-    await db.insert(omPersonnelArea).values(v);
+    await recordCreated(
+      actor,
+      "om_personnel_area",
+      await db.insert(omPersonnelArea).values(v).returning(),
+    );
   } else {
-    await db.update(omPersonnelArea).set(v).where(eq(omPersonnelArea.code, original));
+    await audited(
+      actor,
+      { entity: "om_personnel_area", entityId: original },
+      () => db.query.omPersonnelArea.findFirst({ where: eq(omPersonnelArea.code, original) }),
+      () => db.update(omPersonnelArea).set(v).where(eq(omPersonnelArea.code, original)),
+    );
   }
 
   revalidateOrg();
@@ -197,7 +216,7 @@ export async function deleteArea(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const c = str(form.get("code"));
 
   const [subs] = await db
@@ -210,7 +229,11 @@ export async function deleteArea(
     );
   }
 
-  await db.delete(omPersonnelArea).where(eq(omPersonnelArea.code, c));
+  await recordDeleted(
+    actor,
+    "om_personnel_area",
+    await db.delete(omPersonnelArea).where(eq(omPersonnelArea.code, c)).returning(),
+  );
   revalidateOrg();
   return OK;
 }
@@ -228,7 +251,7 @@ export async function saveSubArea(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = optional(form.get("originalCode"));
 
   const parsed = SubAreaInput.safeParse({
@@ -246,12 +269,18 @@ export async function saveSubArea(
       .from(omPersonnelSubArea)
       .where(eq(omPersonnelSubArea.code, v.code));
     if (dupe.n > 0) return fail(`Sub-area ${v.code} already exists.`);
-    await db.insert(omPersonnelSubArea).values(v);
+    await recordCreated(
+      actor,
+      "om_personnel_sub_area",
+      await db.insert(omPersonnelSubArea).values(v).returning(),
+    );
   } else {
-    await db
-      .update(omPersonnelSubArea)
-      .set(v)
-      .where(eq(omPersonnelSubArea.code, original));
+    await audited(
+      actor,
+      { entity: "om_personnel_sub_area", entityId: original },
+      () => db.query.omPersonnelSubArea.findFirst({ where: eq(omPersonnelSubArea.code, original) }),
+      () => db.update(omPersonnelSubArea).set(v).where(eq(omPersonnelSubArea.code, original)),
+    );
   }
 
   revalidateOrg();
@@ -262,8 +291,13 @@ export async function deleteSubArea(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
-  await db.delete(omPersonnelSubArea).where(eq(omPersonnelSubArea.code, str(form.get("code"))));
+  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const c = str(form.get("code"));
+  await recordDeleted(
+    actor,
+    "om_personnel_sub_area",
+    await db.delete(omPersonnelSubArea).where(eq(omPersonnelSubArea.code, c)).returning(),
+  );
   revalidateOrg();
   return OK;
 }
@@ -282,7 +316,7 @@ export async function saveJob(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = optional(form.get("originalCode"));
 
   const parsed = JobInput.safeParse({
@@ -298,9 +332,14 @@ export async function saveJob(
   if (!original) {
     const [dupe] = await db.select({ n: count() }).from(omJob).where(eq(omJob.code, v.code));
     if (dupe.n > 0) return fail(`Job ${v.code} already exists.`);
-    await db.insert(omJob).values(v);
+    await recordCreated(actor, "om_job", await db.insert(omJob).values(v).returning());
   } else {
-    await db.update(omJob).set(v).where(eq(omJob.code, original));
+    await audited(
+      actor,
+      { entity: "om_job", entityId: original },
+      () => db.query.omJob.findFirst({ where: eq(omJob.code, original) }),
+      () => db.update(omJob).set(v).where(eq(omJob.code, original)),
+    );
   }
 
   revalidateOrg();
@@ -311,7 +350,7 @@ export async function deleteJob(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const c = str(form.get("code"));
 
   const [positions] = await db
@@ -324,7 +363,7 @@ export async function deleteJob(
     );
   }
 
-  await db.delete(omJob).where(eq(omJob.code, c));
+  await recordDeleted(actor, "om_job", await db.delete(omJob).where(eq(omJob.code, c)).returning());
   revalidateOrg();
   return OK;
 }
@@ -363,7 +402,7 @@ export async function saveOrgUnit(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = optional(form.get("originalCode"));
 
   const parsed = OrgUnitInput.safeParse({
@@ -395,9 +434,14 @@ export async function saveOrgUnit(
       .from(omOrgUnit)
       .where(eq(omOrgUnit.code, v.code));
     if (dupe.n > 0) return fail(`Department ${v.code} already exists.`);
-    await db.insert(omOrgUnit).values(v);
+    await recordCreated(actor, "om_org_unit", await db.insert(omOrgUnit).values(v).returning());
   } else {
-    await db.update(omOrgUnit).set(v).where(eq(omOrgUnit.code, original));
+    await audited(
+      actor,
+      { entity: "om_org_unit", entityId: original },
+      () => db.query.omOrgUnit.findFirst({ where: eq(omOrgUnit.code, original) }),
+      () => db.update(omOrgUnit).set(v).where(eq(omOrgUnit.code, original)),
+    );
   }
 
   revalidateOrg();
@@ -408,7 +452,7 @@ export async function deleteOrgUnit(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const c = str(form.get("code"));
 
   const [children] = await db
@@ -430,7 +474,11 @@ export async function deleteOrgUnit(
     );
   }
 
-  await db.delete(omOrgUnit).where(eq(omOrgUnit.code, c));
+  await recordDeleted(
+    actor,
+    "om_org_unit",
+    await db.delete(omOrgUnit).where(eq(omOrgUnit.code, c)).returning(),
+  );
   revalidateOrg();
   return OK;
 }
@@ -471,7 +519,7 @@ export async function savePosition(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = optional(form.get("originalCode"));
 
   const parsed = PositionInput.safeParse({
@@ -505,9 +553,14 @@ export async function savePosition(
       .from(omPosition)
       .where(eq(omPosition.code, v.code));
     if (dupe.n > 0) return fail(`Position ${v.code} already exists.`);
-    await db.insert(omPosition).values(v);
+    await recordCreated(actor, "om_position", await db.insert(omPosition).values(v).returning());
   } else {
-    await db.update(omPosition).set(v).where(eq(omPosition.code, original));
+    await audited(
+      actor,
+      { entity: "om_position", entityId: original },
+      () => db.query.omPosition.findFirst({ where: eq(omPosition.code, original) }),
+      () => db.update(omPosition).set(v).where(eq(omPosition.code, original)),
+    );
   }
 
   revalidateOrg();
@@ -518,7 +571,7 @@ export async function deletePosition(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const c = str(form.get("code"));
 
   const [reports] = await db
@@ -531,8 +584,16 @@ export async function deletePosition(
     );
   }
 
-  await db.delete(omReportingLine).where(eq(omReportingLine.positionCode, c));
-  await db.delete(omPosition).where(eq(omPosition.code, c));
+  await recordDeleted(
+    actor,
+    "om_reporting_line",
+    await db.delete(omReportingLine).where(eq(omReportingLine.positionCode, c)).returning(),
+  );
+  await recordDeleted(
+    actor,
+    "om_position",
+    await db.delete(omPosition).where(eq(omPosition.code, c)).returning(),
+  );
   revalidateOrg();
   return OK;
 }
@@ -554,7 +615,7 @@ export async function saveReportingLine(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
 
   const parsed = ReportingLineInput.safeParse({
     positionCode: str(form.get("positionCode")),
@@ -572,11 +633,21 @@ export async function saveReportingLine(
     return fail("That reporting line would create a loop.");
   }
 
-  await db.insert(omReportingLine).values(v);
-  await db
-    .update(omPosition)
-    .set({ reportsToCode: v.reportsToCode })
-    .where(eq(omPosition.code, v.positionCode));
+  await recordCreated(
+    actor,
+    "om_reporting_line",
+    await db.insert(omReportingLine).values(v).returning(),
+  );
+  await audited(
+    actor,
+    { entity: "om_position", entityId: v.positionCode },
+    () => db.query.omPosition.findFirst({ where: eq(omPosition.code, v.positionCode) }),
+    () =>
+      db
+        .update(omPosition)
+        .set({ reportsToCode: v.reportsToCode })
+        .where(eq(omPosition.code, v.positionCode)),
+  );
 
   revalidateOrg();
   return OK;
@@ -586,7 +657,7 @@ export async function deleteReportingLine(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const id = Number(str(form.get("id")));
   if (!Number.isInteger(id)) return fail("That reporting line could not be identified.");
 
@@ -595,7 +666,11 @@ export async function deleteReportingLine(
   });
   if (!row) return fail("That reporting line no longer exists.");
 
-  await db.delete(omReportingLine).where(eq(omReportingLine.id, id));
+  await recordDeleted(
+    actor,
+    "om_reporting_line",
+    await db.delete(omReportingLine).where(eq(omReportingLine.id, id)).returning(),
+  );
 
   // Fall back to the most recent remaining line for this position, if any.
   const remaining = await db.query.omReportingLine.findMany({
@@ -607,10 +682,16 @@ export async function deleteReportingLine(
   const latest = remaining.sort((a, b) =>
     a.effectiveFrom < b.effectiveFrom ? 1 : -1,
   )[0];
-  await db
-    .update(omPosition)
-    .set({ reportsToCode: latest?.reportsToCode ?? null })
-    .where(eq(omPosition.code, row.positionCode));
+  await audited(
+    actor,
+    { entity: "om_position", entityId: row.positionCode },
+    () => db.query.omPosition.findFirst({ where: eq(omPosition.code, row.positionCode) }),
+    () =>
+      db
+        .update(omPosition)
+        .set({ reportsToCode: latest?.reportsToCode ?? null })
+        .where(eq(omPosition.code, row.positionCode)),
+  );
 
   revalidateOrg();
   return OK;

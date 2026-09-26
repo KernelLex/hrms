@@ -18,9 +18,12 @@ import {
   OPEN_ENDED,
   now,
 } from "@/db/schema";
-import { startRun, processRunBatch, type RunProgress } from "@/lib/engines/payroll";
+import { startRun, readRunProgress, type RunProgress } from "@/lib/engines/payroll";
 import { toPaise } from "@/lib/money";
 import { rawClient } from "@/lib/db";
+import { actorOf, audited, recordCreate, recordDelete } from "@/lib/change-log";
+import { enqueueJob, requeueJob } from "@/lib/jobs/queue";
+import { kickJobs } from "@/lib/jobs/runner";
 
 export type ActionState = { error?: string; ok?: boolean; runId?: number };
 
@@ -72,6 +75,7 @@ export async function setPeriodStatus(
     );
   }
 
+  let regularRunId: number | null = null;
   if (target === "Posted") {
     const run = await db.query.pyPayrollRun.findFirst({
       where: and(eq(pyPayrollRun.periodId, id), eq(pyPayrollRun.runType, "Regular")),
@@ -80,18 +84,31 @@ export async function setPeriodStatus(
     if (run.status !== "Completed") {
       return fail("The payroll run for this period is still in progress. Let it finish first.");
     }
+    regularRunId = run.id;
   }
 
-  await db
-    .update(pyPayrollPeriod)
-    .set({
-      status: target,
-      payDate: opt(form.get("payDate")) ?? period.payDate,
-      releasedBy: target === "Locked" ? session.username : period.releasedBy,
-      releasedAt: target === "Locked" ? now() : period.releasedAt,
-      postedAt: target === "Posted" ? now() : period.postedAt,
-    })
-    .where(eq(pyPayrollPeriod.id, id));
+  await audited(
+    actorOf(session),
+    { entity: "py_payroll_period", entityId: id },
+    () => db.query.pyPayrollPeriod.findFirst({ where: eq(pyPayrollPeriod.id, id) }),
+    () =>
+      db
+        .update(pyPayrollPeriod)
+        .set({
+          status: target,
+          payDate: opt(form.get("payDate")) ?? period.payDate,
+          releasedBy: target === "Locked" ? session.username : period.releasedBy,
+          releasedAt: target === "Locked" ? now() : period.releasedAt,
+          postedAt: target === "Posted" ? now() : period.postedAt,
+        })
+        .where(eq(pyPayrollPeriod.id, id)),
+  );
+
+  // Posting is when payslips become visible, so it is when people hear.
+  if (regularRunId !== null) {
+    await enqueueJob("payslips.notify", { runId: regularRunId }, { dedupeKey: `payslips.notify:${regularRunId}` });
+    await kickJobs();
+  }
 
   revalidatePayroll();
   return OK;
@@ -101,7 +118,7 @@ export async function createPeriod(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const areaCode = str(form.get("areaCode"));
   const year = num(form.get("year"));
   const month = num(form.get("month"));
@@ -119,13 +136,17 @@ export async function createPeriod(
   });
   if (existing) return fail("That period already exists.");
 
-  await db.insert(pyPayrollPeriod).values({
-    areaCode,
-    year,
-    month,
-    payDate: opt(form.get("payDate")),
-    status: "Open",
-  });
+  const [created] = await db
+    .insert(pyPayrollPeriod)
+    .values({
+      areaCode,
+      year,
+      month,
+      payDate: opt(form.get("payDate")),
+      status: "Open",
+    })
+    .returning();
+  await recordCreate(actorOf(session), "py_payroll_period", created.id, created);
 
   revalidatePayroll();
   return OK;
@@ -137,7 +158,7 @@ export async function saveWageType(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const original = opt(form.get("originalCode"));
   const code = str(form.get("code")).toUpperCase();
   const name = str(form.get("name"));
@@ -167,13 +188,19 @@ export async function saveWageType(
   };
 
   if (original) {
-    await db.update(pyWageType).set(values).where(eq(pyWageType.code, original));
+    await audited(
+      actorOf(session),
+      { entity: "py_wage_type", entityId: original },
+      () => db.query.pyWageType.findFirst({ where: eq(pyWageType.code, original) }),
+      () => db.update(pyWageType).set(values).where(eq(pyWageType.code, original)),
+    );
   } else {
     const existing = await db.query.pyWageType.findFirst({
       where: eq(pyWageType.code, code),
     });
     if (existing) return fail(`Wage type ${code} already exists.`);
     await db.insert(pyWageType).values(values);
+    await recordCreate(actorOf(session), "py_wage_type", code, values);
   }
 
   revalidatePayroll();
@@ -184,7 +211,7 @@ export async function deleteWageType(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const code = str(form.get("code"));
 
   const used = await db.query.pyRecurringPayment.findFirst({
@@ -192,7 +219,9 @@ export async function deleteWageType(
   });
   if (used) return fail(`${code} is used by a recurring payment. Remove that first.`);
 
+  const before = await db.query.pyWageType.findFirst({ where: eq(pyWageType.code, code) });
   await db.delete(pyWageType).where(eq(pyWageType.code, code));
+  if (before) await recordDelete(actorOf(session), "py_wage_type", code, before);
   revalidatePayroll();
   return OK;
 }
@@ -203,7 +232,7 @@ export async function saveRecurringPayment(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const amount = num(form.get("amount"));
   if (!Number.isFinite(amount) || amount <= 0) return fail("Enter an amount above zero.");
 
@@ -212,14 +241,18 @@ export async function saveRecurringPayment(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return fail("Enter a start date.");
   if (endDate < startDate) return fail("The end date falls before the start date.");
 
-  await db.insert(pyRecurringPayment).values({
-    employeeId: num(form.get("employeeId")),
-    wageTypeCode: str(form.get("wageTypeCode")),
-    amountPaise: toPaise(amount),
-    startDate,
-    endDate,
-    createdAt: now(),
-  });
+  const [created] = await db
+    .insert(pyRecurringPayment)
+    .values({
+      employeeId: num(form.get("employeeId")),
+      wageTypeCode: str(form.get("wageTypeCode")),
+      amountPaise: toPaise(amount),
+      startDate,
+      endDate,
+      createdAt: now(),
+    })
+    .returning();
+  await recordCreate(actorOf(session), "py_it0014_recurring_payment", created.id, created, created.employeeId);
 
   revalidatePayroll();
   return OK;
@@ -229,8 +262,13 @@ export async function deleteRecurringPayment(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
-  await db.delete(pyRecurringPayment).where(eq(pyRecurringPayment.id, num(form.get("id"))));
+  const session = await requireRole("HR_ADMIN");
+  const id = num(form.get("id"));
+  const before = await db.query.pyRecurringPayment.findFirst({ where: eq(pyRecurringPayment.id, id) });
+  await db.delete(pyRecurringPayment).where(eq(pyRecurringPayment.id, id));
+  if (before) {
+    await recordDelete(actorOf(session), "py_it0014_recurring_payment", id, before, before.employeeId);
+  }
   revalidatePayroll();
   return OK;
 }
@@ -239,20 +277,24 @@ export async function saveAdditionalPayment(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const amount = num(form.get("amount"));
   if (!Number.isFinite(amount) || amount <= 0) return fail("Enter an amount above zero.");
 
   const paymentDate = str(form.get("paymentDate"));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) return fail("Enter a payment date.");
 
-  await db.insert(pyAdditionalPayment).values({
-    employeeId: num(form.get("employeeId")),
-    wageTypeCode: str(form.get("wageTypeCode")),
-    amountPaise: toPaise(amount),
-    paymentDate,
-    createdAt: now(),
-  });
+  const [created] = await db
+    .insert(pyAdditionalPayment)
+    .values({
+      employeeId: num(form.get("employeeId")),
+      wageTypeCode: str(form.get("wageTypeCode")),
+      amountPaise: toPaise(amount),
+      paymentDate,
+      createdAt: now(),
+    })
+    .returning();
+  await recordCreate(actorOf(session), "py_it0015_additional_payment", created.id, created, created.employeeId);
 
   revalidatePayroll();
   return OK;
@@ -262,7 +304,7 @@ export async function deleteAdditionalPayment(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const id = num(form.get("id"));
   const payment = await db.query.pyAdditionalPayment.findFirst({
     where: eq(pyAdditionalPayment.id, id),
@@ -271,17 +313,26 @@ export async function deleteAdditionalPayment(
     return fail("That payment has been paid in a payroll run, so it stays on record.");
   }
   await db.delete(pyAdditionalPayment).where(eq(pyAdditionalPayment.id, id));
+  if (payment) {
+    await recordDelete(actorOf(session), "py_it0015_additional_payment", id, payment, payment.employeeId);
+  }
   revalidatePayroll();
   return OK;
 }
 
 /* ----------------------------------------------------- PY-03 run payroll */
 
+/** Hands a run to the job table and starts working it in the background. */
+async function queueRun(runId: number): Promise<void> {
+  await requeueJob("payroll.run", { runId }, `payroll.run:${runId}`);
+  await kickJobs();
+}
+
 /**
- * Starts a run and returns at once. The screen then calls continueRun until
- * it reports completion, so no single request has to calculate the whole
- * organisation inside a serverless time limit, and a run interrupted by a
- * closed tab resumes where it stopped.
+ * Starts a run and returns at once. The run is calculated by a background
+ * job, a batch at a time, so no request has to calculate the whole
+ * organisation inside a serverless time limit, and it finishes whether or
+ * not anyone keeps the screen open. The screen only watches.
  */
 export async function startRunAction(
   _prev: ActionState,
@@ -292,7 +343,13 @@ export async function startRunAction(
   if (!periodId) return fail("Choose a period.");
 
   try {
-    const { runId } = await startRun({ periodId, runBy: session.username });
+    const { runId, planned } = await startRun({ periodId, runBy: session.username });
+    await recordCreate(actorOf(session), "py_payroll_run", runId, {
+      period_id: periodId,
+      run_type: "Regular",
+      planned_count: planned,
+    });
+    await queueRun(runId);
     return { ok: true, runId };
   } catch (err) {
     return fail(err instanceof Error ? err.message : "The payroll run could not start.");
@@ -323,7 +380,7 @@ export async function startOffCycleAction(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(payDate)) return fail("Enter a pay date.");
 
   try {
-    const { runId } = await startRun({
+    const { runId, planned } = await startRun({
       periodId,
       runBy: session.username,
       runType: "Off-cycle",
@@ -331,24 +388,55 @@ export async function startOffCycleAction(
       reason,
       payDate,
     });
+    await recordCreate(actorOf(session), "py_payroll_run", runId, {
+      period_id: periodId,
+      run_type: "Off-cycle",
+      reason,
+      pay_date: payDate,
+      planned_count: planned,
+    });
+    await queueRun(runId);
     return { ok: true, runId };
   } catch (err) {
     return fail(err instanceof Error ? err.message : "The off-cycle run could not start.");
   }
 }
 
-/** Calculates the next batch of a run. Called repeatedly by the screen. */
-export async function continueRun(
+/**
+ * Where a run stands, for the screen to show. If the run is unfinished and
+ * nothing is working on it — its job failed, say — it is queued again, so
+ * watching a stalled run is also how it resumes.
+ */
+export async function watchRun(
   runId: number,
 ): Promise<RunProgress | { error: string }> {
   await requireRole("HR_ADMIN");
-  try {
-    const progress = await processRunBatch(Number(runId));
-    if (progress.completed) revalidatePayroll();
+  const id = Number(runId);
+  const progress = await readRunProgress(id);
+  if (!progress) return { error: "That payroll run no longer exists." };
+  if (progress.completed) {
+    revalidatePayroll();
     return progress;
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "The payroll run stopped." };
   }
+  const job = await rawClient().execute({
+    sql: "SELECT status, last_error FROM app_job WHERE dedupe_key = ?",
+    args: [`payroll.run:${id}`],
+  });
+  const status = job.rows[0]?.status;
+  if (status === "failed") {
+    return { error: `The run stopped: ${String(job.rows[0].last_error ?? "an unknown error")}. Resume it to try again.` };
+  }
+  await kickJobs();
+  return progress;
+}
+
+/** Puts a stopped run back in the queue. */
+export async function resumeRun(runId: number): Promise<RunProgress | { error: string }> {
+  await requireRole("HR_ADMIN");
+  const progress = await readRunProgress(Number(runId));
+  if (!progress) return { error: "That payroll run no longer exists." };
+  if (!progress.completed) await queueRun(Number(runId));
+  return progress;
 }
 
 /* -------------------------------------------- PY-05 bank, GL, remittance */
@@ -404,6 +492,12 @@ export async function generateBankFile(
       generatedBy: session.username,
     })
     .returning({ id: pyBankTransferFile.id });
+  await recordCreate(actorOf(session), "py_bank_transfer_file", file.id, {
+    run_id: runId,
+    payment_date: paymentDate,
+    line_count: payees.rows.length,
+    total_paise: payees.rows.reduce((s, p) => s + Number(p.net_paise), 0),
+  });
 
   await db.insert(pyBankTransferLine).values(
     payees.rows.map((p) => ({
@@ -560,6 +654,13 @@ export async function postToLedger(
   if (remittances.length > 0) {
     await db.insert(pyStatutoryRemittance).values(remittances);
   }
+  await recordCreate(actorOf(session), "py_gl_posting", posting.id, {
+    run_id: runId,
+    posting_date: postingDate,
+    line_count: glLines.length,
+    debit_paise: glLines.reduce((s, l) => s + l.debitPaise, 0),
+    credit_paise: glLines.reduce((s, l) => s + l.creditPaise, 0),
+  });
 
   revalidatePayroll();
   return OK;
@@ -569,16 +670,22 @@ export async function markRemitted(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const id = num(form.get("id"));
-  await db
-    .update(pyStatutoryRemittance)
-    .set({
-      status: "Remitted",
-      remittedAt: now(),
-      reference: opt(form.get("reference")),
-    })
-    .where(eq(pyStatutoryRemittance.id, id));
+  await audited(
+    actorOf(session),
+    { entity: "py_statutory_remittance", entityId: id },
+    () => db.query.pyStatutoryRemittance.findFirst({ where: eq(pyStatutoryRemittance.id, id) }),
+    () =>
+      db
+        .update(pyStatutoryRemittance)
+        .set({
+          status: "Remitted",
+          remittedAt: now(),
+          reference: opt(form.get("reference")),
+        })
+        .where(eq(pyStatutoryRemittance.id, id)),
+  );
   revalidatePayroll();
   return OK;
 }

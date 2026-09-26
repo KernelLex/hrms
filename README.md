@@ -47,7 +47,7 @@ The run itself works gross to net: basic pay for the days each person was employ
 - **Tax is spread evenly across the year**, from what has been paid and deducted so far; tax on a bonus is taken in the month it is paid.
 - **Off-cycle runs** pay a bonus or a final settlement outside the monthly run, even after the month is posted.
 - **Before posting**, the run lists everyone new or whose pay moved by 10% or more since last month, with the likely reason.
-- Runs are calculated in small batches, so a large organisation never meets a time limit, and an interrupted run resumes where it stopped.
+- Runs are calculated on the server in small batches, so a large organisation never meets a time limit, and a run finishes whether or not anyone keeps the screen open.
 
 Downstream it produces the bank transfer file as a download, the journal entries for the finance ledger by cost centre, and the statutory remittances owed to each authority. Any run exports to a spreadsheet with a column per wage type.
 
@@ -65,6 +65,11 @@ A finalised rating becomes an increment recommendation. Approve it and it become
 Investment declarations under the old and new regimes, a quarterly register of tax deducted and deposited with challan references, and both halves of the annual certificate — Part A's quarterly summary and Part B's full computation from gross salary through exemptions and deductions to tax payable.
 
 Part B reconciles against Part A, so the certificate an employee files with is internally consistent. Section 87A's rebate includes the new regime's marginal relief just above ₹12 lakh.
+
+### Notifications and the change log
+People hear about what concerns them: a manager when someone asks for leave, an employee when it is decided, when their payslip is ready, when a self review is due and when their rating is final. It arrives in an inbox behind the bell, with an unread count, and by email once an email provider is connected. Each person chooses what they hear about, and how. HR can read every email in the outbox exactly as it would be sent.
+
+Every change anyone makes is recorded with who made it and the value before and after — on each employee's record ("Basic pay from 1 Apr 2025: ₹65,000 → ₹72,000") and across the organisation, filtered by what changed, who changed it and when. With the read log, that is the whole audit trail: who looked, and who changed what.
 
 ### Reports
 Headcount and payroll cost by department, leave taken by kind, joiners, leavers and attrition — the numbers someone asks for in a meeting — and CSV exports of the employee list, payroll runs and the tax register.
@@ -93,8 +98,8 @@ The full specification is in [DESIGN_LANGUAGE.md](DESIGN_LANGUAGE.md).
 
 ## Status
 
-A working prototype. All seven modules and every screen in the original blueprint are built, with role dashboards, a command menu (Ctrl K), print-ready payslips and certificates, and phone layouts, and it deploys to a live URL on every push.
+A working prototype. All seven modules and every screen in the original blueprint are built, with role dashboards, a command menu (Ctrl K), print-ready payslips and certificates, and phone layouts. Notifications, background jobs and the change log are in (phase 10 of the extended plan). Every push is typechecked, linted, tested, built and audited for accessibility by CI, and deploys to a live URL.
 
-It is not production software yet — the statutory scope is partial and the authentication is a demo's. What it would take is written down in [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md), and what could come next in [ROADMAP.md](ROADMAP.md).
+It is not production software yet — the statutory scope is partial and the authentication is a demo's. What it would take is written down in [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md), what could come next in [ROADMAP.md](ROADMAP.md), and the phase-by-phase plan for building it — including the two-way API through which the client's ERP and this module exchange data — in [build_plan_extended_features.md](build_plan_extended_features.md).
 
 Where the build stands is in [STATUS.md](STATUS.md). Developer documentation — environment setup, the data model, the engines and the phase plan — is in [BUILD_PLAN.md](BUILD_PLAN.md).

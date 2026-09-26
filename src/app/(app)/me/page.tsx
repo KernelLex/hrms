@@ -15,6 +15,7 @@ import {
   Notice,
   PageHeader,
   Badge,
+  RowLink,
 } from "@/components/ui";
 import { DocumentList } from "@/components/documents";
 
@@ -145,6 +146,18 @@ export default async function MyProfilePage() {
                 </KeyValueRow>
                 <KeyValueRow label="IFSC">{profile.bank?.ifsc}</KeyValueRow>
               </KeyValue>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader title="Notifications" />
+            <div className="pb-3">
+              <RowLink href="/inbox/preferences">
+                <div className="text-sm font-medium text-ink">Choose what you hear about</div>
+                <div className="mt-0.5 text-[13px] text-muted">
+                  Leave decisions, payslips and reviews, in your inbox or by email.
+                </div>
+              </RowLink>
             </div>
           </Card>
 

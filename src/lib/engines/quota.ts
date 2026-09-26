@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptHoliday, ptAbsenceQuota, ptQuotaType, paEmployee, now } from "@/db/schema";
 
@@ -25,6 +25,16 @@ export function unitsToDays(units: number): number {
 export function formatDays(units: number): string {
   const days = unitsToDays(units);
   return Number.isInteger(days) ? String(days) : days.toFixed(1);
+}
+
+/** "That needs 2 days, but only 1 day remains." */
+export function shortfall(neededUnits: number, remainingUnits: number): string {
+  const days = (units: number) => {
+    const text = formatDays(Math.max(0, units));
+    return `${text} ${text === "1" ? "day" : "days"}`;
+  };
+  const left = Math.max(0, remainingUnits);
+  return `That needs ${days(neededUnits)}, but only ${days(left)} ${left === 2 ? "remains" : "remain"}.`;
 }
 
 function eachDate(from: string, to: string): string[] {
@@ -185,14 +195,23 @@ export async function consumeQuota(opts: {
   if (units > remaining) {
     return {
       ok: false,
-      reason: `That needs ${formatDays(units)} days but only ${formatDays(remaining)} remain.`,
+      reason: shortfall(units, remaining),
     };
   }
 
-  await db
+  // One conditional update, so two consumptions at once cannot overdraw.
+  const taken = await db
     .update(ptAbsenceQuota)
-    .set({ usedHalfDays: quota.usedHalfDays + units })
-    .where(eq(ptAbsenceQuota.id, quota.id));
+    .set({ usedHalfDays: sql`${ptAbsenceQuota.usedHalfDays} + ${units}` })
+    .where(
+      and(
+        eq(ptAbsenceQuota.id, quota.id),
+        sql`${ptAbsenceQuota.entitledHalfDays} - ${ptAbsenceQuota.usedHalfDays} >= ${units}`,
+      ),
+    );
+  if (taken.rowsAffected === 0) {
+    return { ok: false, reason: "The balance changed a moment ago. Try again." };
+  }
 
   return { ok: true };
 }
@@ -218,6 +237,6 @@ export async function restoreQuota(opts: {
 
   await db
     .update(ptAbsenceQuota)
-    .set({ usedHalfDays: Math.max(0, quota.usedHalfDays - units) })
+    .set({ usedHalfDays: sql`max(0, ${ptAbsenceQuota.usedHalfDays} - ${units})` })
     .where(eq(ptAbsenceQuota.id, quota.id));
 }

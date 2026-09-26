@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
 import { requireRole, requireSession, hasRole } from "@/lib/auth";
+import { actorOf, audited, recordChanges, recordCreated, recordDeleted, subjectOf } from "@/lib/change-log";
 import {
   tdsSectionMaster,
   tdsEmployeeDeclaration,
@@ -44,7 +45,7 @@ export async function saveSection(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = opt(form.get("originalCode"));
   const code = str(form.get("code")).toUpperCase();
   const description = str(form.get("description"));
@@ -68,13 +69,22 @@ export async function saveSection(
   };
 
   if (original) {
-    await db.update(tdsSectionMaster).set(values).where(eq(tdsSectionMaster.code, original));
+    await audited(
+      actor,
+      { entity: "tds_section_master", entityId: original },
+      () => db.query.tdsSectionMaster.findFirst({ where: eq(tdsSectionMaster.code, original) }),
+      () => db.update(tdsSectionMaster).set(values).where(eq(tdsSectionMaster.code, original)),
+    );
   } else {
     const existing = await db.query.tdsSectionMaster.findFirst({
       where: eq(tdsSectionMaster.code, code),
     });
     if (existing) return fail(`Section ${code} already exists.`);
-    await db.insert(tdsSectionMaster).values(values);
+    await recordCreated(
+      actor,
+      "tds_section_master",
+      await db.insert(tdsSectionMaster).values(values).returning(),
+    );
   }
 
   revalidateTax();
@@ -85,8 +95,15 @@ export async function deleteSection(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
-  await db.delete(tdsSectionMaster).where(eq(tdsSectionMaster.code, str(form.get("code"))));
+  const actor = actorOf(await requireRole("HR_ADMIN"));
+  await recordDeleted(
+    actor,
+    "tds_section_master",
+    await db
+      .delete(tdsSectionMaster)
+      .where(eq(tdsSectionMaster.code, str(form.get("code"))))
+      .returning(),
+  );
   revalidateTax();
   return OK;
 }
@@ -105,6 +122,7 @@ export async function saveDeclaration(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireSession();
+  const actor = actorOf(session);
 
   const requestedEmployee = num(form.get("employeeId"));
   const employeeId = hasRole(session, "HR_ADMIN")
@@ -158,12 +176,25 @@ export async function saveDeclaration(
     if (existing.status === "Verified" && !hasRole(session, "HR_ADMIN")) {
       return fail("That declaration has been verified and can no longer be changed.");
     }
-    await db
-      .update(tdsEmployeeDeclaration)
-      .set(values)
-      .where(eq(tdsEmployeeDeclaration.id, existing.id));
+    await audited(
+      actor,
+      { entity: "tds_employee_declaration", entityId: existing.id, subjectEmployeeId: subjectOf },
+      () =>
+        db.query.tdsEmployeeDeclaration.findFirst({
+          where: eq(tdsEmployeeDeclaration.id, existing.id),
+        }),
+      () =>
+        db
+          .update(tdsEmployeeDeclaration)
+          .set(values)
+          .where(eq(tdsEmployeeDeclaration.id, existing.id)),
+    );
   } else {
-    await db.insert(tdsEmployeeDeclaration).values(values);
+    await recordCreated(
+      actor,
+      "tds_employee_declaration",
+      await db.insert(tdsEmployeeDeclaration).values(values).returning(),
+    );
   }
 
   revalidateTax();
@@ -174,10 +205,15 @@ export async function deleteDeclaration(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
-  await db
-    .delete(tdsEmployeeDeclaration)
-    .where(eq(tdsEmployeeDeclaration.id, num(form.get("id"))));
+  const actor = actorOf(await requireRole("HR_ADMIN"));
+  await recordDeleted(
+    actor,
+    "tds_employee_declaration",
+    await db
+      .delete(tdsEmployeeDeclaration)
+      .where(eq(tdsEmployeeDeclaration.id, num(form.get("id"))))
+      .returning(),
+  );
   revalidateTax();
   return OK;
 }
@@ -196,7 +232,7 @@ export async function buildRegister(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const financialYear = str(form.get("financialYear"));
   if (!/^\d{4}-\d{2}$/.test(financialYear)) return fail("Choose a financial year.");
 
@@ -251,6 +287,16 @@ export async function buildRegister(
         updatedAt: sql`excluded.updated_at`,
       },
     });
+  await recordChanges(actor, [
+    {
+      entity: "tds_deduction_register",
+      entityId: financialYear,
+      action: "update",
+      before: {},
+      after: { financialYear, rows: buckets.rows.length },
+      reason: "Rebuilt from posted payroll",
+    },
+  ]);
 
   revalidateTax();
   return OK;
@@ -260,7 +306,7 @@ export async function saveChallan(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const id = num(form.get("id"));
 
   const depositDate = opt(form.get("depositDate"));
@@ -268,15 +314,21 @@ export async function saveChallan(
     return fail("Enter a valid deposit date.");
   }
 
-  await db
-    .update(tdsDeductionRegister)
-    .set({
-      challanBsr: opt(form.get("challanBsr")),
-      depositDate,
-      receipt24q: opt(form.get("receipt24q")),
-      updatedAt: now(),
-    })
-    .where(eq(tdsDeductionRegister.id, id));
+  await audited(
+    actor,
+    { entity: "tds_deduction_register", entityId: id, subjectEmployeeId: subjectOf },
+    () => db.query.tdsDeductionRegister.findFirst({ where: eq(tdsDeductionRegister.id, id) }),
+    () =>
+      db
+        .update(tdsDeductionRegister)
+        .set({
+          challanBsr: opt(form.get("challanBsr")),
+          depositDate,
+          receipt24q: opt(form.get("receipt24q")),
+          updatedAt: now(),
+        })
+        .where(eq(tdsDeductionRegister.id, id)),
+  );
 
   revalidateTax();
   return OK;
@@ -298,6 +350,7 @@ export async function generateForm16(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
   const employeeId = num(form.get("employeeId"));
   const financialYear = str(form.get("financialYear"));
 
@@ -382,9 +435,14 @@ export async function generateForm16(
   };
 
   if (existing) {
-    await db.update(tdsForm16).set(values).where(eq(tdsForm16.id, existing.id));
+    await audited(
+      actor,
+      { entity: "tds_form16", entityId: existing.id, subjectEmployeeId: subjectOf },
+      () => db.query.tdsForm16.findFirst({ where: eq(tdsForm16.id, existing.id) }),
+      () => db.update(tdsForm16).set(values).where(eq(tdsForm16.id, existing.id)),
+    );
   } else {
-    await db.insert(tdsForm16).values(values);
+    await recordCreated(actor, "tds_form16", await db.insert(tdsForm16).values(values).returning());
   }
 
   revalidateTax();
@@ -395,8 +453,12 @@ export async function deleteForm16(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
-  await db.delete(tdsForm16).where(eq(tdsForm16.id, num(form.get("id"))));
+  const actor = actorOf(await requireRole("HR_ADMIN"));
+  await recordDeleted(
+    actor,
+    "tds_form16",
+    await db.delete(tdsForm16).where(eq(tdsForm16.id, num(form.get("id")))).returning(),
+  );
   revalidateTax();
   return OK;
 }

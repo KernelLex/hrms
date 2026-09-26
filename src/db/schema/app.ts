@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, blob, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, blob, index, primaryKey } from "drizzle-orm/sqlite-core";
 
 /**
  * Cross-cutting tables that belong to no single module.
@@ -78,3 +78,149 @@ export const appAccessLog = sqliteTable(
     index("ix_access_user").on(t.userId, t.at),
   ],
 );
+
+/* -------------------------------------------------------------- change log */
+
+/**
+ * Every write, before and after: who changed what, when, and on whose record.
+ *
+ * The other half of the access log. Infotype rows always carried created_by,
+ * but an update or a delete left no trace of what was there before. `before`
+ * and `after` hold only the fields that changed (all of them for a create or
+ * a delete), as JSON, with bank account numbers masked.
+ *
+ * No foreign keys, like the access log: the trail outlives what it describes.
+ */
+export const appChangeLog = sqliteTable(
+  "app_change_log",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    at: text("at").notNull(),
+    /** "user", "system", and from phase 12 "client". */
+    actorType: text("actor_type").notNull(),
+    actorId: integer("actor_id"),
+    actorName: text("actor_name").notNull(),
+    /** The table changed, such as "pa_it0008_basic_pay". */
+    entity: text("entity").notNull(),
+    entityId: text("entity_id").notNull(),
+    subjectEmployeeId: integer("subject_employee_id"),
+    /** "create", "update" or "delete". */
+    action: text("action").notNull(),
+    before: text("before"),
+    after: text("after"),
+    reason: text("reason"),
+  },
+  (t) => [
+    index("ix_change_subject").on(t.subjectEmployeeId, t.at),
+    index("ix_change_entity").on(t.entity, t.entityId),
+    index("ix_change_at").on(t.at),
+  ],
+);
+
+/* ----------------------------------------------------------- notifications */
+
+/** A message to one person, shown in their inbox. */
+export const appNotification = sqliteTable(
+  "app_notification",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull(),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    link: text("link"),
+    /** One notification per event and person, however often the event is retried. */
+    dedupeKey: text("dedupe_key").notNull().unique(),
+    createdAt: text("created_at").notNull(),
+    readAt: text("read_at"),
+  },
+  (t) => [index("ix_notification_user").on(t.userId, t.readAt, t.createdAt)],
+);
+
+/** Per person and kind: whether they want it in-app, by email, or not at all. */
+export const appNotificationPref = sqliteTable(
+  "app_notification_pref",
+  {
+    userId: integer("user_id").notNull(),
+    kind: text("kind").notNull(),
+    inApp: integer("in_app", { mode: "boolean" }).notNull().default(true),
+    email: integer("email", { mode: "boolean" }).notNull().default(true),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind] })],
+);
+
+/**
+ * Everything waiting to leave the system — email today, the ERP's webhooks
+ * from phase 12. A message is written here in the same step as whatever
+ * caused it and delivered by a job, so a failed delivery is retried rather
+ * than lost, and the dedupe key means a retried cause cannot send it twice.
+ */
+export const appOutbox = sqliteTable(
+  "app_outbox",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** "email" today. */
+    channel: text("channel").notNull(),
+    dedupeKey: text("dedupe_key").notNull().unique(),
+    recipient: text("recipient").notNull(),
+    subject: text("subject"),
+    bodyText: text("body_text"),
+    bodyHtml: text("body_html"),
+    /** The notification or event it came from, as JSON. */
+    payload: text("payload"),
+    /** "queued", "sent", "recorded" (delivery not configured) or "failed". */
+    status: text("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: text("created_at").notNull(),
+    nextAttemptAt: text("next_attempt_at"),
+    sentAt: text("sent_at"),
+  },
+  (t) => [index("ix_outbox_status").on(t.status, t.nextAttemptAt)],
+);
+
+/* -------------------------------------------------------- background jobs */
+
+/**
+ * Work done in the background: payroll runs, deliveries, notifications to
+ * many people, and the daily schedule. Jobs are claimed with a conditional
+ * update, so two workers can never run the same one.
+ */
+export const appJob = sqliteTable(
+  "app_job",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    kind: text("kind").notNull(),
+    payload: text("payload"),
+    /** A job with a key is queued at most once. */
+    dedupeKey: text("dedupe_key").unique(),
+    /** "queued", "running", "done" or "failed". */
+    status: text("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    runAfter: text("run_after").notNull(),
+    lockedAt: text("locked_at"),
+    lockToken: text("lock_token"),
+    lastError: text("last_error"),
+    createdAt: text("created_at").notNull(),
+    finishedAt: text("finished_at"),
+  },
+  (t) => [index("ix_job_due").on(t.status, t.runAfter)],
+);
+
+/** Each time a job ran, and how it went. */
+export const appJobRun = sqliteTable(
+  "app_job_run",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    jobId: integer("job_id"),
+    kind: text("kind").notNull(),
+    startedAt: text("started_at").notNull(),
+    finishedAt: text("finished_at"),
+    /** "ok", "retry" or "failed". */
+    outcome: text("outcome"),
+    detail: text("detail"),
+  },
+  (t) => [index("ix_job_run_kind").on(t.kind, t.startedAt)],
+);
+

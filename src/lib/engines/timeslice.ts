@@ -1,7 +1,8 @@
 import "server-only";
-import type { InValue } from "@libsql/client";
+import type { InStatement, InValue } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { OPEN_ENDED, dayBefore } from "@/db/schema";
+import { changeStatement, systemActor, type Actor, type Change } from "@/lib/change-log";
 
 /**
  * The time-slice engine.
@@ -25,6 +26,9 @@ import { OPEN_ENDED, dayBefore } from "@/db/schema";
  *
  * Case 4 is the one people forget. Inserting a short correction into the
  * middle of an open-ended record has to leave the later period intact.
+ *
+ * Every one of those steps is written to the change log inside the same
+ * transaction, so the history of the history cannot be lost either.
  */
 
 /** Infotypes where an employee has exactly one valid record at a time. */
@@ -62,6 +66,9 @@ export async function saveTimeSlice(opts: {
   seq?: number;
   data: Record<string, InValue>;
   createdBy: string;
+  /** Who is making the change; defaults to `createdBy` as a system actor. */
+  actor?: Actor;
+  reason?: string | null;
 }): Promise<void> {
   const {
     table,
@@ -72,6 +79,11 @@ export async function saveTimeSlice(opts: {
     data,
     createdBy,
   } = opts;
+  const actor = opts.actor ?? systemActor(createdBy);
+  const log = async (tx: { execute: (s: InStatement) => Promise<unknown> }, change: Change) => {
+    const stmt = changeStatement(actor, { ...change, subjectEmployeeId: employeeId, reason: opts.reason });
+    if (stmt) await tx.execute(stmt);
+  };
 
   if (validTo < validFrom) {
     throw new Error("Valid to cannot fall before valid from.");
@@ -89,6 +101,11 @@ export async function saveTimeSlice(opts: {
       args: [employeeId, seq, validFrom, validTo],
     });
 
+    // The slice in force the day before, if any: what this change replaces.
+    const predecessor = overlapping.rows.find(
+      (r) => String((r as unknown as Row).valid_from) < validFrom,
+    ) as unknown as Row | undefined;
+
     for (const raw of overlapping.rows) {
       const row = raw as unknown as Row;
       const id = row.id as number;
@@ -104,15 +121,22 @@ export async function saveTimeSlice(opts: {
           sql: `UPDATE ${table} SET valid_to = ? WHERE id = ?`,
           args: [dayBefore(validFrom), id],
         });
+        await log(tx, { entity: table, entityId: id, action: "update", before: row, after: { ...row, valid_to: dayBefore(validFrom) } });
 
         const columns = Object.keys(row).filter((c) => c !== "id");
         const values = columns.map((c) =>
           c === "valid_from" ? dayAfter(validTo) : row[c],
         );
-        await tx.execute({
+        const tail = await tx.execute({
           sql: `INSERT INTO ${table} (${columns.join(", ")})
-                VALUES (${columns.map(() => "?").join(", ")})`,
+                VALUES (${columns.map(() => "?").join(", ")}) RETURNING id`,
           args: values,
+        });
+        await log(tx, {
+          entity: table,
+          entityId: Number(tail.rows[0].id),
+          action: "create",
+          after: Object.fromEntries(columns.map((c, i) => [c, values[i]])),
         });
       } else if (startsBefore) {
         // Case 1 — truncate the tail.
@@ -120,18 +144,21 @@ export async function saveTimeSlice(opts: {
           sql: `UPDATE ${table} SET valid_to = ? WHERE id = ?`,
           args: [dayBefore(validFrom), id],
         });
+        await log(tx, { entity: table, entityId: id, action: "update", before: row, after: { ...row, valid_to: dayBefore(validFrom) } });
       } else if (endsAfter) {
         // Case 3 — truncate the head.
         await tx.execute({
           sql: `UPDATE ${table} SET valid_from = ? WHERE id = ?`,
           args: [dayAfter(validTo), id],
         });
+        await log(tx, { entity: table, entityId: id, action: "update", before: row, after: { ...row, valid_from: dayAfter(validTo) } });
       } else {
         // Case 2 — entirely superseded.
         await tx.execute({
           sql: `DELETE FROM ${table} WHERE id = ?`,
           args: [id],
         });
+        await log(tx, { entity: table, entityId: id, action: "delete", before: row });
       }
     }
 
@@ -154,10 +181,17 @@ export async function saveTimeSlice(opts: {
       ...Object.values(data),
     ];
 
-    await tx.execute({
+    const inserted = await tx.execute({
       sql: `INSERT INTO ${table} (${cols.join(", ")})
-            VALUES (${cols.map(() => "?").join(", ")})`,
+            VALUES (${cols.map(() => "?").join(", ")}) RETURNING id`,
       args: vals,
+    });
+    await log(tx, {
+      entity: table,
+      entityId: Number(inserted.rows[0].id),
+      action: "create",
+      before: predecessor ?? null,
+      after: Object.fromEntries(cols.map((c, i) => [c, vals[i]])),
     });
 
     await tx.commit();
@@ -211,33 +245,46 @@ export async function readHistory<T = Record<string, unknown>>(
 export async function deleteTimeSlice(
   table: SlicedTable,
   id: number,
+  actor: Actor = systemActor("timeslice"),
 ): Promise<boolean> {
   const client = rawClient();
   const tx = await client.transaction("write");
   try {
-    const found = await tx.execute({
-      sql: `SELECT employee_id, seq, valid_from, valid_to FROM ${table} WHERE id = ?`,
-      args: [id],
-    });
+    const found = await tx.execute({ sql: `SELECT * FROM ${table} WHERE id = ?`, args: [id] });
     const row = found.rows[0] as unknown as Row | undefined;
     if (!row) {
       await tx.rollback();
       return false;
     }
-
-    await tx.execute({ sql: `DELETE FROM ${table} WHERE id = ?`, args: [id] });
+    const employeeId = Number(row.employee_id);
+    const log = async (change: Change) => {
+      const stmt = changeStatement(actor, { ...change, subjectEmployeeId: employeeId });
+      if (stmt) await tx.execute(stmt);
+    };
 
     // Whoever ended the day before this slice began now runs to its end.
-    await tx.execute({
-      sql: `UPDATE ${table} SET valid_to = ?
-            WHERE employee_id = ? AND seq = ? AND valid_to = ?`,
-      args: [
-        row.valid_to as string,
-        row.employee_id as number,
-        row.seq as number,
-        dayBefore(row.valid_from as string),
-      ],
+    const predecessor = await tx.execute({
+      sql: `SELECT * FROM ${table} WHERE employee_id = ? AND seq = ? AND valid_to = ?`,
+      args: [employeeId, row.seq as number, dayBefore(row.valid_from as string)],
     });
+
+    await tx.execute({ sql: `DELETE FROM ${table} WHERE id = ?`, args: [id] });
+    await log({ entity: table, entityId: id, action: "delete", before: row });
+
+    for (const raw of predecessor.rows) {
+      const p = raw as unknown as Row;
+      await tx.execute({
+        sql: `UPDATE ${table} SET valid_to = ? WHERE id = ?`,
+        args: [row.valid_to as string, p.id as number],
+      });
+      await log({
+        entity: table,
+        entityId: Number(p.id),
+        action: "update",
+        before: p,
+        after: { ...p, valid_to: row.valid_to },
+      });
+    }
 
     await tx.commit();
     return true;

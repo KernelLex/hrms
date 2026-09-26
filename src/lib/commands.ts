@@ -24,6 +24,7 @@ const HR: RoleCode[] = ["HR_ADMIN"];
 const HR_MGR: RoleCode[] = ["HR_ADMIN", "MANAGER"];
 
 export const ACTIONS: Command[] = [
+  { label: "See who changed what", href: "/change-log", icon: "History", roles: HR, keywords: "audit history trail" },
   { label: "Hire an employee", href: "/core-hr/hire", icon: "UserPlus", roles: HR, keywords: "new joiner onboard" },
   { label: "Run payroll", href: "/payroll/run", icon: "Banknote", roles: HR, keywords: "salary pay" },
   { label: "Record an absence", href: "/time/absences", icon: "CalendarDays", roles: HR, keywords: "leave sick" },
@@ -73,6 +74,8 @@ const SUBPAGES: Command[] = [
   { label: "Tax sections and slabs", href: "/tax/sections", icon: "ReceiptText", roles: HR },
   { label: "Tax declarations", href: "/tax/declarations", icon: "ReceiptText", roles: HR },
   { label: "Deduction register", href: "/tax/register", icon: "ReceiptText", roles: HR, keywords: "tds 24q" },
+  { label: "Notifications", href: "/inbox", icon: "Bell", roles: ALL, keywords: "inbox alerts unread" },
+  { label: "Notification preferences", href: "/inbox/preferences", icon: "Bell", roles: ALL, keywords: "email settings" },
 ];
 
 export const PAGES: Command[] = [

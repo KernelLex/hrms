@@ -1017,6 +1017,23 @@ export type RunProgress = {
   completed: boolean;
 };
 
+/** Where a run stands, without doing any of its work. */
+export async function readRunProgress(runId: number): Promise<RunProgress | null> {
+  const r = await rawClient().execute({
+    sql: "SELECT planned_count, employee_count, error_count, status FROM py_payroll_run WHERE id = ?",
+    args: [runId],
+  });
+  const row = r.rows[0];
+  if (!row) return null;
+  return {
+    runId,
+    planned: Number(row.planned_count),
+    done: Number(row.employee_count),
+    errors: Number(row.error_count),
+    completed: row.status === "Completed",
+  };
+}
+
 /**
  * Calculates and stores the next few people in a run. Each person's result,
  * lines, the one-off payments it settles and the run's running totals are

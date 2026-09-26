@@ -159,9 +159,12 @@ hrms/
   BUILD_PLAN.md              this file
   PRODUCTION_READINESS.md    what stands between the prototype and real payroll
   ROADMAP.md                 features that could come next
+  build_plan_extended_features.md   phases 10 to 25
   DESIGN_LANGUAGE.md         visual system, unchanged
   HR MODULE/                 original blueprint + HTML mockups, kept as reference
   drizzle.config.ts
+  vercel.json                the daily cron tick
+  .github/workflows/ci.yml   typecheck, lint, tests, build and the UI audit on every push
   vitest.config.mts          the test runner, pointed at .vitest/test.db
   scripts/
     ui-audit.ts              npm run audit:ui — every screen, role and width, with axe
@@ -182,6 +185,9 @@ hrms/
         page.tsx             role-aware home
         me/                  the employee's own profile
         reports/             HR reports
+        inbox/               notifications, and preferences
+        change-log/          who changed what, organisation-wide
+        outbox/              every email as it would be sent
         org/ core-hr/ time/ payroll/ recruitment/ performance/ tax/
         loading.tsx error.tsx not-found.tsx
       api/
@@ -189,6 +195,8 @@ hrms/
         documents/[id]/      permission-checked, logged downloads
         payroll/bank-file/   the NEFT file as CSV
         export/              employees, payroll runs, the tax register as CSV
+        jobs/kick/           the job runner handing off to itself, signed
+        cron/tick/           the daily tick
       actions/               Server Functions, grouped by module
       layout.tsx global-error.tsx not-found.tsx
       globals.css            design tokens from DESIGN_LANGUAGE.md §15
@@ -201,6 +209,7 @@ hrms/
       charts.tsx             bar lists
       pagination.tsx         paging through the URL
       documents.tsx          a person's documents
+      change-log.tsx         change-log entries as a table of sentences
       master-screen.tsx      list, dialog, edit and delete for master data
       payslip.tsx form16.tsx the printed documents
     lib/
@@ -210,9 +219,14 @@ hrms/
       money.ts dates.ts csv.ts   formatting at the edge, and CSV safety
       storage.ts             documents in R2 or the database
       access-log.ts          who read whose records
+      change-log.ts          who changed what: diffs, recorded in the writing transaction
+      change-format.ts       change-log entries as sentences
+      notifications.ts       inbox rows, preferences, recipients
+      email.ts               the outbox and its pluggable transport
+      jobs/                  queue.ts handlers.ts runner.ts
       demo.ts                the demo accounts
       engines/               timeslice.ts quota.ts payroll.ts tax.ts time-evaluation.ts
-      repositories/          SQL reads: employees, home, profile, calendar, reports, variance
+      repositories/          SQL reads: employees, home, profile, calendar, reports, variance, change-log
     proxy.ts                 optimistic auth redirect (Next 16 renamed middleware)
   .env.example
 ```
@@ -221,7 +235,7 @@ hrms/
 
 ## 5. Data model
 
-63 tables, prefixed by module. Every infotype table carries the same time-slice contract: `employee_id, valid_from, valid_to, seq, created_by, created_at`.
+69 tables, prefixed by module. Every infotype table carries the same time-slice contract: `employee_id, valid_from, valid_to, seq, created_by, created_at`.
 
 **Why one table per infotype rather than one table with a JSON blob.** The blueprint suggests `employee_infotype_records` with `data_json`. Reject it: payroll must read basic pay as a typed, indexed, foreign-keyed value, and a blob turns every engine query into string parsing. One table per infotype is also what SAP does — PA0001, PA0002, PA0008.
 
@@ -235,12 +249,14 @@ hrms/
 | `pm_` | appraisal_template, appraisal_cycle, goal, appraisal, calibration, increment_recommendation |
 | `tds_` | section_master, tax_slab, employee_declaration, deduction_register, form16_part_a, form16_part_b |
 | `sec_` | app_user, role, user_role |
-| `app_` | document — registry of every stored file: key, content type, size, hash, owning entity, uploaded_by, and where the bytes live · document_content — the bytes, for files stored in the database · access_log — who read whose records |
+| `app_` | document — registry of every stored file: key, content type, size, hash, owning entity, uploaded_by, and where the bytes live · document_content — the bytes, for files stored in the database · access_log — who read whose records · change_log — who changed what, before and after · notification and notification_pref — the inbox and each person's choices · outbox — every message waiting to go · job and job_run — background work and its history |
 
 Two tables exist that the mockups do not show but the features require:
 
 - **`py_payroll_result_line`** — the per-wage-type gross-to-net detail. Without it the payslip has nothing real to render and PY-03's totals are decoration.
 - **`tds_tax_slab`** — old and new regime slabs per financial year. Without it Form 16 Part B's tax figure can only be hardcoded, which the mockup does.
+
+Phase 10 added the six `app_` tables for the change log, notifications, the outbox and jobs (migration 0007).
 
 Phase 9 added `py_run_member` (the people a run is to calculate, so it can proceed in batches and resume), `app_document_content` and `app_access_log`, and columns for run type and progress, the run that paid each one-off payment, the period an arrears line corrects, and working days employed.
 
@@ -257,6 +273,12 @@ The line between a prototype and a clickable mockup. Everything else is CRUD.
    - **Regular and off-cycle.** An off-cycle run pays one-off payments still owed, even after the period is posted. Each one-off is paid exactly once.
    - **TDS** projects the year from what has been paid, subtracts what has been deducted, and spreads the rest; tax on a one-off amount is taken in the month it is paid.
 4. **Tax** (`tax.ts`) — slab-based, old versus new regime, standard deduction, 87A rebate with the new regime's marginal relief, 4% cess. Feeds both the monthly TDS and Form 16 Part B, so Part B reconciles against Part A instead of being hardcoded.
+
+5. **Jobs** (`jobs/`) — a queue in the database. Enqueueing is an insert that can join the caller's transaction; a dedupe key makes the same work a no-op the second time; claiming is one conditional update, so two workers never run one job; a job whose worker died is taken over after five minutes; failures retry after 30 seconds, then 1, 2, 4 minutes and so on up to an hour. Jobs run in `after()` once the response has gone, eight seconds at a time, and the runner hands off to a fresh invocation of itself with a signed request while work remains. A daily Vercel Cron tick queues the scheduled jobs and sweeps up anything left behind. Payroll runs are jobs.
+
+**The change log** (`change-log.ts`) — every Server Function and the time-slice engine record who changed what: only the fields that changed, before and after. The time-slice engine, hiring and the leave decision write their entries inside their own transaction; elsewhere `audited()` reads the record before and after the write. Account numbers are masked. A new time slice records the values it replaced, so the log reads "₹65,000 → ₹72,000".
+
+**Notifications** (`notifications.ts`, `email.ts`) — the inbox row and the outbox email are written with the change that caused them, each with a dedupe key per event and person, so a retried event tells nobody twice. Email goes through a transport that records messages until a provider is connected (phase 25).
 
 Two cross-module transactions: **hire conversion** (RC-05 creates employee plus IT0000/0001/0002/0008 and flips the position's vacancy flag, atomically) and **increment push** (PM-05 writes a new basic-pay slice the next payroll run picks up).
 
@@ -341,6 +363,8 @@ R2_SECRET_ACCESS_KEY=
 R2_BUCKET=
 AUTH_SECRET=
 DEMO_SIGN_IN=          # "off" to remove one-click sign-in
+APP_URL=               # where links in emails point; Vercel supplies it in production
+CRON_SECRET=           # when set, the daily tick refuses calls without it
 ```
 
 Three databases: local development, Vercel preview, Vercel production. Never point local development at the production database.
@@ -373,6 +397,8 @@ Each phase ends with a commit and a push to `main`, which triggers a Vercel depl
 | 8 | Tax and Form 16 | TDS-01…05, tax engine, Part A and Part B | Part B's tax reconciles against Part A's deducted total |
 | 9 | Finish | Role dashboards, Ctrl-K command menu, document storage, print stylesheets, empty/loading/error states, 375px pass, accessibility pass, a test runner, and the known gaps from phase 8 | §16 review checklist passes on every screen — **done**; the audit script checks what can be checked mechanically, and R2 waits on the account |
 
+Phases 10 onwards are planned in [build_plan_extended_features.md](build_plan_extended_features.md). Phase 10 — notifications, background jobs, the change log and CI — is **done**.
+
 Phase order follows the blueprint's own recommendation, and it is right: every module foreign-keys into Org Management and Core HR, so those land first.
 
 Phase 9 is not optional polish. §16 requires empty, loading and error states to be designed rather than left to chance, and every screen to work at 375px. The mockups have none of that.
@@ -403,7 +429,13 @@ Recorded so they are not rediscovered.
 
 **A "use server" file may only export async functions.** Constants a Server Function shares with the client go in a plain module (`src/lib/document-kinds.ts`).
 
-**`after()` needs a request.** Tests call route handlers and Server Functions directly, so the test setup replaces `after` with an immediate call.
+**`after()` needs a request.** Tests call route handlers and Server Functions directly, so the test setup replaces `after` with an immediate call, and replaces `kickJobs` with nothing: a test works the queue itself with `processJobs()`, so no background job races it for SQLite's one writer.
+
+**Vercel Hobby runs cron at most once a day.** The daily tick is a safety net; the job runner keeps itself going by handing off to a fresh invocation with a signed request, so nothing waits a day.
+
+**axe waits forever on a frame that cannot run scripts.** The outbox previews each email in an `<iframe sandbox>`; axe injects itself into every frame and never hears back from that one, so the audit hung without an error. The audit excludes sandboxed frames.
+
+**A disabled checkbox is not submitted.** A form that disables a box must send its value some other way, or saving turns it off.
 
 ---
 
@@ -415,5 +447,7 @@ Recorded so they are not rediscovered.
 - Sentence case in UI copy, buttons are a verb plus an object, no emojis. §12 of the design language governs all user-visible text.
 - Dates are formatted by `src/lib/dates.ts` and nowhere else: "26 Sept 2026", "2:30 pm", India time.
 - Engine and repository changes come with tests, and a test that cannot fail is not a test: check that it fails when the code is broken.
-- Before pushing: `npx tsc --noEmit`, `npm run lint`, `npm test`, and `npm run audit:ui` against a running dev server.
+- Before pushing: `npx tsc --noEmit`, `npm run lint`, `npm test`, and `npm run audit:ui` against a running dev server. CI runs all of them on every push.
+- Every write records a change-log entry: through the time-slice engine, `changeStatement` inside a transaction, or `audited()`, `recordCreated()` and `recordDeleted()` around a plain write.
+- Anything slow, or anything that tells someone something, is a job or an outbox row written with the change — never work the user waits for.
 - Hand-written SQL reads live in `src/lib/repositories/`; a list that grows with headcount is paged in SQL, never sliced in JavaScript.

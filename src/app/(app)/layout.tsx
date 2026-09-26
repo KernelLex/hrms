@@ -6,6 +6,7 @@ import { ToastProvider } from "@/components/toast";
 import { CommandMenuProvider } from "@/components/command-menu";
 import { commandsFor } from "@/lib/commands";
 import { signOutAction } from "@/app/actions/auth";
+import { unreadCount } from "@/lib/notifications";
 
 export default async function AppLayout({
   children,
@@ -16,6 +17,7 @@ export default async function AppLayout({
   if (!session) redirect("/sign-in");
 
   const { actions, pages } = commandsFor(session.roles);
+  const unread = await unreadCount(session.userId);
 
   return (
     <ToastProvider>
@@ -28,6 +30,7 @@ export default async function AppLayout({
           groups={navForRoles(session.roles)}
           name={session.displayName}
           role={roleLabel(session.roles)}
+          unread={unread}
           signOutAction={signOutAction}
         >
           {children}

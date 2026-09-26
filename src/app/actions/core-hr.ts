@@ -20,6 +20,7 @@ import {
   today,
 } from "@/db/schema";
 import { saveTimeSlice, deleteTimeSlice, SLICED_TABLES } from "@/lib/engines/timeslice";
+import { actorOf, audited, changeStatement, recordCreate, recordDelete } from "@/lib/change-log";
 import { toPaise } from "@/lib/money";
 
 export type ActionState = { error?: string; ok?: boolean; employeeId?: number };
@@ -199,6 +200,39 @@ export async function hireEmployee(
       args: [v.positionCode],
     });
 
+    const actor = actorOf(session);
+    const logged = [
+      changeStatement(actor, {
+        entity: "pa_employee",
+        entityId: employeeId,
+        subjectEmployeeId: employeeId,
+        action: "create",
+        after: {
+          employeeNumber,
+          actionType: v.actionType,
+          hireDate: v.effectiveDate,
+          firstName: v.firstName,
+          lastName: v.lastName,
+          companyCode: v.companyCode,
+          orgUnitCode: v.orgUnitCode,
+          positionCode: v.positionCode,
+          payScaleGroup: v.payScaleGroup,
+          amountPaise: toPaise(v.amount),
+          workScheduleCode: v.workScheduleCode,
+        },
+        reason: v.reason,
+      }),
+      changeStatement(actor, {
+        entity: "om_position",
+        entityId: v.positionCode,
+        action: "update",
+        before: { isVacant: true },
+        after: { isVacant: false },
+        reason: `Filled by ${employeeNumber}`,
+      }),
+    ];
+    for (const st of logged) if (st) await tx.execute(st);
+
     await tx.commit();
   } catch (err) {
     await tx.rollback();
@@ -376,6 +410,7 @@ export async function saveInfotypeSlice(
       validTo,
       data: config.columns(parsed.data as Record<string, unknown>),
       createdBy: session.username,
+      actor: actorOf(session),
     });
   } catch (err) {
     return fail(err instanceof Error ? err.message : "That record could not be saved.");
@@ -389,14 +424,14 @@ export async function deleteInfotypeSlice(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const employeeId = num(form.get("employeeId"));
   const code = str(form.get("infotype")) as SlicedInfotype;
   const id = num(form.get("id"));
   const config = SLICED_FORMS[code];
   if (!config) return fail("That infotype is not recognised.");
 
-  const removed = await deleteTimeSlice(config.table, id);
+  const removed = await deleteTimeSlice(config.table, id, actorOf(session));
   if (!removed) return fail("That record no longer exists.");
 
   revalidateEmployee(employeeId);
@@ -419,6 +454,7 @@ export async function saveRepeatingInfotype(
   const id = opt(form.get("id"));
   const createdAt = now();
   const validFrom = str(form.get("validFrom")) || today();
+  const actor = actorOf(session);
 
   const base = {
     employeeId,
@@ -442,8 +478,17 @@ export async function saveRepeatingInfotype(
         postalCode: opt(form.get("postalCode")),
         country: opt(form.get("country")),
       };
-      if (id) await db.update(paAddress).set(values).where(eq(paAddress.id, Number(id)));
-      else await db.insert(paAddress).values(values);
+      if (id) {
+        await audited(
+          actor,
+          { entity: "pa_it0006_address", entityId: Number(id), subjectEmployeeId: employeeId },
+          () => db.query.paAddress.findFirst({ where: eq(paAddress.id, Number(id)) }),
+          () => db.update(paAddress).set(values).where(eq(paAddress.id, Number(id))),
+        );
+      } else {
+        const [row] = await db.insert(paAddress).values(values).returning();
+        await recordCreate(actor, "pa_it0006_address", row.id, row, employeeId);
+      }
     } else if (code === "0021") {
       const name = str(form.get("name"));
       if (!name) return fail("Enter a name.");
@@ -453,9 +498,17 @@ export async function saveRepeatingInfotype(
         name,
         dateOfBirth: opt(form.get("dateOfBirth")),
       };
-      if (id)
-        await db.update(paFamilyMember).set(values).where(eq(paFamilyMember.id, Number(id)));
-      else await db.insert(paFamilyMember).values(values);
+      if (id) {
+        await audited(
+          actor,
+          { entity: "pa_it0021_family_member", entityId: Number(id), subjectEmployeeId: employeeId },
+          () => db.query.paFamilyMember.findFirst({ where: eq(paFamilyMember.id, Number(id)) }),
+          () => db.update(paFamilyMember).set(values).where(eq(paFamilyMember.id, Number(id))),
+        );
+      } else {
+        const [row] = await db.insert(paFamilyMember).values(values).returning();
+        await recordCreate(actor, "pa_it0021_family_member", row.id, row, employeeId);
+      }
     } else if (code === "0105") {
       const value = str(form.get("value"));
       if (!value) return fail("Enter a value.");
@@ -464,9 +517,17 @@ export async function saveRepeatingInfotype(
         commType: str(form.get("commType")) || "Email (official)",
         value,
       };
-      if (id)
-        await db.update(paCommunication).set(values).where(eq(paCommunication.id, Number(id)));
-      else await db.insert(paCommunication).values(values);
+      if (id) {
+        await audited(
+          actor,
+          { entity: "pa_it0105_communication", entityId: Number(id), subjectEmployeeId: employeeId },
+          () => db.query.paCommunication.findFirst({ where: eq(paCommunication.id, Number(id)) }),
+          () => db.update(paCommunication).set(values).where(eq(paCommunication.id, Number(id))),
+        );
+      } else {
+        const [row] = await db.insert(paCommunication).values(values).returning();
+        await recordCreate(actor, "pa_it0105_communication", row.id, row, employeeId);
+      }
     } else {
       return fail("That infotype is not recognised.");
     }
@@ -482,15 +543,22 @@ export async function deleteRepeatingInfotype(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const employeeId = num(form.get("employeeId"));
   const code = str(form.get("infotype"));
   const id = num(form.get("id"));
+  const actor = actorOf(session);
 
-  if (code === "0006") await db.delete(paAddress).where(eq(paAddress.id, id));
-  else if (code === "0021") await db.delete(paFamilyMember).where(eq(paFamilyMember.id, id));
-  else if (code === "0105") await db.delete(paCommunication).where(eq(paCommunication.id, id));
-  else return fail("That infotype is not recognised.");
+  if (code === "0006") {
+    const [row] = await db.delete(paAddress).where(eq(paAddress.id, id)).returning();
+    if (row) await recordDelete(actor, "pa_it0006_address", id, row, row.employeeId);
+  } else if (code === "0021") {
+    const [row] = await db.delete(paFamilyMember).where(eq(paFamilyMember.id, id)).returning();
+    if (row) await recordDelete(actor, "pa_it0021_family_member", id, row, row.employeeId);
+  } else if (code === "0105") {
+    const [row] = await db.delete(paCommunication).where(eq(paCommunication.id, id)).returning();
+    if (row) await recordDelete(actor, "pa_it0105_communication", id, row, row.employeeId);
+  } else return fail("That infotype is not recognised.");
 
   revalidateEmployee(employeeId);
   return OK;
@@ -520,6 +588,8 @@ export async function massUpdate(
   if (ids.length === 0) return fail("Select at least one employee.");
   if (!value) return fail("Enter the new value.");
 
+  const actor = actorOf(session);
+  const reason = `Mass update of ${ids.length} ${ids.length === 1 ? "employee" : "employees"}`;
   let applied = 0;
   for (const employeeId of ids) {
     if (field === "payScaleGroup" || field === "amount") {
@@ -540,6 +610,8 @@ export async function massUpdate(
           currency: current.currency,
         },
         createdBy: session.username,
+        actor,
+        reason,
       });
       applied += 1;
     } else if (field === "workScheduleCode") {
@@ -558,6 +630,8 @@ export async function massUpdate(
           employment_percent: current.employmentPercent,
         },
         createdBy: session.username,
+        actor,
+        reason,
       });
       applied += 1;
     } else {
@@ -579,20 +653,27 @@ export async function setEmploymentStatus(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const employeeId = num(form.get("employeeId"));
   const status = str(form.get("status"));
   if (!["Active", "On leave", "Terminated"].includes(status)) {
     return fail("That status is not recognised.");
   }
 
-  await db
-    .update(paEmployee)
-    .set({
-      employmentStatus: status,
-      terminationDate: status === "Terminated" ? str(form.get("effectiveDate")) || null : null,
-    })
-    .where(eq(paEmployee.id, employeeId));
+  const actor = actorOf(session);
+  await audited(
+    actor,
+    { entity: "pa_employee", entityId: employeeId, subjectEmployeeId: employeeId },
+    () => db.query.paEmployee.findFirst({ where: eq(paEmployee.id, employeeId) }),
+    () =>
+      db
+        .update(paEmployee)
+        .set({
+          employmentStatus: status,
+          terminationDate: status === "Terminated" ? str(form.get("effectiveDate")) || null : null,
+        })
+        .where(eq(paEmployee.id, employeeId)),
+  );
 
   // A terminated employee frees their chair.
   if (status === "Terminated") {
@@ -601,10 +682,13 @@ export async function setEmploymentStatus(
       orderBy: [desc(paOrgAssignment.validFrom)],
     });
     if (assignment) {
-      await db
-        .update(omPosition)
-        .set({ isVacant: true })
-        .where(eq(omPosition.code, assignment.positionCode));
+      const code = assignment.positionCode;
+      await audited(
+        actor,
+        { entity: "om_position", entityId: code, reason: "Holder terminated" },
+        () => db.query.omPosition.findFirst({ where: eq(omPosition.code, code) }),
+        () => db.update(omPosition).set({ isVacant: true }).where(eq(omPosition.code, code)),
+      );
     }
   }
 

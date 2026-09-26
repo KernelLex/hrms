@@ -1,0 +1,68 @@
+# The full check, on every push and pull request: types, lint, the test
+# suite, a production build, and the accessibility and layout audit of every
+# screen against the built app on a fresh local database. Any step failing
+# fails the run.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # A throwaway SQLite file: CI never touches Turso.
+      TURSO_DATABASE_URL: file:./ci.db
+      TURSO_AUTH_TOKEN: ""
+      AUTH_SECRET: ci-only-secret-used-nowhere-else
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Migrate and seed a local database
+        run: npm run db:reset
+
+      - name: Start the app
+        run: |
+          npm run start -- --port 3000 > server.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000/api/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "The app did not start." && exit 1
+
+      - name: Audit every screen
+        run: npm run audit:ui
+
+      - name: Server log
+        if: failure()
+        run: cat server.log || true

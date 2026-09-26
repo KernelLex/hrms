@@ -23,6 +23,9 @@ import {
   CalendarRange,
   ChartBar,
   Search,
+  Bell,
+  History,
+  Mail,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -46,6 +49,8 @@ const ICONS: Record<string, LucideIcon> = {
   Target,
   ClipboardCheck,
   FileBadge,
+  History,
+  Mail,
 };
 
 /* -------------------------------------------------------------- brand mark */
@@ -93,6 +98,41 @@ function SearchIconButton() {
     >
       <Search className="size-5 stroke-[1.75]" />
     </button>
+  );
+}
+
+/* -------------------------------------------------------------------- bell */
+
+/**
+ * Notifications, with the unread count as a §9 count pill: ink, at least
+ * 20px wide, white 11px tabular figures.
+ */
+function BellLink({ unread, onNavigate }: { unread: number; onNavigate?: () => void }) {
+  const pathname = usePathname();
+  const active = pathname === "/inbox" || pathname.startsWith("/inbox/");
+  const label = unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
+  return (
+    <Link
+      href="/inbox"
+      onClick={onNavigate}
+      aria-label={label}
+      title={label}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "relative flex size-10 items-center justify-center rounded-lg text-ink transition-colors duration-150 hover:bg-soft",
+        active && "bg-soft",
+      )}
+    >
+      <Bell className="size-5 stroke-[1.75]" />
+      {unread > 0 ? (
+        <span
+          aria-hidden
+          className="tabular absolute top-0.5 right-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1.5 text-[11px] font-medium text-white"
+        >
+          {unread > 99 ? "99+" : unread}
+        </span>
+      ) : null}
+    </Link>
   );
 }
 
@@ -180,12 +220,15 @@ export function Shell({
   groups,
   name,
   role,
+  unread,
   signOutAction,
   children,
 }: {
   groups: NavGroup[];
   name: string;
   role: string;
+  /** Unread notifications, for the bell. */
+  unread: number;
   signOutAction: () => Promise<void>;
   children: React.ReactNode;
 }) {
@@ -213,8 +256,9 @@ export function Shell({
 
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-surface lg:flex print:hidden">
-        <div className="px-5 pt-5 pb-4">
+        <div className="flex items-center justify-between py-3.5 pr-3 pl-5">
           <Brand />
+          <BellLink unread={unread} />
         </div>
         <div className="px-4 pb-5">
           <SearchButton />
@@ -235,7 +279,8 @@ export function Shell({
           <Menu className="size-5 stroke-[1.75]" />
         </button>
         <Brand />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <BellLink unread={unread} />
           <SearchIconButton />
         </div>
       </header>

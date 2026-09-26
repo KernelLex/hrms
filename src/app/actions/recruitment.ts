@@ -6,6 +6,15 @@ import { z } from "zod";
 import { db, rawClient } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import {
+  actorOf,
+  audited,
+  changeStatement,
+  recordCreated,
+  recordDeleted,
+  subjectOf,
+  type Actor,
+} from "@/lib/change-log";
+import {
   rcRequisition,
   rcCandidate,
   rcApplication,
@@ -18,6 +27,7 @@ import {
   now,
 } from "@/db/schema";
 import { toPaise } from "@/lib/money";
+import { documentSummary } from "@/lib/document-kinds";
 import {
   storeDocument,
   deleteDocument,
@@ -54,7 +64,7 @@ export async function saveRequisition(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = opt(form.get("originalCode"));
   const positionCode = str(form.get("positionCode"));
   const openings = num(form.get("openings"));
@@ -82,10 +92,12 @@ export async function saveRequisition(
   };
 
   if (original) {
-    await db
-      .update(rcRequisition)
-      .set(values)
-      .where(eq(rcRequisition.code, original));
+    await audited(
+      actor,
+      { entity: "rc_requisition", entityId: original, subjectEmployeeId: subjectOf },
+      () => db.query.rcRequisition.findFirst({ where: eq(rcRequisition.code, original) }),
+      () => db.update(rcRequisition).set(values).where(eq(rcRequisition.code, original)),
+    );
   } else {
     const [last] = await db
       .select({ code: rcRequisition.code })
@@ -93,11 +105,15 @@ export async function saveRequisition(
       .orderBy(desc(rcRequisition.id))
       .limit(1);
     const next = last ? Number(last.code.replace(/\D/g, "")) + 1 : 1;
-    await db.insert(rcRequisition).values({
-      ...values,
-      code: `REQ${String(next).padStart(4, "0")}`,
-      createdAt: now(),
-    });
+    await recordCreated(
+      actor,
+      "rc_requisition",
+      await db.insert(rcRequisition).values({
+        ...values,
+        code: `REQ${String(next).padStart(4, "0")}`,
+        createdAt: now(),
+      }).returning(),
+    );
   }
 
   revalidateRecruitment();
@@ -108,7 +124,7 @@ export async function deleteRequisition(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const code = str(form.get("code"));
 
   const req = await db.query.rcRequisition.findFirst({
@@ -126,7 +142,11 @@ export async function deleteRequisition(
     );
   }
 
-  await db.delete(rcRequisition).where(eq(rcRequisition.id, req.id));
+  await recordDeleted(
+    actor,
+    "rc_requisition",
+    await db.delete(rcRequisition).where(eq(rcRequisition.id, req.id)).returning(),
+  );
   revalidateRecruitment();
   return OK;
 }
@@ -151,6 +171,7 @@ export async function saveCandidate(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
   const original = opt(form.get("originalCode"));
 
   const parsed = CandidateInput.safeParse({
@@ -163,10 +184,12 @@ export async function saveCandidate(
   if (!parsed.success) return fail(firstIssue(parsed.error));
 
   if (original) {
-    await db
-      .update(rcCandidate)
-      .set(parsed.data)
-      .where(eq(rcCandidate.code, original));
+    await audited(
+      actor,
+      { entity: "rc_candidate", entityId: original, subjectEmployeeId: subjectOf },
+      () => db.query.rcCandidate.findFirst({ where: eq(rcCandidate.code, original) }),
+      () => db.update(rcCandidate).set(parsed.data).where(eq(rcCandidate.code, original)),
+    );
   } else {
     const [last] = await db
       .select({ code: rcCandidate.code })
@@ -181,12 +204,13 @@ export async function saveCandidate(
         code: `CAND${String(next).padStart(4, "0")}`,
         createdAt: now(),
       })
-      .returning({ id: rcCandidate.id });
+      .returning();
+    await recordCreated(actor, "rc_candidate", [candidate]);
 
     // Applying is optional, but it is the usual next step.
     const requisitionId = num(form.get("requisitionId"));
     if (requisitionId) {
-      await createApplicationFor(candidate.id, requisitionId, session.username);
+      await createApplicationFor(candidate.id, requisitionId, actor);
     }
   }
 
@@ -198,7 +222,7 @@ export async function deleteCandidate(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const code = str(form.get("code"));
   const candidate = await db.query.rcCandidate.findFirst({
     where: eq(rcCandidate.code, code),
@@ -220,7 +244,11 @@ export async function deleteCandidate(
     .where(and(eq(appDocument.ownerType, "candidate"), eq(appDocument.ownerId, candidate.id)));
   for (const d of documents) await deleteDocument(d);
 
-  await db.delete(rcCandidate).where(eq(rcCandidate.id, candidate.id));
+  await recordDeleted(
+    actor,
+    "rc_candidate",
+    await db.delete(rcCandidate).where(eq(rcCandidate.id, candidate.id)).returning(),
+  );
   revalidateRecruitment();
   return OK;
 }
@@ -234,6 +262,7 @@ export async function uploadResume(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
   const candidateId = num(form.get("candidateId"));
   const candidate = await db.query.rcCandidate.findFirst({
     where: eq(rcCandidate.id, candidateId),
@@ -268,6 +297,7 @@ export async function uploadResume(
     throw err;
   }
   for (const d of earlier) if (d.id !== stored.id) await deleteDocument(d);
+  await recordCreated(actor, "app_document", [documentSummary(stored)]);
 
   revalidateRecruitment();
   return OK;
@@ -277,12 +307,13 @@ export async function removeResume(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const doc = await db.query.appDocument.findFirst({
     where: and(eq(appDocument.id, num(form.get("documentId"))), eq(appDocument.ownerType, "candidate")),
   });
   if (!doc) return fail("That file has already been removed.");
   await deleteDocument(doc);
+  await recordDeleted(actor, "app_document", [documentSummary(doc)]);
   revalidateRecruitment();
   return OK;
 }
@@ -292,7 +323,7 @@ export async function removeResume(
 async function createApplicationFor(
   candidateId: number,
   requisitionId: number,
-  by: string,
+  actor: Actor,
 ): Promise<void> {
   const existing = await db.query.rcApplication.findFirst({
     where: and(
@@ -311,13 +342,14 @@ async function createApplicationFor(
       stage: "Applied",
       appliedDate: today,
     })
-    .returning({ id: rcApplication.id });
+    .returning();
+  await recordCreated(actor, "rc_application", [application]);
 
   await db.insert(rcApplicationStageHistory).values({
     applicationId: application.id,
     fromStage: null,
     toStage: "Applied",
-    changedBy: by,
+    changedBy: actor.name,
     changedAt: now(),
   });
 }
@@ -327,6 +359,7 @@ export async function createApplication(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
   const candidateId = num(form.get("candidateId"));
   const requisitionId = num(form.get("requisitionId"));
   if (!candidateId || !requisitionId) return fail("Choose a candidate and a requisition.");
@@ -339,7 +372,7 @@ export async function createApplication(
   });
   if (existing) return fail("That candidate has already applied to this requisition.");
 
-  await createApplicationFor(candidateId, requisitionId, session.username);
+  await createApplicationFor(candidateId, requisitionId, actor);
   revalidateRecruitment();
   return OK;
 }
@@ -355,6 +388,7 @@ export async function advanceApplication(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
   const id = num(form.get("id"));
 
   const application = await db.query.rcApplication.findFirst({
@@ -375,14 +409,20 @@ export async function advanceApplication(
   const next = PIPELINE_STAGES[index + 1];
   const offered = str(form.get("offeredSalary"));
 
-  await db
-    .update(rcApplication)
-    .set({
-      stage: next,
-      offeredSalaryPaise:
-        next === "Offered" && offered ? toPaise(offered) : application.offeredSalaryPaise,
-    })
-    .where(eq(rcApplication.id, id));
+  await audited(
+    actor,
+    { entity: "rc_application", entityId: id, subjectEmployeeId: subjectOf },
+    () => db.query.rcApplication.findFirst({ where: eq(rcApplication.id, id) }),
+    () =>
+      db
+        .update(rcApplication)
+        .set({
+          stage: next,
+          offeredSalaryPaise:
+            next === "Offered" && offered ? toPaise(offered) : application.offeredSalaryPaise,
+        })
+        .where(eq(rcApplication.id, id)),
+  );
 
   await db.insert(rcApplicationStageHistory).values({
     applicationId: id,
@@ -402,6 +442,7 @@ export async function rejectApplication(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
   const id = num(form.get("id"));
 
   const application = await db.query.rcApplication.findFirst({
@@ -412,13 +453,19 @@ export async function rejectApplication(
     return fail("A hired candidate cannot be rejected.");
   }
 
-  await db
-    .update(rcApplication)
-    .set({
-      rejectedReason: opt(form.get("reason")),
-      rejectedAt: now(),
-    })
-    .where(eq(rcApplication.id, id));
+  await audited(
+    actor,
+    { entity: "rc_application", entityId: id, subjectEmployeeId: subjectOf },
+    () => db.query.rcApplication.findFirst({ where: eq(rcApplication.id, id) }),
+    () =>
+      db
+        .update(rcApplication)
+        .set({
+          rejectedReason: opt(form.get("reason")),
+          rejectedAt: now(),
+        })
+        .where(eq(rcApplication.id, id)),
+  );
 
   await db.insert(rcApplicationStageHistory).values({
     applicationId: id,
@@ -439,7 +486,7 @@ export async function saveInterview(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = opt(form.get("originalCode"));
   const applicationId = num(form.get("applicationId"));
   const scheduledDate = str(form.get("scheduledDate"));
@@ -463,9 +510,18 @@ export async function saveInterview(
   };
 
   if (original) {
-    await db.update(rcInterview).set(values).where(eq(rcInterview.id, Number(original)));
+    await audited(
+      actor,
+      { entity: "rc_interview", entityId: Number(original), subjectEmployeeId: subjectOf },
+      () => db.query.rcInterview.findFirst({ where: eq(rcInterview.id, Number(original)) }),
+      () => db.update(rcInterview).set(values).where(eq(rcInterview.id, Number(original))),
+    );
   } else {
-    await db.insert(rcInterview).values({ ...values, createdAt: now() });
+    await recordCreated(
+      actor,
+      "rc_interview",
+      await db.insert(rcInterview).values({ ...values, createdAt: now() }).returning(),
+    );
   }
 
   revalidateRecruitment();
@@ -476,8 +532,12 @@ export async function deleteInterview(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
-  await db.delete(rcInterview).where(eq(rcInterview.id, num(form.get("id"))));
+  const actor = actorOf(await requireRole("HR_ADMIN"));
+  await recordDeleted(
+    actor,
+    "rc_interview",
+    await db.delete(rcInterview).where(eq(rcInterview.id, num(form.get("id")))).returning(),
+  );
   revalidateRecruitment();
   return OK;
 }
@@ -497,6 +557,7 @@ export async function convertToEmployee(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
 
   const applicationId = num(form.get("applicationId"));
   const hireDate = str(form.get("hireDate"));
@@ -619,6 +680,42 @@ export async function convertToEmployee(
       sql: "UPDATE rc_application SET stage = 'Hired' WHERE id = ?",
       args: [applicationId],
     });
+
+    const logged = [
+      changeStatement(actor, {
+        entity: "pa_employee",
+        entityId: employeeId,
+        subjectEmployeeId: employeeId,
+        action: "create",
+        after: {
+          employeeNumber,
+          actionType: "Hire",
+          hireDate,
+          firstName,
+          lastName,
+          orgUnitCode: requisition.orgUnitCode,
+          positionCode: requisition.positionCode,
+          amountPaise: toPaise(salary),
+        },
+        reason: `Recruitment ${requisition.code}, application ${applicationId}`,
+      }),
+      changeStatement(actor, {
+        entity: "om_position",
+        entityId: requisition.positionCode,
+        action: "update",
+        before: { isVacant: true },
+        after: { isVacant: false },
+        reason: `Filled by ${employeeNumber}`,
+      }),
+      changeStatement(actor, {
+        entity: "rc_application",
+        entityId: applicationId,
+        action: "update",
+        before: { stage: "Offered" },
+        after: { stage: "Hired" },
+      }),
+    ];
+    for (const st of logged) if (st) await tx.execute(st);
 
     await tx.execute({
       sql: `INSERT INTO rc_hire_conversion

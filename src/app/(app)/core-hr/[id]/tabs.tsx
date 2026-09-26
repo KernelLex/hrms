@@ -21,6 +21,9 @@ export function InfotypeTabs({ employeeId }: { employeeId: number }) {
       <Tab href={`${base}/documents`} active={pathname === `${base}/documents`}>
         Documents
       </Tab>
+      <Tab href={`${base}/changes`} active={pathname === `${base}/changes`}>
+        Change log
+      </Tab>
       <Tab href={`${base}/access`} active={pathname === `${base}/access`}>
         Access log
       </Tab>

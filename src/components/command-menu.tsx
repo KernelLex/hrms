@@ -25,6 +25,9 @@ import {
   Briefcase,
   House,
   User,
+  Bell,
+  History,
+  Mail,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -61,6 +64,9 @@ const ICONS: Record<string, LucideIcon> = {
   FileBadge,
   Briefcase,
   House,
+  Bell,
+  History,
+  Mail,
 };
 
 type Item = {

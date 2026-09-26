@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq, desc, gte, inArray, lte } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, rawClient } from "@/lib/db";
 import { requireRole, requireSession, hasRole } from "@/lib/auth";
 import {
   pmAppraisalCycle,
@@ -17,6 +17,17 @@ import {
 import { saveTimeSlice, readAsOf, SLICED_TABLES } from "@/lib/engines/timeslice";
 import { listDirectReports } from "@/lib/repositories/employees";
 import { toPaise } from "@/lib/money";
+import {
+  actorOf,
+  audited,
+  changeStatement,
+  recordCreated,
+  recordDeleted,
+  subjectOf,
+} from "@/lib/change-log";
+import { notificationStatements, usersForEmployees } from "@/lib/notifications";
+import { enqueueJob } from "@/lib/jobs/queue";
+import { kickJobs } from "@/lib/jobs/runner";
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -46,7 +57,7 @@ export async function saveCycle(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const original = opt(form.get("originalCode"));
   const name = str(form.get("name"));
   const startDate = str(form.get("startDate"));
@@ -67,9 +78,25 @@ export async function saveCycle(
   };
 
   if (original) {
-    await db.update(pmAppraisalCycle).set(values).where(eq(pmAppraisalCycle.id, Number(original)));
+    await audited(
+      actor,
+      { entity: "pm_appraisal_cycle", entityId: Number(original) },
+      () =>
+        db.query.pmAppraisalCycle.findFirst({
+          where: eq(pmAppraisalCycle.id, Number(original)),
+        }),
+      () =>
+        db
+          .update(pmAppraisalCycle)
+          .set(values)
+          .where(eq(pmAppraisalCycle.id, Number(original))),
+    );
   } else {
-    await db.insert(pmAppraisalCycle).values({ ...values, createdAt: now() });
+    await recordCreated(
+      actor,
+      "pm_appraisal_cycle",
+      await db.insert(pmAppraisalCycle).values({ ...values, createdAt: now() }).returning(),
+    );
   }
 
   revalidatePerformance();
@@ -80,7 +107,7 @@ export async function deleteCycle(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const id = num(form.get("id"));
 
   const goals = await db.select({ id: pmGoal.id }).from(pmGoal).where(eq(pmGoal.cycleId, id));
@@ -90,7 +117,11 @@ export async function deleteCycle(
     );
   }
 
-  await db.delete(pmAppraisalCycle).where(eq(pmAppraisalCycle.id, id));
+  await recordDeleted(
+    actor,
+    "pm_appraisal_cycle",
+    await db.delete(pmAppraisalCycle).where(eq(pmAppraisalCycle.id, id)).returning(),
+  );
   revalidatePerformance();
   return OK;
 }
@@ -104,7 +135,7 @@ export async function openCycle(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const id = num(form.get("id"));
 
   const cycle = await db.query.pmAppraisalCycle.findFirst({
@@ -119,8 +150,9 @@ export async function openCycle(
     .where(eq(paEmployee.employmentStatus, "Active"));
 
   const updatedAt = now();
+  let opened = 0;
   if (employees.length > 0) {
-    await db
+    const rows = await db
       .insert(pmAppraisal)
       .values(
         employees.map((e) => ({
@@ -130,13 +162,25 @@ export async function openCycle(
           updatedAt,
         })),
       )
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: pmAppraisal.id });
+    opened = rows.length;
   }
 
-  await db
-    .update(pmAppraisalCycle)
-    .set({ status: "Active" })
-    .where(eq(pmAppraisalCycle.id, id));
+  await audited(
+    actor,
+    {
+      entity: "pm_appraisal_cycle",
+      entityId: id,
+      reason: `${opened} ${opened === 1 ? "appraisal" : "appraisals"} created`,
+    },
+    () => db.query.pmAppraisalCycle.findFirst({ where: eq(pmAppraisalCycle.id, id) }),
+    () => db.update(pmAppraisalCycle).set({ status: "Active" }).where(eq(pmAppraisalCycle.id, id)),
+  );
+
+  // Everyone with a self review to write hears about it, in the background.
+  await enqueueJob("self_review.notify", { cycleId: id }, { dedupeKey: `self_review.notify:${id}` });
+  await kickJobs();
 
   revalidatePerformance();
   return OK;
@@ -148,7 +192,7 @@ export async function saveGoal(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN", "MANAGER");
+  const actor = actorOf(await requireRole("HR_ADMIN", "MANAGER"));
   const original = opt(form.get("originalCode"));
   const description = str(form.get("description"));
   const weightage = num(form.get("weightagePercent"));
@@ -185,9 +229,18 @@ export async function saveGoal(
   }
 
   if (original) {
-    await db.update(pmGoal).set(values).where(eq(pmGoal.id, Number(original)));
+    await audited(
+      actor,
+      { entity: "pm_goal", entityId: Number(original), subjectEmployeeId: subjectOf },
+      () => db.query.pmGoal.findFirst({ where: eq(pmGoal.id, Number(original)) }),
+      () => db.update(pmGoal).set(values).where(eq(pmGoal.id, Number(original))),
+    );
   } else {
-    await db.insert(pmGoal).values({ ...values, createdAt: now() });
+    await recordCreated(
+      actor,
+      "pm_goal",
+      await db.insert(pmGoal).values({ ...values, createdAt: now() }).returning(),
+    );
   }
 
   revalidatePerformance();
@@ -198,8 +251,12 @@ export async function deleteGoal(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN", "MANAGER");
-  await db.delete(pmGoal).where(eq(pmGoal.id, num(form.get("id"))));
+  const actor = actorOf(await requireRole("HR_ADMIN", "MANAGER"));
+  await recordDeleted(
+    actor,
+    "pm_goal",
+    await db.delete(pmGoal).where(eq(pmGoal.id, num(form.get("id")))).returning(),
+  );
   revalidatePerformance();
   return OK;
 }
@@ -212,6 +269,7 @@ export async function saveSelfRating(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireSession();
+  const actor = actorOf(session);
   const id = num(form.get("id"));
 
   const appraisal = await db.query.pmAppraisal.findFirst({
@@ -228,15 +286,21 @@ export async function saveSelfRating(
   const rating = ratingOf(form.get("selfRating"));
   if (!rating) return fail("Choose a rating between 1 and 5.");
 
-  await db
-    .update(pmAppraisal)
-    .set({
-      selfRating: rating,
-      selfComments: opt(form.get("selfComments")),
-      status: "Pending manager review",
-      updatedAt: now(),
-    })
-    .where(eq(pmAppraisal.id, id));
+  await audited(
+    actor,
+    { entity: "pm_appraisal", entityId: id, subjectEmployeeId: subjectOf },
+    () => db.query.pmAppraisal.findFirst({ where: eq(pmAppraisal.id, id) }),
+    () =>
+      db
+        .update(pmAppraisal)
+        .set({
+          selfRating: rating,
+          selfComments: opt(form.get("selfComments")),
+          status: "Pending manager review",
+          updatedAt: now(),
+        })
+        .where(eq(pmAppraisal.id, id)),
+  );
 
   revalidatePerformance();
   return OK;
@@ -248,6 +312,7 @@ export async function saveManagerRating(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireSession();
+  const actor = actorOf(session);
   if (!hasRole(session, "HR_ADMIN", "MANAGER")) {
     return fail("Only a manager or HR can record a manager rating.");
   }
@@ -275,25 +340,36 @@ export async function saveManagerRating(
   const rating = ratingOf(form.get("managerRating"));
   if (!rating) return fail("Choose a rating between 1 and 5.");
 
-  await db
-    .update(pmAppraisal)
-    .set({
-      managerRating: rating,
-      managerComments: opt(form.get("managerComments")),
-      status: "Completed",
-      updatedAt: now(),
-    })
-    .where(eq(pmAppraisal.id, id));
+  await audited(
+    actor,
+    { entity: "pm_appraisal", entityId: id, subjectEmployeeId: subjectOf },
+    () => db.query.pmAppraisal.findFirst({ where: eq(pmAppraisal.id, id) }),
+    () =>
+      db
+        .update(pmAppraisal)
+        .set({
+          managerRating: rating,
+          managerComments: opt(form.get("managerComments")),
+          status: "Completed",
+          updatedAt: now(),
+        })
+        .where(eq(pmAppraisal.id, id)),
+  );
 
   // A completed appraisal enters calibration.
-  await db
-    .insert(pmCalibration)
-    .values({
-      appraisalId: id,
-      calibratedRating: rating,
-      status: "In review",
-    })
-    .onConflictDoNothing();
+  await recordCreated(
+    actor,
+    "pm_calibration",
+    await db
+      .insert(pmCalibration)
+      .values({
+        appraisalId: id,
+        calibratedRating: rating,
+        status: "In review",
+      })
+      .onConflictDoNothing()
+      .returning(),
+  );
 
   revalidatePerformance();
   return OK;
@@ -306,6 +382,7 @@ export async function saveCalibration(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
   const appraisalId = num(form.get("appraisalId"));
 
   const appraisal = await db.query.pmAppraisal.findFirst({
@@ -335,13 +412,54 @@ export async function saveCalibration(
     if (existing.status === "Finalised" && !finalise) {
       return fail("A finalised rating cannot be moved back to review.");
     }
-    await db.update(pmCalibration).set(values).where(eq(pmCalibration.id, existing.id));
+    await audited(
+      actor,
+      { entity: "pm_calibration", entityId: existing.id, subjectEmployeeId: appraisal.employeeId },
+      () => db.query.pmCalibration.findFirst({ where: eq(pmCalibration.id, existing.id) }),
+      () => db.update(pmCalibration).set(values).where(eq(pmCalibration.id, existing.id)),
+    );
   } else {
-    await db.insert(pmCalibration).values({ appraisalId, ...values });
+    const [created] = await db.insert(pmCalibration).values({ appraisalId, ...values }).returning();
+    const st = changeStatement(actor, {
+      entity: "pm_calibration",
+      entityId: created.id,
+      subjectEmployeeId: appraisal.employeeId,
+      action: "create",
+      after: created,
+    });
+    if (st) await rawClient().execute(st);
+  }
+
+  if (finalise && existing?.status !== "Finalised") {
+    await tellRatingFinalised(appraisal.employeeId, appraisal.cycleId, appraisalId);
   }
 
   revalidatePerformance();
   return OK;
+}
+
+/** Tells an employee their calibrated rating is final. */
+async function tellRatingFinalised(employeeId: number, cycleId: number, appraisalId: number) {
+  const [users, cycle] = await Promise.all([
+    usersForEmployees([employeeId]),
+    db.query.pmAppraisalCycle.findFirst({ where: eq(pmAppraisalCycle.id, cycleId) }),
+  ]);
+  const userId = users.get(employeeId);
+  if (!userId) return;
+  const statements = await notificationStatements([
+    {
+      userId,
+      kind: "rating.finalised",
+      title: `Your rating for ${cycle?.name ?? "the appraisal cycle"} is final`,
+      body: "Calibration is complete. Open your appraisal to see the outcome.",
+      link: "/performance/mine",
+      dedupeKey: `rating.finalised:${appraisalId}`,
+    },
+  ]);
+  if (statements.length > 0) {
+    await rawClient().batch(statements, "write");
+    await kickJobs();
+  }
 }
 
 /* ------------------------------------------------------ PM-05 increments */
@@ -366,7 +484,7 @@ export async function generateIncrements(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const cycleId = num(form.get("cycleId"));
   const effectiveDate = str(form.get("effectiveDate"));
 
@@ -439,12 +557,29 @@ export async function generateIncrements(
     };
 
     if (existing) {
-      await db
-        .update(pmIncrementRecommendation)
-        .set(values)
-        .where(eq(pmIncrementRecommendation.id, existing.id));
+      await audited(
+        actor,
+        {
+          entity: "pm_increment_recommendation",
+          entityId: existing.id,
+          subjectEmployeeId: subjectOf,
+        },
+        () =>
+          db.query.pmIncrementRecommendation.findFirst({
+            where: eq(pmIncrementRecommendation.id, existing.id),
+          }),
+        () =>
+          db
+            .update(pmIncrementRecommendation)
+            .set(values)
+            .where(eq(pmIncrementRecommendation.id, existing.id)),
+      );
     } else {
-      await db.insert(pmIncrementRecommendation).values({ ...values, createdAt });
+      await recordCreated(
+        actor,
+        "pm_increment_recommendation",
+        await db.insert(pmIncrementRecommendation).values({ ...values, createdAt }).returning(),
+      );
     }
     created += 1;
   }
@@ -460,7 +595,7 @@ export async function updateIncrement(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const id = num(form.get("id"));
   const percent = Number(str(form.get("incrementPercent")));
 
@@ -477,15 +612,24 @@ export async function updateIncrement(
   }
 
   const bps = Math.round(percent * 100);
-  await db
-    .update(pmIncrementRecommendation)
-    .set({
-      incrementBasisPoints: bps,
-      newSalaryPaise:
-        rec.currentSalaryPaise + Math.round((rec.currentSalaryPaise * bps) / 10_000),
-      effectiveDate: str(form.get("effectiveDate")) || rec.effectiveDate,
-    })
-    .where(eq(pmIncrementRecommendation.id, id));
+  await audited(
+    actor,
+    { entity: "pm_increment_recommendation", entityId: id, subjectEmployeeId: subjectOf },
+    () =>
+      db.query.pmIncrementRecommendation.findFirst({
+        where: eq(pmIncrementRecommendation.id, id),
+      }),
+    () =>
+      db
+        .update(pmIncrementRecommendation)
+        .set({
+          incrementBasisPoints: bps,
+          newSalaryPaise:
+            rec.currentSalaryPaise + Math.round((rec.currentSalaryPaise * bps) / 10_000),
+          effectiveDate: str(form.get("effectiveDate")) || rec.effectiveDate,
+        })
+        .where(eq(pmIncrementRecommendation.id, id)),
+  );
 
   revalidatePerformance();
   return OK;
@@ -496,6 +640,7 @@ export async function approveIncrement(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
   const id = num(form.get("id"));
 
   const rec = await db.query.pmIncrementRecommendation.findFirst({
@@ -504,10 +649,19 @@ export async function approveIncrement(
   if (!rec) return fail("That recommendation no longer exists.");
   if (rec.status !== "Draft") return fail("That increment is not a draft.");
 
-  await db
-    .update(pmIncrementRecommendation)
-    .set({ status: "Approved", approvedBy: session.username, approvedAt: now() })
-    .where(eq(pmIncrementRecommendation.id, id));
+  await audited(
+    actor,
+    { entity: "pm_increment_recommendation", entityId: id, subjectEmployeeId: subjectOf },
+    () =>
+      db.query.pmIncrementRecommendation.findFirst({
+        where: eq(pmIncrementRecommendation.id, id),
+      }),
+    () =>
+      db
+        .update(pmIncrementRecommendation)
+        .set({ status: "Approved", approvedBy: session.username, approvedAt: now() })
+        .where(eq(pmIncrementRecommendation.id, id)),
+  );
 
   revalidatePerformance();
   return OK;
@@ -527,6 +681,7 @@ export async function pushIncrementsToPayroll(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requireRole("HR_ADMIN");
+  const actor = actorOf(session);
   const cycleId = num(form.get("cycleId"));
 
   const approved = await db
@@ -568,6 +723,8 @@ export async function pushIncrementsToPayroll(
         source_ref: cycle ? `Increment — ${cycle.name}` : "Performance increment",
       },
       createdBy: session.username,
+      actor,
+      reason: cycle ? `Increment — ${cycle.name}` : "Performance increment",
     });
 
     // Record which basic-pay row this produced, for traceability.
@@ -579,10 +736,19 @@ export async function pushIncrementsToPayroll(
       orderBy: [desc(paBasicPay.id)],
     });
 
-    await db
-      .update(pmIncrementRecommendation)
-      .set({ status: "Pushed", pushedAt: now(), basicPayId: written?.id ?? null })
-      .where(eq(pmIncrementRecommendation.id, rec.id));
+    await audited(
+      actor,
+      { entity: "pm_increment_recommendation", entityId: rec.id, subjectEmployeeId: subjectOf },
+      () =>
+        db.query.pmIncrementRecommendation.findFirst({
+          where: eq(pmIncrementRecommendation.id, rec.id),
+        }),
+      () =>
+        db
+          .update(pmIncrementRecommendation)
+          .set({ status: "Pushed", pushedAt: now(), basicPayId: written?.id ?? null })
+          .where(eq(pmIncrementRecommendation.id, rec.id)),
+    );
 
     pushed += 1;
   }
@@ -597,7 +763,7 @@ export async function setIncrementSalary(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const actor = actorOf(await requireRole("HR_ADMIN"));
   const id = num(form.get("id"));
   const amount = Number(str(form.get("newSalary")));
   if (!Number.isFinite(amount) || amount <= 0) return fail("Enter a salary above zero.");
@@ -614,10 +780,19 @@ export async function setIncrementSalary(
       ? Math.round(((newSalary - rec.currentSalaryPaise) / rec.currentSalaryPaise) * 10_000)
       : 0;
 
-  await db
-    .update(pmIncrementRecommendation)
-    .set({ newSalaryPaise: newSalary, incrementBasisPoints: bps })
-    .where(eq(pmIncrementRecommendation.id, id));
+  await audited(
+    actor,
+    { entity: "pm_increment_recommendation", entityId: id, subjectEmployeeId: subjectOf },
+    () =>
+      db.query.pmIncrementRecommendation.findFirst({
+        where: eq(pmIncrementRecommendation.id, id),
+      }),
+    () =>
+      db
+        .update(pmIncrementRecommendation)
+        .set({ newSalaryPaise: newSalary, incrementBasisPoints: bps })
+        .where(eq(pmIncrementRecommendation.id, id)),
+  );
 
   revalidatePerformance();
   return OK;

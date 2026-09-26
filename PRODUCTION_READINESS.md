@@ -2,13 +2,13 @@
 
 What it would take to run real people's pay on this system, rather than a demo organisation of three.
 
-The prototype is feature-complete against its blueprint, tested (103 automated tests, a mutation check on the payroll engine, and an accessibility and phone-width audit of every screen), and deployed. None of that makes it production software. This document lists the gap, in the order it has to close.
+The prototype is feature-complete against its blueprint, tested (133 automated tests, a mutation check on the payroll engine, and an accessibility and phone-width audit of every screen, all run by CI on every push), and deployed. Every change is logged with who made it and what it was before. None of that makes it production software. This document lists the gap, in the order it has to close.
 
 **How to read it.** Items are grouped by when they must be done:
 
 - **Before real data** — must be done before any real employee's personal data goes in.
 - **Before the first real payroll** — must be done before the system pays anyone.
-- **In the first months** — needed for a system people depend on, but not blocking day one.
+- **After go-live** — needed for a system people depend on, but not blocking day one.
 
 Each item says why it matters, because the reason decides how much effort it deserves.
 
@@ -65,7 +65,7 @@ Each item says why it matters, because the reason decides how much effort it des
 | Correction requests | "Ask HR" is the only route today. | A request on the profile that HR approves, feeding the dated history like any other change. |
 | Breach response | The law sets deadlines for notifying the Board and the people affected. | A written runbook, and contacts at Turso, Vercel and Cloudflare. |
 | Processor agreements | Turso, Vercel and Cloudflare process employee data. | Data processing agreements with each. |
-| Access log retention and review | The read log exists; nobody reviews it and nothing ages it out. | Keep it for a defined period and review unusual access, for example bulk exports. |
+| Log retention and review | The read log and the change log exist; nobody reviews them and nothing ages them out. The change log also holds personal data as it was before each change. | Keep each for a defined period, review unusual access such as bulk exports, and include both in the retention schedule. |
 
 ---
 
@@ -92,15 +92,14 @@ The engine handles provident fund (the employee's share) and income tax. A real 
 
 | What | Why | What to do |
 |---|---|---|
-| **A parallel run** | The only real proof a payroll is right. | Run alongside the existing payroll for two or three months and reconcile every payslip to the paisa before switching over. |
+| **A parallel run** | The only real proof a payroll is right. | Run alongside the existing payroll for two or three payroll cycles and reconcile every payslip to the paisa before switching over. |
 | Full and final settlement | Leavers are paid to their last day, but leave encashment, notice-period recovery and gratuity are not calculated. | A settlement action that produces an off-cycle run with those lines. |
 | Loans and advances | A loan is a recurring deduction today, with no balance or schedule. | A loan record with an EMI schedule and an outstanding balance. |
 | Reimbursements | A one-off payment with no claim, bill or approval behind it. | Claims with receipts and an approval step, paid through payroll. |
 | Salary structures | Allowances are percentages of basic for everyone. Real organisations offer a CTC broken into components by grade. | Structures per grade, and the CTC shown to the employee. |
-| Retro limits | Retro sees records *added* after a month was paid, not records deleted, and stops at the financial year. | Track deletions (a tombstone or a change log) and extend retro across the year end with the tax effect on the right year. |
+| Retro limits | Retro sees records *added* after a month was paid, not records deleted, and stops at the financial year. | Read deletions from the change log, which now records them, and extend retro across the year end with the tax effect on the right year. |
 | Bank formats and reconciliation | The bank file is a generic NEFT CSV. Banks each have their own bulk formats, and failed credits come back. | Formats per bank (or host-to-host), and reconciliation of what was actually credited. |
 | Payroll inputs cut-off | Inputs can change up to the moment of the run. | A cut-off date per period after which changes go to next month or through retro. |
-| Background processing | The browser drives payroll batches; closing the tab pauses the run until someone resumes it. | A queue (Vercel Queues, Inngest or QStash) that runs batches server-side, with the screen only watching. |
 
 ### Data migration
 
@@ -112,7 +111,7 @@ The engine handles provident fund (the employee's share) and income tax. A real 
 
 ---
 
-## 3. In the first months
+## 3. After go-live
 
 ### Environments and data
 
@@ -132,16 +131,16 @@ The engine handles provident fund (the employee's share) and income tax. A real 
 | Uptime and alerts | `/api/health` exists; nothing watches it. | An uptime check every minute, alerting whoever is on call. |
 | Payroll-day runbook | Payroll day is when an outage costs most. | What to check before, during and after a run, and who decides to delay payment. |
 | Load test | Payroll has run for three people and for test organisations, not for five thousand. | Run a 5,000-person month against a copy of production and time each stage. |
-| Notifications | Nobody is told when leave is approved, a payslip is ready or a review is due. | Email (and later chat) notifications for the workflow events. |
+| Email delivery | Notifications reach the inbox, and emails are written to the outbox, but nothing is sent: no provider is connected. | Choose a provider, verify the sending domain (SPF, DKIM, DMARC) and switch the transport on — phase 25. |
+| Job frequency | Vercel Hobby runs the scheduled tick once a day. The runner keeps itself going between ticks, but weekly reminders land at the day's tick. | Set `CRON_SECRET`, and on a paid plan tick every few minutes. |
 
 ### Quality
 
 | What | Why | What to do |
 |---|---|---|
-| Continuous integration | Tests and the UI audit run when someone remembers. | GitHub Actions on every pull request: typecheck, lint, `npm test`, build, then `npm run audit:ui` against the preview deployment. Protect `main`. |
+| Protect `main` | GitHub Actions runs typecheck, lint, `npm test`, a build and `npm run audit:ui` on every push and pull request, but nothing stops a red commit reaching `main`. | Require the CI check and a review before merging. |
 | End-to-end flows | Unit and integration tests cover the engines; nothing drives hire → pay → Form 16 through the browser. | Playwright journeys for the main flows, using the same drivers the UI audit uses. |
 | Accessibility with real assistive technology | The automated audit catches perhaps a third of accessibility problems. | Walk the main flows with NVDA and VoiceOver, and fix what they find. |
-| A write audit you can read | Every infotype records who created it and history tables keep workflows, but there is no screen showing field-level changes. | A change log (before and after, by whom, when) with a view per employee, alongside the read log. |
 
 ### For the people using it
 

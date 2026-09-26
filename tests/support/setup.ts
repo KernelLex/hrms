@@ -4,8 +4,8 @@ import { vi } from "vitest";
  * Server Functions are called directly in tests, outside a request.
  *
  * `cookies()` and `revalidatePath()` both need a request scope that does not
- * exist here, so the session is fixed to an HR administrator and revalidation
- * becomes a no-op. The permission checks themselves still run: `requireRole`
+ * exist here, so the session is an HR administrator unless a test says
+ * otherwise, and revalidation becomes a no-op. The permission checks themselves still run: `requireRole`
  * is the real implementation, reading the fixed session.
  */
 vi.mock("next/cache", () => ({
@@ -22,7 +22,12 @@ vi.mock("@/lib/auth", async () => {
     roles: ["HR_ADMIN"] as const,
     employeeId: null,
   };
-  const getSession = async () => ({ ...session, roles: [...session.roles] });
+  // A test can act as someone else for a while: see `actAs` in fixtures.
+  const getSession = async () => {
+    const current =
+      (globalThis as { __testSession?: typeof session }).__testSession ?? session;
+    return { ...current, roles: [...current.roles] };
+  };
   return {
     ...actual,
     getSession,
@@ -49,4 +54,12 @@ vi.mock("next/server", async () => {
       void (typeof task === "function" ? task() : task);
     },
   };
+});
+
+// Background jobs run when a test says so (`processJobs()`), not behind its
+// back: a job racing the test for the one SQLite writer would make results
+// depend on timing.
+vi.mock("@/lib/jobs/runner", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/jobs/runner")>("@/lib/jobs/runner");
+  return { ...actual, kickJobs: async () => {} };
 });

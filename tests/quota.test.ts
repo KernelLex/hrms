@@ -77,6 +77,14 @@ describe("quota engine", () => {
     expect(await used()).toBe(0);
   });
 
+  it("never lets two requests at once spend the same days", async () => {
+    // 10 days left; two approvals of 6 arrive together. One wins.
+    const results = await Promise.all([take(6), take(6)]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(await used()).toBe(daysToUnits(6));
+    await restoreQuota({ employeeId, quotaTypeCode: "ANNUAL", year: 2026, units: daysToUnits(6) });
+  });
+
   it("refuses to consume a quota that was never granted", async () => {
     expect((await take(1, 2099)).ok).toBe(false);
   });

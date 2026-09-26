@@ -63,6 +63,13 @@ export const NAV: NavGroup[] = [
       { label: "My appraisal", href: "/performance/mine", icon: "ClipboardCheck", roles: ALL },
     ],
   },
+  {
+    label: "Admin",
+    items: [
+      { label: "Change log", href: "/change-log", icon: "History", roles: HR },
+      { label: "Outbox", href: "/outbox", icon: "Mail", roles: HR },
+    ],
+  },
 ];
 
 export function navForRoles(roles: RoleCode[]): NavGroup[] {

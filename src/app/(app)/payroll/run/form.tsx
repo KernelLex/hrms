@@ -6,7 +6,8 @@ import { Loader2, Play, RotateCw } from "lucide-react";
 import {
   startRunAction,
   startOffCycleAction,
-  continueRun,
+  watchRun,
+  resumeRun,
   type ActionState,
 } from "@/app/actions/payroll";
 import type { RunProgress } from "@/lib/engines/payroll";
@@ -26,24 +27,25 @@ import { formatINR } from "@/lib/money";
 type Period = { value: string; label: string; runnable: boolean };
 
 /**
- * Drives a run batch by batch until it is done, reporting progress.
+ * Watches a run until it is done, reporting progress.
  *
- * The server calculates a few people per request, so the whole organisation
- * never has to fit inside one request's time limit. If the tab is closed the
- * run simply waits, and "Resume run" picks it up.
+ * The run itself is a background job on the server, calculated a batch at a
+ * time; closing the tab does not stop it. The screen polls where it stands,
+ * and "Resume run" puts a stopped run back in the queue.
  */
 function useRunDriver(onDone: (runId: number, p: RunProgress) => void) {
   const [progress, setProgress] = React.useState<RunProgress | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
-  const drive = React.useCallback(
-    async (runId: number) => {
+  const watch = React.useCallback(
+    async (runId: number, resume = false) => {
       setBusy(true);
       setError(null);
       try {
+        if (resume) await resumeRun(runId);
         for (;;) {
-          const p = await continueRun(runId);
+          const p = await watchRun(runId);
           if ("error" in p) {
             setError(p.error);
             return;
@@ -53,9 +55,10 @@ function useRunDriver(onDone: (runId: number, p: RunProgress) => void) {
             onDone(runId, p);
             return;
           }
+          await new Promise((r) => setTimeout(r, 1200));
         }
       } catch {
-        setError("The connection dropped. Resume the run to carry on where it stopped.");
+        setError("The connection dropped. The run carries on in the background; reload to see where it is.");
       } finally {
         setBusy(false);
       }
@@ -74,12 +77,12 @@ function useRunDriver(onDone: (runId: number, p: RunProgress) => void) {
         setBusy(false);
         return;
       }
-      await drive(result.runId);
+      await watch(result.runId);
     },
-    [drive],
+    [watch],
   );
 
-  return { progress, error, busy, start, drive };
+  return { progress, error, busy, start, watch };
 }
 
 /** §10 Meters: an 8px pill, ink on a soft track. */
@@ -139,7 +142,7 @@ export function RunForm({
     },
     [periodId, router, toast],
   );
-  const { progress, error, busy, start, drive } = useRunDriver(onDone);
+  const { progress, error, busy, start, watch } = useRunDriver(onDone);
 
   return (
     <Card>
@@ -185,7 +188,7 @@ export function RunForm({
 
         <div className="mt-4 flex flex-wrap gap-2">
           {inProgressRunId && !busy ? (
-            <Button type="button" variant="secondary" onClick={() => void drive(inProgressRunId)}>
+            <Button type="button" variant="secondary" onClick={() => void watch(inProgressRunId, true)}>
               <RotateCw />
               Resume run
             </Button>

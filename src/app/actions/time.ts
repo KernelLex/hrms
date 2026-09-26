@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/lib/db";
+import { db, rawClient } from "@/lib/db";
 import { requireRole, requireSession, hasRole } from "@/lib/auth";
 import {
   ptAbsence,
@@ -12,17 +12,29 @@ import {
   ptLeaveRequest,
   ptHoliday,
   ptWorkScheduleRule,
+  ptAbsenceQuota,
   now,
 } from "@/db/schema";
 import {
   workingDaysBetween,
   calendarDaysBetween,
-  consumeQuota,
   restoreQuota,
   generateQuotas,
   daysToUnits,
+  shortfall,
 } from "@/lib/engines/quota";
 import { evaluatePeriod } from "@/lib/engines/time-evaluation";
+import { actorOf, audited, changeStatement, recordChanges, recordCreate, recordDelete } from "@/lib/change-log";
+import {
+  approverUserIds,
+  notificationStatements,
+  usersForEmployees,
+  type NotificationItem,
+} from "@/lib/notifications";
+import { kickJobs } from "@/lib/jobs/runner";
+import { formatDateRange } from "@/lib/dates";
+import { getEmployee, fullName, listDirectReports } from "@/lib/repositories/employees";
+import type { InStatement } from "@libsql/client";
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -92,28 +104,73 @@ export async function submitLeaveRequest(
   if (workingDays === 0) {
     return fail("That range has no working days in it — it falls on weekends or holidays.");
   }
-  const payrollDays = v.isHalfDay ? 0.5 : workingDays;
+  const payrollDays = Math.round((v.isHalfDay ? 0.5 : workingDays) * 2) / 2;
 
-  await db.insert(ptLeaveRequest).values({
-    employeeId,
-    absenceTypeCode: v.absenceTypeCode,
-    fromDate: v.fromDate,
-    toDate: v.toDate,
-    isHalfDay: v.isHalfDay,
-    payrollDays: Math.round(payrollDays * 2) / 2,
-    reason: v.reason,
-    status: "Pending",
-    submittedAt: now(),
-  });
+  const [type, employee, approvers] = await Promise.all([
+    db.query.ptAbsenceType.findFirst({ where: eq(ptAbsenceType.code, v.absenceTypeCode) }),
+    getEmployee(employeeId),
+    approverUserIds(employeeId),
+  ]);
+  const who = employee ? fullName(employee) : "Someone";
+  const range = formatDateRange(v.fromDate, v.toDate);
 
+  // The request, its change-log entry and the approver's notification commit
+  // together: nobody is told about a request that was not saved.
+  const tx = await rawClient().transaction("write");
+  try {
+    const inserted = await tx.execute({
+      sql: `INSERT INTO pt_leave_request
+              (employee_id, absence_type_code, from_date, to_date, is_half_day, payroll_days, reason, status, submitted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?) RETURNING *`,
+      args: [employeeId, v.absenceTypeCode, v.fromDate, v.toDate, v.isHalfDay ? 1 : 0, payrollDays, v.reason, now()],
+    });
+    const request = inserted.rows[0] as unknown as Record<string, unknown>;
+    const requestId = Number(request.id);
+
+    const items: NotificationItem[] = approvers
+      .filter((userId) => userId !== session.userId)
+      .map((userId) => ({
+        userId,
+        kind: "leave.submitted" as const,
+        title: `${who} asked for leave: ${range}`,
+        body:
+          `${payrollDays} working ${payrollDays === 1 ? "day" : "days"} of ${type?.name.toLowerCase() ?? "leave"}` +
+          (v.reason ? `. "${v.reason}"` : "."),
+        link: "/time/approvals",
+        dedupeKey: `leave.submitted:${requestId}:${userId}`,
+      }));
+
+    const statements: InStatement[] = [
+      changeStatement(actorOf(session), {
+        entity: "pt_leave_request",
+        entityId: requestId,
+        subjectEmployeeId: employeeId,
+        action: "create",
+        after: request,
+      })!,
+      ...(await notificationStatements(items)),
+    ];
+    for (const st of statements) await tx.execute(st);
+    await tx.commit();
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  } finally {
+    tx.close();
+  }
+
+  await kickJobs();
   revalidateTime();
   return OK;
 }
 
 /**
- * Manager decision. Approving is the transaction that matters: it writes the
- * absence record and consumes the quota together, so an approved request can
- * never exist without the days coming off the balance.
+ * Manager decision. Approving is the transaction that matters: it claims the
+ * request, takes the days from the quota, writes the absence record, logs
+ * each change and tells the employee — all in one commit. The claim is a
+ * conditional update, so two people deciding at once cannot both win, and
+ * the quota update refuses to overdraw, so the balance can never go below
+ * zero however the clicks interleave.
  */
 export async function decideLeaveRequest(
   _prev: ActionState,
@@ -127,6 +184,9 @@ export async function decideLeaveRequest(
   const id = num(form.get("id"));
   const decision = str(form.get("decision"));
   const note = opt(form.get("decisionNote"));
+  if (decision !== "Approved" && decision !== "Rejected") {
+    return fail("That decision is not recognised.");
+  }
 
   const request = await db.query.ptLeaveRequest.findFirst({
     where: eq(ptLeaveRequest.id, id),
@@ -136,64 +196,156 @@ export async function decideLeaveRequest(
     return fail(`That request was already ${request.status.toLowerCase()}.`);
   }
 
-  if (decision === "Rejected") {
-    await db
-      .update(ptLeaveRequest)
-      .set({
-        status: "Rejected",
-        decidedAt: now(),
-        decidedByEmployeeId: session.employeeId,
-        decisionNote: note,
-      })
-      .where(eq(ptLeaveRequest.id, id));
-    revalidateTime();
-    return OK;
+  // HR decides anything; a manager decides for their own reports, and nobody
+  // decides their own request. Checked here, not by the screen, because a
+  // Server Function can be called directly.
+  if (session.employeeId !== null && request.employeeId === session.employeeId) {
+    return fail("You cannot decide your own leave request. It goes to your manager.");
   }
-
-  if (decision !== "Approved") return fail("That decision is not recognised.");
+  if (!hasRole(session, "HR_ADMIN")) {
+    const reports = session.employeeId
+      ? (await listDirectReports(session.employeeId)).map((e) => e.id)
+      : [];
+    if (!reports.includes(request.employeeId)) {
+      return fail("You can only decide requests from people who report to you.");
+    }
+  }
 
   const type = await db.query.ptAbsenceType.findFirst({
     where: eq(ptAbsenceType.code, request.absenceTypeCode),
   });
-  if (!type) return fail("That leave type no longer exists.");
+  if (decision === "Approved" && !type) return fail("That leave type no longer exists.");
+
+  const actor = actorOf(session);
+  const decidedAt = now();
+  const range = formatDateRange(request.fromDate, request.toDate);
+  const approved = decision === "Approved";
+  const users = await usersForEmployees([request.employeeId]);
+  const recipient = users.get(request.employeeId);
+  const notice = await notificationStatements(
+    recipient
+      ? [
+          {
+            userId: recipient,
+            kind: "leave.decided",
+            title: approved ? `Your leave for ${range} was approved` : `Your leave for ${range} was not approved`,
+            body: note ?? (approved ? "Enjoy the time off." : "Talk to your manager if you want to ask again."),
+            link: "/time/my-leave",
+            dedupeKey: `leave.decided:${request.id}`,
+          },
+        ]
+      : [],
+  );
 
   const year = Number(request.fromDate.slice(0, 4));
   const units = daysToUnits(request.payrollDays);
-
-  if (type.countsAgainstQuota && type.quotaTypeCode) {
-    const taken = await consumeQuota({
-      employeeId: request.employeeId,
-      quotaTypeCode: type.quotaTypeCode,
-      year,
-      units,
-    });
-    if (!taken.ok) return fail(taken.reason);
+  const usesQuota = approved && type?.countsAgainstQuota && type.quotaTypeCode;
+  const quotaBefore = usesQuota
+    ? await db.query.ptAbsenceQuota.findFirst({
+        where: and(
+          eq(ptAbsenceQuota.employeeId, request.employeeId),
+          eq(ptAbsenceQuota.quotaTypeCode, type!.quotaTypeCode!),
+          eq(ptAbsenceQuota.year, year),
+        ),
+      })
+    : undefined;
+  if (usesQuota && !quotaBefore) {
+    return fail(`No ${type!.quotaTypeCode} entitlement exists for ${year}. Generate the quota first.`);
   }
 
-  await db.insert(ptAbsence).values({
-    employeeId: request.employeeId,
-    absenceTypeCode: request.absenceTypeCode,
-    startDate: request.fromDate,
-    endDate: request.toDate,
-    payrollDays: Math.round(request.payrollDays),
-    calendarDays: calendarDaysBetween(request.fromDate, request.toDate),
-    isHalfDay: request.isHalfDay,
-    remarks: request.reason,
-    sourceRequestId: request.id,
-    createdBy: session.username,
-    createdAt: now(),
-  });
+  const tx = await rawClient().transaction("write");
+  try {
+    const claimed = await tx.execute({
+      sql: `UPDATE pt_leave_request
+            SET status = ?, decided_at = ?, decided_by_employee_id = ?, decision_note = ?
+            WHERE id = ? AND status = 'Pending'`,
+      args: [decision, decidedAt, session.employeeId, note, id],
+    });
+    if (claimed.rowsAffected === 0) {
+      await tx.rollback();
+      return fail("That request was decided a moment ago. Reload to see the outcome.");
+    }
+    const statements: (InStatement | null)[] = [
+      changeStatement(actor, {
+        entity: "pt_leave_request",
+        entityId: id,
+        subjectEmployeeId: request.employeeId,
+        action: "update",
+        before: request,
+        after: {
+          ...request,
+          status: decision,
+          decidedAt,
+          decidedByEmployeeId: session.employeeId,
+          decisionNote: note,
+        },
+      }),
+    ];
 
-  await db
-    .update(ptLeaveRequest)
-    .set({
-      status: "Approved",
-      decidedAt: now(),
-      decidedByEmployeeId: session.employeeId,
-      decisionNote: note,
-    })
-    .where(eq(ptLeaveRequest.id, id));
+    if (approved) {
+      if (usesQuota && quotaBefore) {
+        const taken = await tx.execute({
+          sql: `UPDATE pt_it2006_absence_quota SET used_half_days = used_half_days + ?1
+                WHERE id = ?2 AND entitled_half_days - used_half_days >= ?1`,
+          args: [units, quotaBefore.id],
+        });
+        if (taken.rowsAffected === 0) {
+          await tx.rollback();
+          return fail(shortfall(units, quotaBefore.entitledHalfDays - quotaBefore.usedHalfDays));
+        }
+        statements.push(
+          changeStatement(actor, {
+            entity: "pt_it2006_absence_quota",
+            entityId: quotaBefore.id,
+            subjectEmployeeId: request.employeeId,
+            action: "update",
+            before: quotaBefore,
+            after: { ...quotaBefore, usedHalfDays: quotaBefore.usedHalfDays + units },
+          }),
+        );
+      }
 
+      const absence = await tx.execute({
+        sql: `INSERT INTO pt_it2001_absence
+                (employee_id, absence_type_code, start_date, end_date, payroll_days, calendar_days,
+                 is_half_day, remarks, source_request_id, created_by, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        args: [
+          request.employeeId,
+          request.absenceTypeCode,
+          request.fromDate,
+          request.toDate,
+          Math.round(request.payrollDays),
+          calendarDaysBetween(request.fromDate, request.toDate),
+          request.isHalfDay ? 1 : 0,
+          request.reason,
+          request.id,
+          session.username,
+          decidedAt,
+        ],
+      });
+      const row = absence.rows[0] as unknown as Record<string, unknown>;
+      statements.push(
+        changeStatement(actor, {
+          entity: "pt_it2001_absence",
+          entityId: Number(row.id),
+          subjectEmployeeId: request.employeeId,
+          action: "create",
+          after: row,
+        }),
+      );
+    }
+
+    for (const st of [...statements, ...notice]) if (st) await tx.execute(st);
+    await tx.commit();
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  } finally {
+    tx.close();
+  }
+
+  await kickJobs();
   revalidateTime();
   return OK;
 }
@@ -219,10 +371,16 @@ export async function cancelLeaveRequest(
     return fail("Only a pending request can be cancelled.");
   }
 
-  await db
-    .update(ptLeaveRequest)
-    .set({ status: "Cancelled", decidedAt: now() })
-    .where(eq(ptLeaveRequest.id, id));
+  await audited(
+    actorOf(session),
+    { entity: "pt_leave_request", entityId: id, subjectEmployeeId: request.employeeId },
+    () => db.query.ptLeaveRequest.findFirst({ where: eq(ptLeaveRequest.id, id) }),
+    () =>
+      db
+        .update(ptLeaveRequest)
+        .set({ status: "Cancelled", decidedAt: now() })
+        .where(and(eq(ptLeaveRequest.id, id), eq(ptLeaveRequest.status, "Pending"))),
+  );
 
   revalidateTime();
   return OK;
@@ -251,19 +409,23 @@ export async function saveAbsence(
     return fail("That range has no working days in it.");
   }
 
-  await db.insert(ptAbsence).values({
-    employeeId,
-    absenceTypeCode,
-    startDate,
-    endDate,
-    payrollDays,
-    calendarDays: calendarDaysBetween(startDate, endDate),
-    isHalfDay: false,
-    remarks: opt(form.get("remarks")),
-    sourceRequestId: null,
-    createdBy: session.username,
-    createdAt: now(),
-  });
+  const [created] = await db
+    .insert(ptAbsence)
+    .values({
+      employeeId,
+      absenceTypeCode,
+      startDate,
+      endDate,
+      payrollDays,
+      calendarDays: calendarDaysBetween(startDate, endDate),
+      isHalfDay: false,
+      remarks: opt(form.get("remarks")),
+      sourceRequestId: null,
+      createdBy: session.username,
+      createdAt: now(),
+    })
+    .returning();
+  await recordCreate(actorOf(session), "pt_it2001_absence", created.id, created, employeeId);
 
   revalidateTime();
   return OK;
@@ -273,7 +435,7 @@ export async function deleteAbsence(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const id = num(form.get("id"));
 
   const absence = await db.query.ptAbsence.findFirst({ where: eq(ptAbsence.id, id) });
@@ -292,13 +454,17 @@ export async function deleteAbsence(
         units: daysToUnits(absence.isHalfDay ? 0.5 : absence.payrollDays),
       });
     }
-    await db
-      .update(ptLeaveRequest)
-      .set({ status: "Cancelled" })
-      .where(eq(ptLeaveRequest.id, absence.sourceRequestId));
+    const requestId = absence.sourceRequestId;
+    await audited(
+      actorOf(session),
+      { entity: "pt_leave_request", entityId: requestId, subjectEmployeeId: absence.employeeId },
+      () => db.query.ptLeaveRequest.findFirst({ where: eq(ptLeaveRequest.id, requestId) }),
+      () => db.update(ptLeaveRequest).set({ status: "Cancelled" }).where(eq(ptLeaveRequest.id, requestId)),
+    );
   }
 
   await db.delete(ptAbsence).where(eq(ptAbsence.id, id));
+  await recordDelete(actorOf(session), "pt_it2001_absence", id, absence, absence.employeeId);
   revalidateTime();
   return OK;
 }
@@ -318,15 +484,19 @@ export async function saveAttendance(
     return fail("Enter hours between 1 and 24.");
   }
 
-  await db.insert(ptAttendance).values({
-    employeeId,
-    attendanceTypeCode: str(form.get("attendanceTypeCode")),
-    date,
-    hours,
-    remarks: opt(form.get("remarks")),
-    createdBy: session.username,
-    createdAt: now(),
-  });
+  const [created] = await db
+    .insert(ptAttendance)
+    .values({
+      employeeId,
+      attendanceTypeCode: str(form.get("attendanceTypeCode")),
+      date,
+      hours,
+      remarks: opt(form.get("remarks")),
+      createdBy: session.username,
+      createdAt: now(),
+    })
+    .returning();
+  await recordCreate(actorOf(session), "pt_it2002_attendance", created.id, created, employeeId);
 
   revalidateTime();
   return OK;
@@ -336,8 +506,11 @@ export async function deleteAttendance(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
-  await db.delete(ptAttendance).where(eq(ptAttendance.id, num(form.get("id"))));
+  const session = await requireRole("HR_ADMIN");
+  const id = num(form.get("id"));
+  const before = await db.query.ptAttendance.findFirst({ where: eq(ptAttendance.id, id) });
+  await db.delete(ptAttendance).where(eq(ptAttendance.id, id));
+  if (before) await recordDelete(actorOf(session), "pt_it2002_attendance", id, before, before.employeeId);
   revalidateTime();
   return OK;
 }
@@ -348,7 +521,7 @@ export async function generateQuotaAction(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
 
   const year = num(form.get("year"));
   const quotaTypeCode = str(form.get("quotaTypeCode"));
@@ -363,6 +536,17 @@ export async function generateQuotaAction(
   }
 
   const affected = await generateQuotas({ year, quotaTypeCode, entitlementDays });
+  if (affected > 0) {
+    await recordChanges(actorOf(session), [
+      {
+        entity: "pt_it2006_absence_quota",
+        entityId: `${quotaTypeCode}:${year}`,
+        action: "create",
+        after: { quota_type_code: quotaTypeCode, year, entitlement_days: entitlementDays, employees: affected },
+        reason: `Generated for ${affected} ${affected === 1 ? "employee" : "employees"}`,
+      },
+    ]);
+  }
   revalidateTime();
   if (affected === 0) return fail("There are no employees to generate quotas for.");
   return OK;
@@ -394,7 +578,7 @@ export async function saveWorkSchedule(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const original = opt(form.get("originalCode"));
   const code = str(form.get("code")).toUpperCase();
   const name = str(form.get("name"));
@@ -415,13 +599,19 @@ export async function saveWorkSchedule(
   };
 
   if (original) {
-    await db.update(ptWorkScheduleRule).set(values).where(eq(ptWorkScheduleRule.code, original));
+    await audited(
+      actorOf(session),
+      { entity: "pt_work_schedule_rule", entityId: original },
+      () => db.query.ptWorkScheduleRule.findFirst({ where: eq(ptWorkScheduleRule.code, original) }),
+      () => db.update(ptWorkScheduleRule).set(values).where(eq(ptWorkScheduleRule.code, original)),
+    );
   } else {
     const existing = await db.query.ptWorkScheduleRule.findFirst({
       where: eq(ptWorkScheduleRule.code, code),
     });
     if (existing) return fail(`Schedule ${code} already exists.`);
     await db.insert(ptWorkScheduleRule).values(values);
+    await recordCreate(actorOf(session), "pt_work_schedule_rule", code, values);
   }
 
   revalidateTime();
@@ -432,8 +622,11 @@ export async function deleteWorkSchedule(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
-  await db.delete(ptWorkScheduleRule).where(eq(ptWorkScheduleRule.code, str(form.get("code"))));
+  const session = await requireRole("HR_ADMIN");
+  const code = str(form.get("code"));
+  const before = await db.query.ptWorkScheduleRule.findFirst({ where: eq(ptWorkScheduleRule.code, code) });
+  await db.delete(ptWorkScheduleRule).where(eq(ptWorkScheduleRule.code, code));
+  if (before) await recordDelete(actorOf(session), "pt_work_schedule_rule", code, before);
   revalidateTime();
   return OK;
 }
@@ -442,7 +635,7 @@ export async function saveHoliday(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  const session = await requireRole("HR_ADMIN");
   const original = opt(form.get("originalCode"));
   const date = str(form.get("date"));
   const name = str(form.get("name"));
@@ -452,16 +645,19 @@ export async function saveHoliday(
   if (!name) return fail("Enter a holiday name.");
 
   if (original) {
-    await db
-      .update(ptHoliday)
-      .set({ date, name, region })
-      .where(eq(ptHoliday.id, Number(original)));
+    await audited(
+      actorOf(session),
+      { entity: "pt_holiday", entityId: Number(original) },
+      () => db.query.ptHoliday.findFirst({ where: eq(ptHoliday.id, Number(original)) }),
+      () => db.update(ptHoliday).set({ date, name, region }).where(eq(ptHoliday.id, Number(original))),
+    );
   } else {
     const existing = await db.query.ptHoliday.findFirst({
       where: and(eq(ptHoliday.date, date), eq(ptHoliday.region, region)),
     });
     if (existing) return fail(`${region} already has a holiday on ${date}.`);
-    await db.insert(ptHoliday).values({ date, name, region });
+    const [created] = await db.insert(ptHoliday).values({ date, name, region }).returning();
+    await recordCreate(actorOf(session), "pt_holiday", created.id, created);
   }
 
   revalidateTime();
@@ -472,8 +668,11 @@ export async function deleteHoliday(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
-  await db.delete(ptHoliday).where(eq(ptHoliday.id, num(form.get("code")) || num(form.get("id"))));
+  const session = await requireRole("HR_ADMIN");
+  const id = num(form.get("code")) || num(form.get("id"));
+  const before = await db.query.ptHoliday.findFirst({ where: eq(ptHoliday.id, id) });
+  await db.delete(ptHoliday).where(eq(ptHoliday.id, id));
+  if (before) await recordDelete(actorOf(session), "pt_holiday", id, before);
   revalidateTime();
   return OK;
 }

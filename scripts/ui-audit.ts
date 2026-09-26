@@ -53,6 +53,7 @@ const ROUTES = [
   "/performance", "/performance/cycles", "/performance/goals", "/performance/ratings",
   "/performance/calibration", "/performance/increments", "/performance/mine",
   "/tax", "/tax/sections", "/tax/declarations", "/tax/register", "/tax/form16",
+  "/inbox", "/inbox/preferences", "/change-log", "/outbox",
 ];
 
 /** List page, and the pattern of the detail links to follow from it. */
@@ -61,6 +62,7 @@ const DISCOVER: Array<[string, RegExp]> = [
   ["/payroll/my-payslips", /^\/payroll\/payslip\/\d+$/],
   ["/payroll/run", /^\/payroll\/payslip\/\d+$/],
   ["/tax/form16", /^\/tax\/form16\/\d+$/],
+  ["/outbox", /^\/outbox\/\d+$/],
 ];
 
 const WIDTHS = [
@@ -106,11 +108,14 @@ async function discover(page: Page): Promise<string[]> {
   for (const [list, pattern] of DISCOVER) {
     // A dev server may abort a navigation while it recompiles; a list page
     // that cannot be read just contributes no detail pages.
-    const res = await page.goto(`${BASE}${list}`).catch(() => null);
+    const res = await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" }).catch(() => null);
     if (!res || new URL(page.url()).pathname !== list) continue;
-    const hrefs = await page.$$eval("a[href]", (as) =>
-      as.map((a) => new URL((a as HTMLAnchorElement).href).pathname),
-    );
+    const hrefs = await page
+      .$$eval("a[href]", (as) => as.map((a) => new URL((a as HTMLAnchorElement).href).pathname))
+      .catch((err: Error) => {
+        console.warn(`Could not read links on ${list}: ${err.message}`);
+        return [] as string[];
+      });
     const first = hrefs.find((h) => pattern.test(h));
     if (first) {
       found.add(first);
@@ -118,6 +123,7 @@ async function discover(page: Page): Promise<string[]> {
         found.add(`${first}/as-of`);
         found.add(`${first}/0008`);
         found.add(`${first}/access`);
+        found.add(`${first}/changes`);
         found.add(`${first}/documents`);
       }
     }
@@ -164,8 +170,12 @@ async function main() {
         );
         if (overflow > 1) add(`page scrolls sideways by ${overflow}px`);
 
+        // The outbox shows each email in a sandboxed frame with scripts off;
+        // axe cannot run inside it and would wait for it forever. The email
+        // is the message as sent, not a screen of the app.
         const axe = await new AxeBuilder({ page })
           .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+          .exclude("iframe[sandbox]")
           .analyze();
         for (const v of axe.violations) {
           const where = v.nodes
