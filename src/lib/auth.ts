@@ -2,6 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import type { RoleCode } from "@/db/schema";
+import { requireEnv } from "@/lib/env";
 
 /**
  * Prototype authentication: a signed session cookie.
@@ -23,9 +24,7 @@ export type Session = {
 };
 
 function secret(): Uint8Array {
-  const s = process.env.AUTH_SECRET;
-  if (!s) throw new Error("AUTH_SECRET is not set.");
-  return new TextEncoder().encode(s);
+  return new TextEncoder().encode(requireEnv("AUTH_SECRET"));
 }
 
 export async function createSession(session: Session): Promise<void> {

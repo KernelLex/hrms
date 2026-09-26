@@ -1,6 +1,7 @@
 import { createClient, type Client } from "@libsql/client";
 import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "@/db/schema";
+import { readEnv } from "@/lib/env";
 
 /**
  * Turso (libSQL) client.
@@ -23,14 +24,14 @@ let _db: Database | undefined;
 function connect(): Database {
   if (_db) return _db;
 
-  const url = process.env.TURSO_DATABASE_URL;
+  const url = readEnv("TURSO_DATABASE_URL");
   if (!url) {
     throw new Error(
       "TURSO_DATABASE_URL is not set. Copy .env.example to .env.local and fill it in.",
     );
   }
 
-  _client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+  _client = createClient({ url, authToken: readEnv("TURSO_AUTH_TOKEN") });
   _db = drizzle(_client, { schema });
   return _db;
 }
