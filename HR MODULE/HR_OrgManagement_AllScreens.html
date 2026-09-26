@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HR Module — Org Management (All Screens)</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card-bg: #ffffff; --ink: #1f2422; --ink-soft: #5a615e;
+    --accent: #2f6f5e; --accent-soft: #e6f0ec; --border: #e2e0da;
+    --danger: #a5432f; --danger-soft: #fbe9e5;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Segoe UI', Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  .app { display:flex; min-height:100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px; flex-shrink:0; background: var(--ink); color:#fff;
+    display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow-y:auto;
+  }
+  .sidebar .brand { padding:20px 18px 14px; border-bottom:1px solid #333b38; }
+  .sidebar .brand .kicker { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#8fb9a9; font-weight:700; }
+  .sidebar .brand h1 { margin:4px 0 0; font-size:15px; font-weight:700; }
+  .nav-group { padding: 14px 10px; }
+  .nav-group .group-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#8b928f; padding:6px 10px 8px; }
+  .nav-item {
+    display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+    background:none; border:none; color:#d8dbd9; font-family:inherit; font-size:13px; font-weight:600;
+    padding:9px 10px; border-radius:7px; cursor:pointer;
+  }
+  .nav-item .tcode {
+    font-size:10px; font-weight:800; background:#2f6f5e; color:#fff; padding:2px 6px; border-radius:5px; min-width:40px; text-align:center;
+  }
+  .nav-item:hover { background:#2a302d; }
+  .nav-item.active { background: var(--accent); color:#fff; }
+  .nav-item.active .tcode { background:#fff; color:var(--accent); }
+
+  /* Main content */
+  .content { flex:1; min-width:0; }
+  .topbar {
+    background:#fff; border-bottom:1px solid var(--border); padding:16px 30px;
+    display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:5;
+  }
+  .topbar .title-wrap { display:flex; align-items:center; gap:10px; }
+  .topbar .tcode-badge { font-size:12px; font-weight:800; letter-spacing:.04em; background:var(--accent-soft); color:var(--accent); padding:4px 10px; border-radius:6px; }
+  .topbar .title { font-size:16px; font-weight:700; }
+  .topbar .path { font-size:12px; color:var(--ink-soft); }
+
+  main { max-width: 980px; margin: 0 auto; padding: 26px 30px 70px; }
+  .screen { display:none; }
+  .screen.active { display:block; }
+
+  .panel { background: var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:22px 24px; margin-bottom:20px; }
+  .panel h2 { margin:0 0 16px; font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); border-bottom:1px solid var(--border); padding-bottom:10px; }
+  .grid-fields { display:grid; grid-template-columns: repeat(2, 1fr); gap:16px 24px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .field input[type=text], .field input[type=date], .field select {
+    padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; background:#fdfdfc;
+  }
+  .checkline { display:flex; align-items:center; gap:8px; margin-top:4px; }
+  .checkline label { font-size:13px; font-weight:600; color:var(--ink-soft); }
+  .btnrow { display:flex; gap:10px; margin: 18px 0 22px; }
+  button { font-family: inherit; font-size:13px; font-weight:600; padding:9px 18px; border-radius:7px; border:1px solid var(--border); background:#fff; color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { background:var(--danger-soft); border-color:#e6c6bd; color:var(--danger); }
+  button:hover { filter:brightness(0.97); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  thead th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); border-bottom:2px solid var(--border); padding:8px 10px; }
+  tbody td { padding:9px 10px; border-bottom:1px solid var(--border); }
+  tbody tr:hover { background: var(--accent-soft); cursor:pointer; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+  .pill.active { background:var(--accent-soft); color:var(--accent); }
+  .pill.inactive { background:#f1f0ec; color:#9a9a92; }
+  .hint { font-size:12px; color:var(--ink-soft); margin: -8px 0 18px; }
+  .treeview { font-size:13.5px; line-height:2.1; }
+  .node-row { display:flex; align-items:center; gap:8px; padding:6px 4px; border-radius:6px; }
+  .node-row:hover { background: var(--accent-soft); }
+  .badge { font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px; }
+  .badge.org { background:var(--accent-soft); color:var(--accent); }
+  .badge.pos { background:#f1f0ec; color:var(--ink-soft); }
+  .badge.vacant { background:#fff3d9; color:#8a6d1c; }
+
+  @media (max-width: 800px) {
+    .app { flex-direction:column; }
+    .sidebar { width:100%; height:auto; position:relative; }
+    .grid-fields { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="sidebar">
+    <div class="brand">
+      <div class="kicker">ERP · HR Module</div>
+      <h1>Org Management</h1>
+    </div>
+    <div class="nav-group">
+      <div class="group-label">Transactions</div>
+      <button class="nav-item active" data-target="om01" onclick="showScreen('om01')"><span class="tcode">OM-01</span>Company Master</button>
+<button class="nav-item" data-target="om02" onclick="showScreen('om02')"><span class="tcode">OM-02</span>Personnel Area Master</button>
+<button class="nav-item" data-target="om03" onclick="showScreen('om03')"><span class="tcode">OM-03</span>Personnel Sub-Area Master</button>
+<button class="nav-item" data-target="om04" onclick="showScreen('om04')"><span class="tcode">OM-04</span>Job Master</button>
+<button class="nav-item" data-target="om05" onclick="showScreen('om05')"><span class="tcode">OM-05</span>Org Unit Master</button>
+<button class="nav-item" data-target="om06" onclick="showScreen('om06')"><span class="tcode">OM-06</span>Position Master</button>
+<button class="nav-item" data-target="om07" onclick="showScreen('om07')"><span class="tcode">OM-07</span>Reporting Line Assignment</button>
+<button class="nav-item" data-target="om08" onclick="showScreen('om08')"><span class="tcode">OM-08</span>Org Structure Viewer</button>
+
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="topbar">
+      <div class="title-wrap">
+        <span class="tcode-badge" id="topbar-tcode">OM-01</span>
+        <span class="title" id="topbar-title">Company Master</span>
+      </div>
+      <div class="path" id="topbar-path">HR &rsaquo; Org Management &rsaquo; Company Master</div>
+    </div>
+
+    <main>
+      <section class="screen active" id="screen-om01" data-tcode="OM-01" data-title="Company Master">
+  <div class="panel">
+    <h2>Company Master details</h2>
+    <div class="hint">Root of the enterprise structure — matches VB.NET form OM01_CompanyMaster.vb / table OM_Company.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="om01_code">Company Code</label><input type="text" id="om01_code" placeholder="CO01" value=""></div>
+<div class="field"><label for="om01_name">Company Name</label><input type="text" id="om01_name" placeholder="Acme Manufacturing Pvt Ltd" value=""></div>
+<div class="field full"><label for="om01_address">Address</label><input type="text" id="om01_address" placeholder="Plot 12, Industrial Area" value=""></div>
+<div class="field"><label for="om01_city">City</label><input type="text" id="om01_city" placeholder="Bengaluru" value=""></div>
+<div class="field"><label for="om01_country">Country</label><input type="text" id="om01_country" placeholder="India" value=""></div>
+<div class="field">
+          <div class="checkline"><input type="checkbox" id="om01_active" checked><label for="om01_active">Active</label></div>
+        </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('om01')">Save</button>
+      <button onclick="clearForm('om01')">New</button>
+      <button onclick="loadSelected('om01')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('om01')">Delete selected</button>
+    </div>
+  </div>
+
+  
+
+  <div class="panel">
+    <h2>Company Master list</h2>
+    <table id="grid-om01">
+      <thead><tr><th>Company Code</th><th>Company Name</th><th>Address</th><th>City</th><th>Country</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>CO01</td><td>Acme Manufacturing Pvt Ltd</td><td>Plot 12, Industrial Area</td><td>Bengaluru</td><td>India</td><td><span class="pill active">Active</span></td></tr>
+<tr><td>CO02</td><td>Acme Retail Pvt Ltd</td><td>5th Cross, MG Road</td><td>Mumbai</td><td>India</td><td><span class="pill active">Active</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-om02" data-tcode="OM-02" data-title="Personnel Area Master">
+  <div class="panel">
+    <h2>Personnel Area Master details</h2>
+    <div class="hint">Location/plant under a Company — table OM_PersonnelArea, FK to OM_Company.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="om02_code">Personnel Area Code</label><input type="text" id="om02_code" placeholder="PA01" value=""></div>
+<div class="field"><label for="om02_company">Company Code</label><select id="om02_company"><option>CO01 — Acme Manufacturing</option><option>CO02 — Acme Retail</option></select></div>
+<div class="field"><label for="om02_name">Area Name</label><input type="text" id="om02_name" placeholder="Head Office" value=""></div>
+<div class="field full"><label for="om02_location">Location</label><input type="text" id="om02_location" placeholder="Bengaluru Campus" value=""></div>
+<div class="field">
+          <div class="checkline"><input type="checkbox" id="om02_active" checked><label for="om02_active">Active</label></div>
+        </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('om02')">Save</button>
+      <button onclick="clearForm('om02')">New</button>
+      <button onclick="loadSelected('om02')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('om02')">Delete selected</button>
+    </div>
+  </div>
+
+  
+
+  <div class="panel">
+    <h2>Personnel Area Master list</h2>
+    <table id="grid-om02">
+      <thead><tr><th>Area Code</th><th>Company</th><th>Area Name</th><th>Location</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>PA01</td><td>CO01</td><td>Head Office</td><td>Bengaluru Campus</td><td><span class="pill active">Active</span></td></tr>
+<tr><td>PA02</td><td>CO01</td><td>Factory Unit 1</td><td>Hosur Plant</td><td><span class="pill active">Active</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-om03" data-tcode="OM-03" data-title="Personnel Sub-Area Master">
+  <div class="panel">
+    <h2>Personnel Sub-Area Master details</h2>
+    <div class="hint">Sub-division within a Personnel Area (e.g. shift/site) — table OM_PersonnelSubArea.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="om03_code">Sub-Area Code</label><input type="text" id="om03_code" placeholder="PSA01" value=""></div>
+<div class="field"><label for="om03_parent">Personnel Area</label><select id="om03_parent"><option>PA01 — Head Office</option><option>PA02 — Factory Unit 1</option></select></div>
+<div class="field full"><label for="om03_name">Sub-Area Name</label><input type="text" id="om03_name" placeholder="Day Shift" value=""></div>
+<div class="field">
+          <div class="checkline"><input type="checkbox" id="om03_active" checked><label for="om03_active">Active</label></div>
+        </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('om03')">Save</button>
+      <button onclick="clearForm('om03')">New</button>
+      <button onclick="loadSelected('om03')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('om03')">Delete selected</button>
+    </div>
+  </div>
+
+  
+
+  <div class="panel">
+    <h2>Personnel Sub-Area Master list</h2>
+    <table id="grid-om03">
+      <thead><tr><th>Sub-Area Code</th><th>Personnel Area</th><th>Sub-Area Name</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>PSA01</td><td>PA02</td><td>Day Shift</td><td><span class="pill active">Active</span></td></tr>
+<tr><td>PSA02</td><td>PA02</td><td>Night Shift</td><td><span class="pill active">Active</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-om04" data-tcode="OM-04" data-title="Job Master">
+  <div class="panel">
+    <h2>Job Master details</h2>
+    <div class="hint">Generic job classification, independent of the org chart — table OM_Job.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="om04_code">Job Code</label><input type="text" id="om04_code" placeholder="JB0001" value=""></div>
+<div class="field"><label for="om04_title">Job Title</label><input type="text" id="om04_title" placeholder="Software Engineer" value=""></div>
+<div class="field"><label for="om04_group">Job Group</label><select id="om04_group"><option>IT</option><option>Finance</option><option>HR</option><option>Sales</option><option>Admin</option><option>Operations</option></select></div>
+<div class="field full"><label for="om04_desc">Description</label><input type="text" id="om04_desc" placeholder="Develops and maintains applications" value=""></div>
+<div class="field">
+          <div class="checkline"><input type="checkbox" id="om04_active" checked><label for="om04_active">Active</label></div>
+        </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('om04')">Save</button>
+      <button onclick="clearForm('om04')">New</button>
+      <button onclick="loadSelected('om04')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('om04')">Delete selected</button>
+    </div>
+  </div>
+
+  
+
+  <div class="panel">
+    <h2>Job Master list</h2>
+    <table id="grid-om04">
+      <thead><tr><th>Job Code</th><th>Job Title</th><th>Job Group</th><th>Description</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>JB0001</td><td>Software Engineer</td><td>IT</td><td>Develops and maintains applications</td><td><span class="pill active">Active</span></td></tr>
+<tr><td>JB0002</td><td>HR Executive</td><td>HR</td><td>Handles recruitment and employee relations</td><td><span class="pill active">Active</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-om05" data-tcode="OM-05" data-title="Org Unit Master">
+  <div class="panel">
+    <h2>Org Unit Master details</h2>
+    <div class="hint">Self-referencing hierarchy (department/division) — table OM_OrgUnit. Parent drives the org chart tree in OM-08.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="om05_code">Org Unit Code</label><input type="text" id="om05_code" placeholder="OU0001" value=""></div>
+<div class="field"><label for="om05_name">Org Unit Name</label><input type="text" id="om05_name" placeholder="Information Technology" value=""></div>
+<div class="field"><label for="om05_parent">Parent Org Unit</label><select id="om05_parent"><option>— none (top level) —</option><option>OU0001 — Information Technology</option><option>OU0002 — Human Resources</option></select></div>
+<div class="field"><label for="om05_company">Company Code</label><select id="om05_company"><option>CO01 — Acme Manufacturing</option><option>CO02 — Acme Retail</option></select></div>
+<div class="field"><label for="om05_parea">Personnel Area</label><select id="om05_parea"><option>PA01 — Head Office</option><option>PA02 — Factory Unit 1</option></select></div>
+<div class="field"><label for="om05_vfrom">Valid From</label><input type="date" id="om05_vfrom" value=""></div>
+<div class="field"><label for="om05_vto">Valid To</label><input type="date" id="om05_vto" value=""></div>
+<div class="field">
+          <div class="checkline"><input type="checkbox" id="om05_active" checked><label for="om05_active">Active</label></div>
+        </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('om05')">Save</button>
+      <button onclick="clearForm('om05')">New</button>
+      <button onclick="loadSelected('om05')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('om05')">Delete selected</button>
+    </div>
+  </div>
+
+  
+  <div class="panel">
+    <h2>Org chart preview (live)</h2>
+    <div class="treeview">
+      <div class="node-row" style="padding-left:0"><span class="badge org">ORG</span> Information Technology (OU0001)</div>
+      <div class="node-row" style="padding-left:22px"><span class="badge org">ORG</span> Application Development (OU0002)</div>
+    </div>
+  </div>
+
+
+  <div class="panel">
+    <h2>Org Unit Master list</h2>
+    <table id="grid-om05">
+      <thead><tr><th>Org Unit Code</th><th>Name</th><th>Parent</th><th>Company</th><th>Valid From</th><th>Valid To</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>OU0001</td><td>Information Technology</td><td>—</td><td>CO01</td><td>2024-01-01</td><td>9999-12-31</td><td><span class="pill active">Active</span></td></tr>
+<tr><td>OU0002</td><td>Application Development</td><td>OU0001</td><td>CO01</td><td>2024-01-01</td><td>9999-12-31</td><td><span class="pill active">Active</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-om06" data-tcode="OM-06" data-title="Position Master">
+  <div class="panel">
+    <h2>Position Master details</h2>
+    <div class="hint">Individual 'chair' — linked to Org Unit + Job, with a vacancy flag — table OM_Position.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="om06_code">Position Code</label><input type="text" id="om06_code" placeholder="PS0001" value=""></div>
+<div class="field"><label for="om06_title">Position Title</label><input type="text" id="om06_title" placeholder="Senior Software Engineer" value=""></div>
+<div class="field"><label for="om06_orgunit">Org Unit</label><select id="om06_orgunit"><option>OU0001 — Information Technology</option><option>OU0002 — Application Development</option></select></div>
+<div class="field"><label for="om06_job">Job</label><select id="om06_job"><option>JB0001 — Software Engineer</option><option>JB0002 — HR Executive</option></select></div>
+<div class="field"><label for="om06_reportsto">Reports To (Position)</label><select id="om06_reportsto"><option>— none (top position) —</option><option>PS0001 — Senior Software Engineer</option></select></div>
+<div class="field">
+          <div class="checkline"><input type="checkbox" id="om06_ismgr" ><label for="om06_ismgr">Manager Position</label></div>
+        </div>
+<div class="field"><label for="om06_vfrom">Valid From</label><input type="date" id="om06_vfrom" value=""></div>
+<div class="field"><label for="om06_vto">Valid To</label><input type="date" id="om06_vto" value=""></div>
+<div class="field">
+          <div class="checkline"><input type="checkbox" id="om06_active" checked><label for="om06_active">Active</label></div>
+        </div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('om06')">Save</button>
+      <button onclick="clearForm('om06')">New</button>
+      <button onclick="loadSelected('om06')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('om06')">Delete selected</button>
+    </div>
+  </div>
+
+  
+
+  <div class="panel">
+    <h2>Position Master list</h2>
+    <table id="grid-om06">
+      <thead><tr><th>Position Code</th><th>Title</th><th>Org Unit</th><th>Job</th><th>Reports To</th><th>Vacant</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>PS0001</td><td>IT Manager</td><td>OU0001</td><td>JB0001</td><td>—</td><td>No</td><td><span class="pill active">Active</span></td></tr>
+<tr><td>PS0002</td><td>Senior Software Engineer</td><td>OU0002</td><td>JB0001</td><td>PS0001</td><td>Yes</td><td><span class="pill active">Active</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-om07" data-tcode="OM-07" data-title="Reporting Line Assignment">
+  <div class="panel">
+    <h2>Reporting Line Assignment details</h2>
+    <div class="hint">Sets OM_Position.ReportsToPosition — this is what builds the reporting hierarchy used in OM-08.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="om07_position">Position</label><select id="om07_position"><option>PS0002 — Senior Software Engineer</option><option>PS0003 — Software Engineer</option></select></div>
+<div class="field"><label for="om07_reportsto">Reports To (Manager Position)</label><select id="om07_reportsto"><option>PS0001 — IT Manager</option><option>PS0002 — Senior Software Engineer</option></select></div>
+<div class="field"><label for="om07_effdate">Effective From</label><input type="date" id="om07_effdate" value=""></div>
+<div class="field full"><label for="om07_note">Remarks</label><input type="text" id="om07_note" placeholder="Reorg — moved under new manager" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('om07')">Save</button>
+      <button onclick="clearForm('om07')">New</button>
+      <button onclick="loadSelected('om07')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('om07')">Delete selected</button>
+    </div>
+  </div>
+
+  
+
+  <div class="panel">
+    <h2>Reporting Line Assignment list</h2>
+    <table id="grid-om07">
+      <thead><tr><th>Position</th><th>Reports To</th><th>Effective From</th><th>Remarks</th></tr></thead>
+      <tbody>
+      <tr><td>PS0002 — Senior Software Engineer</td><td>PS0001 — IT Manager</td><td>2024-01-01</td><td>Initial assignment</td></tr>
+<tr><td>PS0003 — Software Engineer</td><td>PS0002 — Senior Software Engineer</td><td>2024-03-01</td><td>Initial assignment</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-om08" data-tcode="OM-08" data-title="Org Structure Viewer">
+  <div class="panel">
+    <h2>Company: CO01 — Acme Manufacturing Pvt Ltd</h2>
+    <div class="hint">Read-only tree, equivalent to SAP's PPOSE. Built by walking OM_OrgUnit.ParentOrgUnitCode and OM_Position.ReportsToPosition.</div>
+    <div class="treeview">
+      <div class="node-row" style="padding-left:0"><span class="badge org">ORG</span> Information Technology (OU0001)</div>
+      <div class="node-row" style="padding-left:22px"><span class="badge pos">POS</span> IT Manager (PS0001) — <em>filled</em></div>
+      <div class="node-row" style="padding-left:22px"><span class="badge org">ORG</span> Application Development (OU0002)</div>
+      <div class="node-row" style="padding-left:44px"><span class="badge pos">POS</span> Senior Software Engineer (PS0002) — reports to PS0001</div>
+      <div class="node-row" style="padding-left:66px"><span class="badge pos vacant">POS · VACANT</span> Software Engineer (PS0003) — reports to PS0002</div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+</div>
+
+<script>
+  function showScreen(prefix) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const target = document.getElementById('screen-' + prefix);
+    target.classList.add('active');
+    document.querySelector('.nav-item[data-target="' + prefix + '"]').classList.add('active');
+    document.getElementById('topbar-tcode').textContent = target.dataset.tcode;
+    document.getElementById('topbar-title').textContent = target.dataset.title;
+    document.getElementById('topbar-path').innerHTML = 'HR &rsaquo; Org Management &rsaquo; ' + target.dataset.title;
+    window.scrollTo(0,0);
+  }
+
+  let selectedRow = {};
+
+  function fieldValues(prefix) {
+    const scope = document.getElementById('screen-' + prefix);
+    return Array.from(scope.querySelectorAll('.grid-fields input, .grid-fields select')).map(el => {
+      if (el.type === 'checkbox') return el.checked ? 'Active' : 'Inactive';
+      return el.value || '—';
+    });
+  }
+
+  function addRow(prefix) {
+    const vals = fieldValues(prefix);
+    const tbody = document.querySelector('#grid-' + prefix + ' tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = vals.map(v =>
+      (v === 'Active' || v === 'Inactive')
+        ? `<td><span class="pill ${v.toLowerCase()}">${v}</span></td>`
+        : `<td>${v}</td>`
+    ).join('');
+    tr.addEventListener('click', () => selectRow(prefix, tr));
+    tbody.appendChild(tr);
+    clearForm(prefix);
+  }
+
+  function selectRow(prefix, tr) {
+    document.querySelectorAll('#grid-' + prefix + ' tbody tr').forEach(r => r.style.background = '');
+    tr.style.background = 'var(--accent-soft)';
+    selectedRow[prefix] = tr;
+  }
+
+  // wire up click handlers for the pre-rendered sample rows
+  document.querySelectorAll('table[id^="grid-"]').forEach(tbl => {
+    const prefix = tbl.id.replace('grid-', '');
+    tbl.querySelectorAll('tbody tr').forEach(tr => {
+      tr.addEventListener('click', () => selectRow(prefix, tr));
+    });
+  });
+
+  function clearForm(prefix) {
+    const scope = document.getElementById('screen-' + prefix);
+    scope.querySelectorAll('.grid-fields input[type=text]').forEach(el => el.value = '');
+    scope.querySelectorAll('.grid-fields input[type=checkbox]').forEach(el => el.checked = true);
+    selectedRow[prefix] = null;
+  }
+
+  function loadSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the list first.'); return; }
+    const cells = Array.from(selectedRow[prefix].children).map(td => td.textContent.trim());
+    const scope = document.getElementById('screen-' + prefix);
+    const inputs = Array.from(scope.querySelectorAll('.grid-fields input[type=text], .grid-fields select'));
+    inputs.forEach((el, i) => { if (cells[i] !== undefined) el.value = cells[i]; });
+  }
+
+  function deleteSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the list first.'); return; }
+    if (confirm('Delete this record?')) { selectedRow[prefix].remove(); selectedRow[prefix] = null; }
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HR Module — Core HR (All Screens)</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card-bg: #ffffff; --ink: #1f2422; --ink-soft: #5a615e;
+    --accent: #2f6f5e; --accent-soft: #e6f0ec; --border: #e2e0da;
+    --danger: #a5432f; --danger-soft: #fbe9e5; --warn:#8a6d1c; --warn-soft:#fff3d9;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Segoe UI', Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  .app { display:flex; min-height:100vh; }
+
+  .sidebar { width: 270px; flex-shrink:0; background: var(--ink); color:#fff; display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow-y:auto; }
+  .sidebar .brand { padding:20px 18px 14px; border-bottom:1px solid #333b38; }
+  .sidebar .brand .kicker { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#8fb9a9; font-weight:700; }
+  .sidebar .brand h1 { margin:4px 0 0; font-size:15px; font-weight:700; }
+  .nav-group { padding: 14px 10px; }
+  .nav-group .group-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#8b928f; padding:6px 10px 8px; }
+  .nav-item { display:flex; align-items:flex-start; gap:10px; width:100%; text-align:left; background:none; border:none; color:#d8dbd9; font-family:inherit; font-size:12.5px; font-weight:600; padding:9px 10px; border-radius:7px; cursor:pointer; line-height:1.3; }
+  .nav-item .tcode { font-size:10px; font-weight:800; background:#2f6f5e; color:#fff; padding:2px 6px; border-radius:5px; min-width:40px; text-align:center; margin-top:1px; }
+  .nav-item .nlabel small { display:block; font-weight:400; color:#9aa19d; font-size:10.5px; margin-top:1px; }
+  .nav-item:hover { background:#2a302d; }
+  .nav-item.active { background: var(--accent); color:#fff; }
+  .nav-item.active .tcode { background:#fff; color:var(--accent); }
+  .nav-item.active .nlabel small { color:#dfeee8; }
+
+  .content { flex:1; min-width:0; }
+  .topbar { background:#fff; border-bottom:1px solid var(--border); padding:16px 30px; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:5; }
+  .topbar .title-wrap { display:flex; align-items:center; gap:10px; }
+  .topbar .tcode-badge { font-size:12px; font-weight:800; letter-spacing:.04em; background:var(--accent-soft); color:var(--accent); padding:4px 10px; border-radius:6px; }
+  .topbar .title { font-size:16px; font-weight:700; }
+  .topbar .path { font-size:12px; color:var(--ink-soft); }
+
+  main { max-width: 1020px; margin: 0 auto; padding: 26px 30px 70px; }
+  .screen { display:none; }
+  .screen.active { display:block; }
+
+  .panel { background: var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:22px 24px; margin-bottom:20px; }
+  .panel h2 { margin:0 0 16px; font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); border-bottom:1px solid var(--border); padding-bottom:10px; }
+  .grid-fields { display:grid; grid-template-columns: repeat(2, 1fr); gap:16px 24px; }
+  .grid-fields.cols3 { grid-template-columns: repeat(3, 1fr); }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .field input[type=text], .field input[type=date], .field select {
+    padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; background:#fdfdfc;
+  }
+  .checkline { display:flex; align-items:center; gap:8px; margin-top:4px; }
+  .checkline label { font-size:13px; font-weight:600; color:var(--ink-soft); }
+  .btnrow { display:flex; gap:10px; margin: 18px 0 4px; }
+  button { font-family: inherit; font-size:13px; font-weight:600; padding:9px 18px; border-radius:7px; border:1px solid var(--border); background:#fff; color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { background:var(--danger-soft); border-color:#e6c6bd; color:var(--danger); }
+  button:hover { filter:brightness(0.97); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  thead th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); border-bottom:2px solid var(--border); padding:8px 10px; }
+  tbody td { padding:9px 10px; border-bottom:1px solid var(--border); }
+  tbody tr:hover { background: var(--accent-soft); cursor:pointer; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+  .pill.active { background:var(--accent-soft); color:var(--accent); }
+  .pill.inactive { background:#f1f0ec; color:#9a9a92; }
+  .pill.vacant { background:var(--warn-soft); color:var(--warn); }
+  .hint { font-size:12px; color:var(--ink-soft); margin: -8px 0 18px; }
+
+  /* Infotype pill-tabs (used inside PA30/PA20) */
+  .infotabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+  .infotab { font-size:11.5px; font-weight:700; padding:7px 12px; border-radius:999px; border:1px solid var(--border); background:#fff; color:var(--ink-soft); cursor:pointer; }
+  .infotab .code { opacity:.6; font-weight:600; margin-right:4px; }
+  .infotab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .infotab.active .code { opacity:.85; }
+  .infoscreen { display:none; }
+  .infoscreen.active { display:block; }
+
+  .readonly-banner { background:#f1f0ec; color:var(--ink-soft); font-size:12px; font-weight:600; padding:8px 14px; border-radius:7px; margin-bottom:16px; display:inline-block; }
+  .stepbadge { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:11px; font-weight:800; margin-right:8px; }
+
+  @media (max-width: 820px) {
+    .app { flex-direction:column; }
+    .sidebar { width:100%; height:auto; position:relative; }
+    .grid-fields, .grid-fields.cols3 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="sidebar">
+    <div class="brand">
+      <div class="kicker">ERP · HR Module</div>
+      <h1>Core HR (Personnel Administration)</h1>
+    </div>
+    <div class="nav-group">
+      <div class="group-label">Transactions</div>
+      <button class="nav-item active" data-target="ch01" onclick="showScreen('ch01')">
+      <span class="tcode">CH-01</span><span class="nlabel">Personnel Action (Hire)<small>SAP: PA40</small></span>
+    </button>
+<button class="nav-item" data-target="ch02" onclick="showScreen('ch02')">
+      <span class="tcode">CH-02</span><span class="nlabel">Maintain HR Master Data<small>SAP: PA30</small></span>
+    </button>
+<button class="nav-item" data-target="ch03" onclick="showScreen('ch03')">
+      <span class="tcode">CH-03</span><span class="nlabel">Display HR Master Data<small>SAP: PA20</small></span>
+    </button>
+<button class="nav-item" data-target="ch04" onclick="showScreen('ch04')">
+      <span class="tcode">CH-04</span><span class="nlabel">Employee Search<small>SAP: PA10</small></span>
+    </button>
+<button class="nav-item" data-target="ch05" onclick="showScreen('ch05')">
+      <span class="tcode">CH-05</span><span class="nlabel">Mass Data Maintenance<small>SAP: PA70/71</small></span>
+    </button>
+
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="topbar">
+      <div class="title-wrap">
+        <span class="tcode-badge" id="topbar-tcode">CH-01</span>
+        <span class="title" id="topbar-title">Personnel Action (Hire)</span>
+      </div>
+      <div class="path" id="topbar-path">HR &rsaquo; Core HR &rsaquo; Personnel Action (Hire)</div>
+    </div>
+    <main>
+      <section class="screen active" id="screen-ch01" data-tcode="CH-01" data-title="Personnel Action (Hire)">
+  <div class="panel">
+    <h2><span class="stepbadge">1</span>Action details</h2>
+    <div class="hint">Choose the action type and effective date — this drives which infotypes get created, exactly like SAP's PA40.</div>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="ch01_actiontype">Action Type</label><select id="ch01_actiontype"><option>Hire</option><option>Transfer</option><option>Promotion</option><option>Termination</option><option>Rehire</option></select></div>
+      <div class="field"><label for="ch01_effdate">Effective Date</label><input type="date" id="ch01_effdate" value=""></div>
+      <div class="field"><label for="ch01_reason">Reason</label><select id="ch01_reason"><option>New Position</option><option>Business Growth</option><option>Internal Move</option><option>Resignation</option><option>Retirement</option></select></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="stepbadge">2</span>Organizational assignment</h2>
+    <div class="grid-fields">
+      <div class="field"><label for="ch01_company">Company Code</label><select id="ch01_company"><option>CO01 — Acme Manufacturing</option><option>CO02 — Acme Retail</option></select></div>
+      <div class="field"><label for="ch01_parea">Personnel Area</label><select id="ch01_parea"><option>PA01 — Head Office</option><option>PA02 — Factory Unit 1</option></select></div>
+      <div class="field"><label for="ch01_orgunit">Org Unit</label><select id="ch01_orgunit"><option>OU0001 — Information Technology</option><option>OU0002 — Application Development</option></select></div>
+      <div class="field"><label for="ch01_position">Position</label><select id="ch01_position"><option>PS0002 — Senior Software Engineer</option><option>PS0003 — Software Engineer</option></select></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="stepbadge">3</span>Personal data</h2>
+    <div class="grid-fields">
+      <div class="field"><label for="ch01_firstname">First Name</label><input type="text" id="ch01_firstname" placeholder="Priya" value=""></div>
+      <div class="field"><label for="ch01_lastname">Last Name</label><input type="text" id="ch01_lastname" placeholder="Sharma" value=""></div>
+      <div class="field"><label for="ch01_dob">Date of Birth</label><input type="date" id="ch01_dob" value=""></div>
+      <div class="field"><label for="ch01_gender">Gender</label><select id="ch01_gender"><option>Female</option><option>Male</option><option>Other</option><option>Prefer not to say</option></select></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="stepbadge">4</span>Basic pay</h2>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="ch01_payscale">Pay Scale Group</label><select id="ch01_payscale"><option>L1</option><option>L2</option><option>L3</option><option>M1</option><option>M2</option></select></div>
+      <div class="field"><label for="ch01_salary">Basic Salary</label><input type="text" id="ch01_salary" placeholder="65000" value=""></div>
+      <div class="field"><label for="ch01_currency">Currency</label><select id="ch01_currency"><option>INR</option><option>USD</option><option>EUR</option></select></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('ch01')">Execute Hire Action</button>
+      <button onclick="clearForm('ch01')">Clear</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Action history (IT0000)</h2>
+    <table id="grid-ch01">
+      <thead><tr><th>Action</th><th>Effective Date</th><th>Reason</th><th>Company</th><th>Position</th><th>Employee</th><th>Salary</th></tr></thead>
+      <tbody>
+        <tr><td>Hire</td><td>2024-01-15</td><td>New Position</td><td>CO01</td><td>PS0002</td><td>Arjun Mehta</td><td>72000</td></tr>
+        <tr><td>Hire</td><td>2024-03-01</td><td>Business Growth</td><td>CO01</td><td>PS0003</td><td>Sneha Rao</td><td>58000</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-ch02" data-tcode="CH-02" data-title="Maintain HR Master Data">
+  <div class="panel">
+    <h2>Select employee</h2>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="ch02_empsearch">Employee</label><select id="ch02_empsearch"><option>EMP1001 — Arjun Mehta (PS0002)</option><option>EMP1002 — Sneha Rao (PS0003)</option></select></div>
+      <div class="field"><label for="ch02_status">Employment Status</label><select id="ch02_status"><option>Active</option><option>On Leave</option><option>Terminated</option></select></div>
+    </div>
+  </div>
+  <div class="infotabs">
+    <button class="infotab active" data-target="0002" onclick="showInfotab('0002')"><span class="code">IT0002</span>Personal Data</button>
+<button class="infotab" data-target="0001" onclick="showInfotab('0001')"><span class="code">IT0001</span>Org Assignment</button>
+<button class="infotab" data-target="0006" onclick="showInfotab('0006')"><span class="code">IT0006</span>Addresses</button>
+<button class="infotab" data-target="0007" onclick="showInfotab('0007')"><span class="code">IT0007</span>Planned Working Time</button>
+<button class="infotab" data-target="0008" onclick="showInfotab('0008')"><span class="code">IT0008</span>Basic Pay</button>
+<button class="infotab" data-target="0009" onclick="showInfotab('0009')"><span class="code">IT0009</span>Bank Details</button>
+<button class="infotab" data-target="0021" onclick="showInfotab('0021')"><span class="code">IT0021</span>Family Members</button>
+<button class="infotab" data-target="0105" onclick="showInfotab('0105')"><span class="code">IT0105</span>Communication</button>
+
+  </div>
+  <div class="infoscreen active" id="infoscreen-0002">
+  
+  <div class="panel">
+    <h2>IT0002 — Personal Data</h2>
+    <div class="hint">First/last name, date of birth, gender, marital status.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="ch02_0002_first">First Name</label><input type="text" id="ch02_0002_first" placeholder="Arjun" value=""></div>
+<div class="field"><label for="ch02_0002_last">Last Name</label><input type="text" id="ch02_0002_last" placeholder="Mehta" value=""></div>
+<div class="field"><label for="ch02_0002_dob">Date of Birth</label><input type="date" id="ch02_0002_dob" value=""></div>
+<div class="field"><label for="ch02_0002_gender">Gender</label><select id="ch02_0002_gender"><option>Male</option><option>Female</option><option>Other</option></select></div>
+<div class="field"><label for="ch02_0002_marital">Marital Status</label><select id="ch02_0002_marital"><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option></select></div>
+<div class="field"><label for="ch02_0002_nationality">Nationality</label><input type="text" id="ch02_0002_nationality" placeholder="Indian" value=""></div>
+<div class="field"><label for="ch02_0002_vfrom">Valid From</label><input type="date" id="ch02_0002_vfrom" value=""></div>
+<div class="field"><label for="ch02_0002_vto">Valid To</label><input type="date" id="ch02_0002_vto" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('ch02_0002')">Save</button>
+      <button onclick="clearForm('ch02_0002')">New</button>
+      <button onclick="loadSelected('ch02_0002')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('ch02_0002')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record history</h2>
+    <table id="grid-ch02_0002">
+      <thead><tr><th>Valid From</th><th>Valid To</th><th>First Name</th><th>Last Name</th><th>Gender</th><th>Marital Status</th></tr></thead>
+      <tbody>
+      <tr><td>2024-01-15</td><td>9999-12-31</td><td>Arjun</td><td>Mehta</td><td>Male</td><td>Single</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-0001">
+  
+  <div class="panel">
+    <h2>IT0001 — Organizational Assignment</h2>
+    <div class="hint">Company, personnel area/sub-area, org unit, position, cost center.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="ch02_0001_company">Company Code</label><select id="ch02_0001_company"><option>CO01 — Acme Manufacturing</option><option>CO02 — Acme Retail</option></select></div>
+<div class="field"><label for="ch02_0001_parea">Personnel Area</label><select id="ch02_0001_parea"><option>PA01 — Head Office</option><option>PA02 — Factory Unit 1</option></select></div>
+<div class="field"><label for="ch02_0001_psub">Personnel Sub-Area</label><select id="ch02_0001_psub"><option>PSA01 — Day Shift</option><option>PSA02 — Night Shift</option></select></div>
+<div class="field"><label for="ch02_0001_orgunit">Org Unit</label><select id="ch02_0001_orgunit"><option>OU0001 — Information Technology</option><option>OU0002 — Application Development</option></select></div>
+<div class="field"><label for="ch02_0001_position">Position</label><select id="ch02_0001_position"><option>PS0002 — Senior Software Engineer</option><option>PS0003 — Software Engineer</option></select></div>
+<div class="field"><label for="ch02_0001_costcenter">Cost Center</label><input type="text" id="ch02_0001_costcenter" placeholder="CC-IT-01" value=""></div>
+<div class="field"><label for="ch02_0001_vfrom">Valid From</label><input type="date" id="ch02_0001_vfrom" value=""></div>
+<div class="field"><label for="ch02_0001_vto">Valid To</label><input type="date" id="ch02_0001_vto" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('ch02_0001')">Save</button>
+      <button onclick="clearForm('ch02_0001')">New</button>
+      <button onclick="loadSelected('ch02_0001')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('ch02_0001')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record history</h2>
+    <table id="grid-ch02_0001">
+      <thead><tr><th>Valid From</th><th>Valid To</th><th>Company</th><th>Org Unit</th><th>Position</th><th>Cost Center</th></tr></thead>
+      <tbody>
+      <tr><td>2024-01-15</td><td>9999-12-31</td><td>CO01</td><td>OU0002</td><td>PS0002</td><td>CC-IT-01</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-0006">
+  
+  <div class="panel">
+    <h2>IT0006 — Addresses</h2>
+    <div class="hint">Permanent and temporary address records.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="ch02_0006_type">Address Type</label><select id="ch02_0006_type"><option>Permanent</option><option>Temporary</option></select></div>
+<div class="field full"><label for="ch02_0006_line">Address Line</label><input type="text" id="ch02_0006_line" placeholder="221 Residency Road" value=""></div>
+<div class="field"><label for="ch02_0006_city">City</label><input type="text" id="ch02_0006_city" placeholder="Bengaluru" value=""></div>
+<div class="field"><label for="ch02_0006_state">State</label><input type="text" id="ch02_0006_state" placeholder="Karnataka" value=""></div>
+<div class="field"><label for="ch02_0006_pincode">Postal Code</label><input type="text" id="ch02_0006_pincode" placeholder="560025" value=""></div>
+<div class="field"><label for="ch02_0006_country">Country</label><input type="text" id="ch02_0006_country" placeholder="India" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('ch02_0006')">Save</button>
+      <button onclick="clearForm('ch02_0006')">New</button>
+      <button onclick="loadSelected('ch02_0006')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('ch02_0006')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record history</h2>
+    <table id="grid-ch02_0006">
+      <thead><tr><th>Type</th><th>Address</th><th>City</th><th>State</th><th>Postal Code</th><th>Country</th></tr></thead>
+      <tbody>
+      <tr><td>Permanent</td><td>221 Residency Road</td><td>Bengaluru</td><td>Karnataka</td><td>560025</td><td>India</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-0007">
+  
+  <div class="panel">
+    <h2>IT0007 — Planned Working Time</h2>
+    <div class="hint">Work schedule rule and employment percentage.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="ch02_0007_schedule">Work Schedule Rule</label><select id="ch02_0007_schedule"><option>General 9-6 (Mon-Fri)</option><option>Shift A (Rotating)</option><option>Shift B (Night)</option></select></div>
+<div class="field"><label for="ch02_0007_hours">Weekly Hours</label><input type="text" id="ch02_0007_hours" placeholder="40" value=""></div>
+<div class="field"><label for="ch02_0007_pct">Employment %</label><input type="text" id="ch02_0007_pct" placeholder="100" value=""></div>
+<div class="field"><label for="ch02_0007_vfrom">Valid From</label><input type="date" id="ch02_0007_vfrom" value=""></div>
+<div class="field"><label for="ch02_0007_vto">Valid To</label><input type="date" id="ch02_0007_vto" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('ch02_0007')">Save</button>
+      <button onclick="clearForm('ch02_0007')">New</button>
+      <button onclick="loadSelected('ch02_0007')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('ch02_0007')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record history</h2>
+    <table id="grid-ch02_0007">
+      <thead><tr><th>Schedule</th><th>Weekly Hours</th><th>Employment %</th><th>Valid From</th><th>Valid To</th></tr></thead>
+      <tbody>
+      <tr><td>General 9-6 (Mon-Fri)</td><td>40</td><td>100</td><td>2024-01-15</td><td>9999-12-31</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-0008">
+  
+  <div class="panel">
+    <h2>IT0008 — Basic Pay</h2>
+    <div class="hint">Pay scale group and basic salary amount, feeds Payroll.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="ch02_0008_payscaletype">Pay Scale Type</label><select id="ch02_0008_payscaletype"><option>Monthly Salaried</option><option>Hourly</option></select></div>
+<div class="field"><label for="ch02_0008_payscalearea">Pay Scale Area</label><select id="ch02_0008_payscalearea"><option>Bengaluru</option><option>Mumbai</option><option>Delhi</option></select></div>
+<div class="field"><label for="ch02_0008_payscalegrp">Pay Scale Group</label><select id="ch02_0008_payscalegrp"><option>L1</option><option>L2</option><option>L3</option><option>M1</option><option>M2</option></select></div>
+<div class="field"><label for="ch02_0008_amount">Basic Salary Amount</label><input type="text" id="ch02_0008_amount" placeholder="72000" value=""></div>
+<div class="field"><label for="ch02_0008_currency">Currency</label><select id="ch02_0008_currency"><option>INR</option><option>USD</option><option>EUR</option></select></div>
+<div class="field"><label for="ch02_0008_vfrom">Valid From</label><input type="date" id="ch02_0008_vfrom" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('ch02_0008')">Save</button>
+      <button onclick="clearForm('ch02_0008')">New</button>
+      <button onclick="loadSelected('ch02_0008')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('ch02_0008')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record history</h2>
+    <table id="grid-ch02_0008">
+      <thead><tr><th>Pay Scale Group</th><th>Amount</th><th>Currency</th><th>Valid From</th></tr></thead>
+      <tbody>
+      <tr><td>L3</td><td>72000</td><td>INR</td><td>2024-01-15</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-0009">
+  
+  <div class="panel">
+    <h2>IT0009 — Bank Details</h2>
+    <div class="hint">Salary disbursement account.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="ch02_0009_bankname">Bank Name</label><input type="text" id="ch02_0009_bankname" placeholder="HDFC Bank" value=""></div>
+<div class="field"><label for="ch02_0009_acctno">Account Number</label><input type="text" id="ch02_0009_acctno" placeholder="XXXXXXXX1234" value=""></div>
+<div class="field"><label for="ch02_0009_ifsc">IFSC / Routing Code</label><input type="text" id="ch02_0009_ifsc" placeholder="HDFC0001234" value=""></div>
+<div class="field"><label for="ch02_0009_holder">Account Holder Name</label><input type="text" id="ch02_0009_holder" placeholder="Arjun Mehta" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('ch02_0009')">Save</button>
+      <button onclick="clearForm('ch02_0009')">New</button>
+      <button onclick="loadSelected('ch02_0009')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('ch02_0009')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record history</h2>
+    <table id="grid-ch02_0009">
+      <thead><tr><th>Bank Name</th><th>Account Number</th><th>IFSC/Routing</th><th>Holder Name</th></tr></thead>
+      <tbody>
+      <tr><td>HDFC Bank</td><td>XXXXXXXX1234</td><td>HDFC0001234</td><td>Arjun Mehta</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-0021">
+  
+  <div class="panel">
+    <h2>IT0021 — Family Members</h2>
+    <div class="hint">Dependents, used for insurance/benefits and nominee records.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="ch02_0021_relation">Relationship</label><select id="ch02_0021_relation"><option>Spouse</option><option>Child</option><option>Father</option><option>Mother</option><option>Sibling</option></select></div>
+<div class="field"><label for="ch02_0021_name">Name</label><input type="text" id="ch02_0021_name" placeholder="Kavya Mehta" value=""></div>
+<div class="field"><label for="ch02_0021_dob">Date of Birth</label><input type="date" id="ch02_0021_dob" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('ch02_0021')">Save</button>
+      <button onclick="clearForm('ch02_0021')">New</button>
+      <button onclick="loadSelected('ch02_0021')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('ch02_0021')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record history</h2>
+    <table id="grid-ch02_0021">
+      <thead><tr><th>Relationship</th><th>Name</th><th>Date of Birth</th></tr></thead>
+      <tbody>
+      <tr><td>Spouse</td><td>Kavya Mehta</td><td>1994-06-02</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-0105">
+  
+  <div class="panel">
+    <h2>IT0105 — Communication</h2>
+    <div class="hint">Email, phone, and system user ID linked to the employee.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="ch02_0105_type">Communication Type</label><select id="ch02_0105_type"><option>Email (Official)</option><option>Email (Personal)</option><option>Mobile Phone</option><option>System User ID</option></select></div>
+<div class="field full"><label for="ch02_0105_value">Value</label><input type="text" id="ch02_0105_value" placeholder="arjun.mehta@acme.com" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('ch02_0105')">Save</button>
+      <button onclick="clearForm('ch02_0105')">New</button>
+      <button onclick="loadSelected('ch02_0105')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('ch02_0105')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record history</h2>
+    <table id="grid-ch02_0105">
+      <thead><tr><th>Type</th><th>Value</th></tr></thead>
+      <tbody>
+      <tr><td>Email (Official)</td><td>arjun.mehta@acme.com</td></tr>
+<tr><td>Mobile Phone</td><td>+91 98450 12345</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</section>
+<section class="screen" id="screen-ch03" data-tcode="CH-03" data-title="Display HR Master Data">
+  <span class="readonly-banner">Display mode (PA20) — read-only. Use CH-02 (PA30) to edit.</span>
+  <div class="panel">
+    <h2>Select employee</h2>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="ch03_empsearch">Employee</label><select id="ch03_empsearch"><option>EMP1001 — Arjun Mehta (PS0002)</option><option>EMP1002 — Sneha Rao (PS0003)</option></select></div>
+      <div class="field"><label for="ch03_asof">As-of Date</label><input type="date" id="ch03_asof" value=""></div>
+    </div>
+    <div class="hint">Because every infotype is time-sliced, you can view the employee's data exactly as it stood on any past date.</div>
+  </div>
+  <div class="panel">
+    <h2>Current record snapshot</h2>
+    <table>
+      <thead><tr><th>Infotype</th><th>Field</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>IT0002 Personal Data</td><td>Name</td><td>Arjun Mehta</td></tr>
+        <tr><td>IT0001 Org Assignment</td><td>Position</td><td>PS0002 — Senior Software Engineer</td></tr>
+        <tr><td>IT0007 Planned Working Time</td><td>Schedule</td><td>General 9-6 (Mon-Fri)</td></tr>
+        <tr><td>IT0008 Basic Pay</td><td>Salary</td><td>INR 72,000</td></tr>
+        <tr><td>IT0009 Bank Details</td><td>Account</td><td>HDFC Bank — XXXXXXXX1234</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-ch04" data-tcode="CH-04" data-title="Employee Search">
+  <div class="panel">
+    <h2>Search criteria</h2>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="ch04_empid">Employee ID</label><input type="text" id="ch04_empid" placeholder="EMP1001" value=""></div>
+      <div class="field"><label for="ch04_name">Name</label><input type="text" id="ch04_name" placeholder="Arjun" value=""></div>
+      <div class="field"><label for="ch04_dept">Org Unit</label><select id="ch04_dept"><option>All</option><option>OU0001 — Information Technology</option><option>OU0002 — Application Development</option></select></div>
+      <div class="field"><label for="ch04_statusf">Status</label><select id="ch04_statusf"><option>All</option><option>Active</option><option>On Leave</option><option>Terminated</option></select></div>
+    </div>
+    <div class="btnrow"><button class="primary" onclick="alert('This is a UI mockup — wire this button to your search query.')">Search</button></div>
+  </div>
+  <div class="panel">
+    <h2>Results</h2>
+    <table>
+      <thead><tr><th>Employee ID</th><th>Name</th><th>Position</th><th>Org Unit</th><th>Date of Joining</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>EMP1001</td><td>Arjun Mehta</td><td>Senior Software Engineer</td><td>Application Development</td><td>2024-01-15</td><td><span class="pill active">Active</span></td></tr>
+        <tr><td>EMP1002</td><td>Sneha Rao</td><td>Software Engineer</td><td>Application Development</td><td>2024-03-01</td><td><span class="pill active">Active</span></td></tr>
+        <tr><td>EMP0987</td><td>Ravi Kumar</td><td>IT Manager</td><td>Information Technology</td><td>2021-06-10</td><td><span class="pill inactive">Terminated</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-ch05" data-tcode="CH-05" data-title="Mass Data Maintenance">
+  <div class="panel">
+    <h2>Mass update setup</h2>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="ch05_infotype">Infotype</label><select id="ch05_infotype"><option>IT0008 — Basic Pay</option><option>IT0007 — Planned Working Time</option><option>IT0001 — Org Assignment</option></select></div>
+      <div class="field"><label for="ch05_field">Field to Update</label><select id="ch05_field"><option>Pay Scale Group</option><option>Basic Salary Amount</option><option>Work Schedule Rule</option></select></div>
+      <div class="field"><label for="ch05_newvalue">New Value</label><input type="text" id="ch05_newvalue" placeholder="L4" value=""></div>
+      <div class="field full"><label for="ch05_effdate">Effective Date</label><input type="date" id="ch05_effdate" value=""></div>
+    </div>
+    <div class="hint">Select employees below, set the new value above, then apply — equivalent to SAP's PA70/PA71 fast-entry mass maintenance.</div>
+  </div>
+  <div class="panel">
+    <h2>Select employees</h2>
+    <table>
+      <thead><tr><th></th><th>Employee ID</th><th>Name</th><th>Current Value</th></tr></thead>
+      <tbody>
+        <tr><td><input type="checkbox" checked></td><td>EMP1001</td><td>Arjun Mehta</td><td>L3</td></tr>
+        <tr><td><input type="checkbox"></td><td>EMP1002</td><td>Sneha Rao</td><td>L2</td></tr>
+        <tr><td><input type="checkbox" checked></td><td>EMP0876</td><td>Divya Nair</td><td>L3</td></tr>
+      </tbody>
+    </table>
+    <div class="btnrow"><button class="primary" onclick="alert('This is a UI mockup — wire this button to your bulk-update query.')">Apply to selected</button></div>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+</div>
+
+<script>
+  function showScreen(prefix) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const target = document.getElementById('screen-' + prefix);
+    target.classList.add('active');
+    document.querySelector('.nav-item[data-target="' + prefix + '"]').classList.add('active');
+    document.getElementById('topbar-tcode').textContent = target.dataset.tcode;
+    document.getElementById('topbar-title').textContent = target.dataset.title;
+    document.getElementById('topbar-path').innerHTML = 'HR &rsaquo; Core HR &rsaquo; ' + target.dataset.title;
+    window.scrollTo(0,0);
+  }
+
+  function showInfotab(code) {
+    document.querySelectorAll('.infotab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.infoscreen').forEach(s => s.classList.remove('active'));
+    document.querySelector('.infotab[data-target="' + code + '"]').classList.add('active');
+    document.getElementById('infoscreen-' + code).classList.add('active');
+  }
+
+  let selectedRow = {};
+
+  function fieldValues(prefix) {
+    const scope = document.getElementById('screen-' + prefix.split('_')[0]) || document.getElementById('screen-' + prefix);
+    const root = document.querySelector('[id^="' + prefix + '"]') ? document : document;
+    return Array.from(document.querySelectorAll('#' + cssEscape('panel-' + prefix))).length ? [] : [];
+  }
+
+  function cssEscape(s) { return s.replace(/[^a-zA-Z0-9_\-]/g, '\\$&'); }
+
+  function getFormFields(prefix) {
+    return Array.from(document.querySelectorAll('[id^="' + prefix + '_"]'));
+  }
+
+  function addRow(prefix) {
+    const inputs = getFormFields(prefix);
+    const vals = inputs.map(el => {
+      if (el.type === 'checkbox') return el.checked ? 'Active' : 'Inactive';
+      return el.value || '—';
+    });
+    const tbl = document.getElementById('grid-' + prefix);
+    if (!tbl) { alert('Saved (demo only — this screen has no history grid).'); return; }
+    const tbody = tbl.querySelector('tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = vals.map(v =>
+      (v === 'Active' || v === 'Inactive')
+        ? `<td><span class="pill ${v.toLowerCase()}">${v}</span></td>`
+        : `<td>${v}</td>`
+    ).join('');
+    tr.addEventListener('click', () => selectRow(prefix, tr));
+    tbody.appendChild(tr);
+    clearForm(prefix);
+  }
+
+  function selectRow(prefix, tr) {
+    const tbl = document.getElementById('grid-' + prefix);
+    tbl.querySelectorAll('tbody tr').forEach(r => r.style.background = '');
+    tr.style.background = 'var(--accent-soft)';
+    selectedRow[prefix] = tr;
+  }
+
+  document.querySelectorAll('table[id^="grid-"]').forEach(tbl => {
+    const prefix = tbl.id.replace('grid-', '');
+    tbl.querySelectorAll('tbody tr').forEach(tr => {
+      tr.addEventListener('click', () => selectRow(prefix, tr));
+    });
+  });
+
+  function clearForm(prefix) {
+    getFormFields(prefix).forEach(el => {
+      if (el.tagName === 'INPUT' && el.type === 'text') el.value = '';
+      if (el.tagName === 'INPUT' && el.type === 'checkbox') el.checked = true;
+    });
+    selectedRow[prefix] = null;
+  }
+
+  function loadSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the history list first.'); return; }
+    const cells = Array.from(selectedRow[prefix].children).map(td => td.textContent.trim());
+    const inputs = getFormFields(prefix).filter(el => el.type !== 'checkbox');
+    inputs.forEach((el, i) => { if (cells[i] !== undefined) el.value = cells[i]; });
+  }
+
+  function deleteSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the history list first.'); return; }
+    if (confirm('Delete this record?')) { selectedRow[prefix].remove(); selectedRow[prefix] = null; }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HR Module — Payroll / Payments (All Screens)</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card-bg: #ffffff; --ink: #1f2422; --ink-soft: #5a615e;
+    --accent: #2f6f5e; --accent-soft: #e6f0ec; --border: #e2e0da;
+    --danger: #a5432f; --danger-soft: #fbe9e5; --warn:#8a6d1c; --warn-soft:#fff3d9;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Segoe UI', Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  .app { display:flex; min-height:100vh; }
+
+  .sidebar { width: 270px; flex-shrink:0; background: var(--ink); color:#fff; display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow-y:auto; }
+  .sidebar .brand { padding:20px 18px 14px; border-bottom:1px solid #333b38; }
+  .sidebar .brand .kicker { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#8fb9a9; font-weight:700; }
+  .sidebar .brand h1 { margin:4px 0 0; font-size:15px; font-weight:700; }
+  .nav-group { padding: 14px 10px; }
+  .nav-group .group-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#8b928f; padding:6px 10px 8px; }
+  .nav-item { display:flex; align-items:flex-start; gap:10px; width:100%; text-align:left; background:none; border:none; color:#d8dbd9; font-family:inherit; font-size:12.5px; font-weight:600; padding:9px 10px; border-radius:7px; cursor:pointer; line-height:1.3; }
+  .nav-item .tcode { font-size:10px; font-weight:800; background:#2f6f5e; color:#fff; padding:2px 6px; border-radius:5px; min-width:40px; text-align:center; margin-top:1px; }
+  .nav-item .nlabel small { display:block; font-weight:400; color:#9aa19d; font-size:10.5px; margin-top:1px; }
+  .nav-item:hover { background:#2a302d; }
+  .nav-item.active { background: var(--accent); color:#fff; }
+  .nav-item.active .tcode { background:#fff; color:var(--accent); }
+  .nav-item.active .nlabel small { color:#dfeee8; }
+
+  .content { flex:1; min-width:0; }
+  .topbar { background:#fff; border-bottom:1px solid var(--border); padding:16px 30px; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:5; }
+  .topbar .title-wrap { display:flex; align-items:center; gap:10px; }
+  .topbar .tcode-badge { font-size:12px; font-weight:800; letter-spacing:.04em; background:var(--accent-soft); color:var(--accent); padding:4px 10px; border-radius:6px; }
+  .topbar .title { font-size:16px; font-weight:700; }
+  .topbar .path { font-size:12px; color:var(--ink-soft); }
+
+  main { max-width: 1020px; margin: 0 auto; padding: 26px 30px 70px; }
+  .screen { display:none; }
+  .screen.active { display:block; }
+
+  .panel { background: var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:22px 24px; margin-bottom:20px; }
+  .panel h2 { margin:0 0 16px; font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); border-bottom:1px solid var(--border); padding-bottom:10px; }
+  .grid-fields { display:grid; grid-template-columns: repeat(2, 1fr); gap:16px 24px; }
+  .grid-fields.cols3 { grid-template-columns: repeat(3, 1fr); }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .field input[type=text], .field input[type=date], .field input[type=number], .field select {
+    padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; background:#fdfdfc;
+  }
+  .checkline { display:flex; align-items:center; gap:8px; margin-top:4px; }
+  .checkline label { font-size:13px; font-weight:600; color:var(--ink-soft); }
+  .btnrow { display:flex; gap:10px; margin: 18px 0 4px; flex-wrap:wrap; }
+  button { font-family: inherit; font-size:13px; font-weight:600; padding:9px 18px; border-radius:7px; border:1px solid var(--border); background:#fff; color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { background:var(--danger-soft); border-color:#e6c6bd; color:var(--danger); }
+  button.warnbtn { background:var(--warn-soft); border-color:#e9d38f; color:var(--warn); }
+  button.small { padding:5px 11px; font-size:11.5px; }
+  button:hover { filter:brightness(0.97); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  thead th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); border-bottom:2px solid var(--border); padding:8px 10px; }
+  tbody td { padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  tbody tr:hover { background: var(--accent-soft); }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+  .pill.active, .pill.calculated, .pill.posted, .pill.open, .pill.paid { background:var(--accent-soft); color:var(--accent); }
+  .pill.inactive { background:#f1f0ec; color:#9a9a92; }
+  .pill.pending, .pill.locked, .pill.due { background:var(--warn-soft); color:var(--warn); }
+  .pill.rejected, .pill.error { background:var(--danger-soft); color:var(--danger); }
+  .hint { font-size:12px; color:var(--ink-soft); margin: -8px 0 18px; }
+
+  .infotabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+  .infotab { font-size:11.5px; font-weight:700; padding:7px 12px; border-radius:999px; border:1px solid var(--border); background:#fff; color:var(--ink-soft); cursor:pointer; }
+  .infotab .code { opacity:.6; font-weight:600; margin-right:4px; }
+  .infotab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .infotab.active .code { opacity:.85; }
+  .infoscreen { display:none; }
+  .infoscreen.active { display:block; }
+
+  .balance-cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin-bottom:20px; }
+  .balance-card { background:var(--accent-soft); border-radius:10px; padding:14px 16px; }
+  .balance-card .num { font-size:1.4rem; font-weight:800; color:var(--accent); }
+  .balance-card .lbl { font-size:11.5px; color:var(--ink-soft); font-weight:600; margin-top:2px; }
+
+  .status-strip { display:flex; align-items:center; gap:14px; padding:14px 18px; background:var(--accent-soft); border-radius:10px; margin-bottom:20px; }
+  .status-strip .lbl { font-size:12px; color:var(--ink-soft); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+
+  .payslip { border:1px dashed var(--border); border-radius:10px; padding:20px; background:#fdfdfb; }
+  .payslip h3 { margin:0 0 4px; font-size:1.05rem; }
+  .payslip .sub { font-size:12px; color:var(--ink-soft); margin-bottom:16px; }
+  .payslip table { margin-bottom:10px; }
+  .payslip .netpay { text-align:right; font-size:1.1rem; font-weight:800; color:var(--accent); padding-top:10px; border-top:2px solid var(--border); margin-top:6px; }
+
+  @media (max-width: 820px) {
+    .app { flex-direction:column; }
+    .sidebar { width:100%; height:auto; position:relative; }
+    .grid-fields, .grid-fields.cols3 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="sidebar">
+    <div class="brand">
+      <div class="kicker">ERP · HR Module</div>
+      <h1>Payroll / Payments</h1>
+    </div>
+    <div class="nav-group">
+      <div class="group-label">Transactions</div>
+      <button class="nav-item active" data-target="py01" onclick="showScreen('py01')">
+      <span class="tcode">PY-01</span><span class="nlabel">Payroll Control Record<small>SAP: PA03</small></span>
+    </button>
+<button class="nav-item" data-target="py02" onclick="showScreen('py02')">
+      <span class="tcode">PY-02</span><span class="nlabel">Wage Types & Payments<small>SAP: PU30 / IT0014 / IT0015</small></span>
+    </button>
+<button class="nav-item" data-target="py03" onclick="showScreen('py03')">
+      <span class="tcode">PY-03</span><span class="nlabel">Run Payroll<small>SAP: PC00_M99_CALC</small></span>
+    </button>
+<button class="nav-item" data-target="py04" onclick="showScreen('py04')">
+      <span class="tcode">PY-04</span><span class="nlabel">Payslip<small>SAP: PC00_M99_CEDT</small></span>
+    </button>
+<button class="nav-item" data-target="py05" onclick="showScreen('py05')">
+      <span class="tcode">PY-05</span><span class="nlabel">Bank Transfer & Posting<small>SAP: CDTA / CIPE / URME</small></span>
+    </button>
+
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="topbar">
+      <div class="title-wrap">
+        <span class="tcode-badge" id="topbar-tcode">PY-01</span>
+        <span class="title" id="topbar-title">Payroll Control Record</span>
+      </div>
+      <div class="path" id="topbar-path">HR &rsaquo; Payroll &rsaquo; Payroll Control Record</div>
+    </div>
+    <main>
+      <section class="screen active" id="screen-py01" data-tcode="PY-01" data-title="Payroll Control Record">
+  <div class="status-strip">
+    <span class="lbl">Current Period Status</span>
+    <span class="pill open" id="py01-status-pill">Open</span>
+    <span style="font-size:12.5px;color:var(--ink-soft)">Personnel Area: PA01 — Head Office &nbsp;|&nbsp; Period: September 2026</span>
+  </div>
+
+  <div class="panel">
+    <h2>Payroll Control Record</h2>
+    <div class="hint">Controls whether a period can still be edited — equivalent to SAP's PA03. Release locks input data and allows the payroll run; Exit finalizes it after posting.</div>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="py01_parea">Personnel Area</label><select id="py01_parea"><option>PA01 — Head Office</option><option>PA02 — Factory Unit 1</option></select></div>
+      <div class="field"><label for="py01_period">Payroll Period</label><select id="py01_period"><option>September 2026</option><option>August 2026</option><option>July 2026</option></select></div>
+      <div class="field"><label for="py01_paydate">Pay Date</label><input type="date" id="py01_paydate" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="setPeriodStatus('Locked')">Release Payroll</button>
+      <button class="warnbtn" onclick="setPeriodStatus('Open')">Re-open Period</button>
+      <button onclick="setPeriodStatus('Posted')">Exit Payroll (Finalize)</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Period history</h2>
+    <table id="grid-py01">
+      <thead><tr><th>Personnel Area</th><th>Period</th><th>Status</th><th>Released By</th><th>Released On</th></tr></thead>
+      <tbody>
+        <tr><td>PA01</td><td>August 2026</td><td><span class="pill posted">Posted</span></td><td>payroll.admin</td><td>2026-08-28</td></tr>
+        <tr><td>PA01</td><td>September 2026</td><td><span class="pill open">Open</span></td><td>—</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-py02" data-tcode="PY-02" data-title="Wage Types & Payments">
+  <div class="infotabs"><button class="infotab active" data-target="py02_wt" onclick="showInfotab('py02_wt')">Wage Type Master</button>
+<button class="infotab" data-target="py02_it0014" onclick="showInfotab('py02_it0014')">Recurring Payments</button>
+<button class="infotab" data-target="py02_it0015" onclick="showInfotab('py02_it0015')">Additional Payments</button>
+</div>
+  <div class="infoscreen active" id="infoscreen-py02_wt">
+  <div class="panel">
+    <h2>Wage Type Master (PU30 / OH11)</h2>
+    <div class="hint">Defines every earning and deduction code used across Basic Pay and Payroll.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="py02_wt_code">Wage Type Code</label><input type="text" id="py02_wt_code" placeholder="BASIC" value=""></div>
+<div class="field"><label for="py02_wt_name">Wage Type Name</label><input type="text" id="py02_wt_name" placeholder="Basic Salary" value=""></div>
+<div class="field"><label for="py02_wt_type">Type</label><select id="py02_wt_type"><option>Earning</option><option>Deduction</option></select></div>
+<div class="field"><label for="py02_wt_amttype">Amount Type</label><select id="py02_wt_amttype"><option>Fixed</option><option>Percentage of Basic</option><option>Formula</option></select></div>
+<div class="field"><label for="py02_wt_taxable">Taxable</label><select id="py02_wt_taxable"><option>Yes</option><option>No</option></select></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('py02_wt')">Save</button>
+      <button onclick="clearForm('py02_wt')">New</button>
+      <button onclick="loadSelected('py02_wt')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('py02_wt')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-py02_wt">
+      <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Amount Type</th><th>Taxable</th></tr></thead>
+      <tbody>
+      <tr><td>BASIC</td><td>Basic Salary</td><td>Earning</td><td>Fixed</td><td>Yes</td></tr>
+<tr><td>HRA</td><td>House Rent Allowance</td><td>Earning</td><td>Percentage of Basic</td><td>Yes</td></tr>
+<tr><td>PF</td><td>Provident Fund</td><td>Deduction</td><td>Percentage of Basic</td><td>No</td></tr>
+<tr><td>TDS</td><td>Income Tax (TDS)</td><td>Deduction</td><td>Formula</td><td>No</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-py02_it0014">
+  <div class="panel">
+    <h2>IT0014 — Recurring Payments/Deductions</h2>
+    <div class="hint">Amounts that repeat every payroll period until an end date (e.g. loan EMI, fixed allowance).</div>
+    <div class="grid-fields">
+      <div class="field"><label for="py02_it0014_emp">Employee</label><select id="py02_it0014_emp"><option>EMP1001 — Arjun Mehta</option><option>EMP1002 — Sneha Rao</option></select></div>
+<div class="field"><label for="py02_it0014_wt">Wage Type</label><select id="py02_it0014_wt"><option>HRA — House Rent Allowance</option><option>PF — Provident Fund</option><option>LOAN — Loan EMI Deduction</option></select></div>
+<div class="field"><label for="py02_it0014_amount">Amount</label><input type="number" id="py02_it0014_amount" placeholder="12000" value=""></div>
+<div class="field"><label for="py02_it0014_start">Start Date</label><input type="date" id="py02_it0014_start" value=""></div>
+<div class="field"><label for="py02_it0014_end">End Date</label><input type="date" id="py02_it0014_end" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('py02_it0014')">Save</button>
+      <button onclick="clearForm('py02_it0014')">New</button>
+      <button onclick="loadSelected('py02_it0014')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('py02_it0014')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-py02_it0014">
+      <thead><tr><th>Employee</th><th>Wage Type</th><th>Amount</th><th>Start Date</th><th>End Date</th></tr></thead>
+      <tbody>
+      <tr><td>Arjun Mehta</td><td>HRA — House Rent Allowance</td><td>18000</td><td>2024-01-15</td><td>9999-12-31</td></tr>
+<tr><td>Sneha Rao</td><td>LOAN — Loan EMI Deduction</td><td>5000</td><td>2026-01-01</td><td>2026-12-01</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-py02_it0015">
+  <div class="panel">
+    <h2>IT0015 — Additional Payments</h2>
+    <div class="hint">One-time payments such as bonus or reimbursement, posted in a single period.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="py02_it0015_emp">Employee</label><select id="py02_it0015_emp"><option>EMP1001 — Arjun Mehta</option><option>EMP1002 — Sneha Rao</option></select></div>
+<div class="field"><label for="py02_it0015_wt">Wage Type</label><select id="py02_it0015_wt"><option>BONUS — Performance Bonus</option><option>REIMB — Travel Reimbursement</option><option>ARREAR — Salary Arrears</option></select></div>
+<div class="field"><label for="py02_it0015_amount">Amount</label><input type="number" id="py02_it0015_amount" placeholder="25000" value=""></div>
+<div class="field"><label for="py02_it0015_paydate">Payment Date</label><input type="date" id="py02_it0015_paydate" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('py02_it0015')">Save</button>
+      <button onclick="clearForm('py02_it0015')">New</button>
+      <button onclick="loadSelected('py02_it0015')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('py02_it0015')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-py02_it0015">
+      <thead><tr><th>Employee</th><th>Wage Type</th><th>Amount</th><th>Payment Date</th></tr></thead>
+      <tbody>
+      <tr><td>Arjun Mehta</td><td>BONUS — Performance Bonus</td><td>25000</td><td>2026-09-30</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</section>
+<section class="screen" id="screen-py03" data-tcode="PY-03" data-title="Run Payroll">
+  <div class="panel">
+    <h2>Run payroll</h2>
+    <div class="hint">Executes the payroll driver — equivalent to SAP's PC00_M99_CALC (country-specific, e.g. PC00_M40_CALC for India). Requires the period to be Released (see PY-01).</div>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="py03_parea">Personnel Area</label><select id="py03_parea"><option>PA01 — Head Office</option><option>PA02 — Factory Unit 1</option></select></div>
+      <div class="field"><label for="py03_period">Payroll Period</label><select id="py03_period"><option>September 2026</option><option>August 2026</option></select></div>
+      <div class="field"><label for="py03_empgroup">Employee Group</label><select id="py03_empgroup"><option>All</option><option>Permanent</option><option>Contract</option></select></div>
+    </div>
+    <div class="btnrow"><button class="primary" onclick="alert('This is a UI mockup — wire this to your payroll calculation engine.')">Run Payroll</button></div>
+  </div>
+
+  <div class="panel">
+    <h2>Payroll results (gross-to-net)</h2>
+    <table id="grid-py03">
+      <thead><tr><th>Employee</th><th>Gross Pay</th><th>Total Deductions</th><th>Net Pay</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Arjun Mehta</td><td>72,000</td><td>14,400</td><td>57,600</td><td><span class="pill calculated">Calculated</span></td></tr>
+        <tr><td>Sneha Rao</td><td>58,000</td><td>11,600</td><td>46,400</td><td><span class="pill calculated">Calculated</span></td></tr>
+        <tr><td>Divya Nair</td><td>65,000</td><td>—</td><td>—</td><td><span class="pill error">Error — missing IT0009</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-py04" data-tcode="PY-04" data-title="Payslip">
+  <div class="panel">
+    <h2>Generate payslip</h2>
+    <div class="hint">Equivalent to SAP's PC00_M99_CEDT — renders the remuneration statement for a chosen employee/period.</div>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="py04_emp">Employee</label><select id="py04_emp"><option>EMP1001 — Arjun Mehta</option><option>EMP1002 — Sneha Rao</option></select></div>
+      <div class="field"><label for="py04_period">Period</label><select id="py04_period"><option>September 2026</option><option>August 2026</option></select></div>
+    </div>
+    <div class="btnrow"><button class="primary" onclick="alert('This is a UI mockup — wire this to your payslip PDF generator.')">Generate Payslip</button></div>
+  </div>
+
+  <div class="panel">
+    <h2>Payslip preview</h2>
+    <div class="payslip">
+      <h3>Acme Manufacturing Pvt Ltd</h3>
+      <div class="sub">Payslip for September 2026 &nbsp;|&nbsp; Employee: Arjun Mehta (EMP1001) &nbsp;|&nbsp; Position: Senior Software Engineer</div>
+      <table>
+        <thead><tr><th>Earnings</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          <tr><td>Basic Salary</td><td style="text-align:right">50,000</td></tr>
+          <tr><td>House Rent Allowance</td><td style="text-align:right">18,000</td></tr>
+          <tr><td>Performance Bonus</td><td style="text-align:right">4,000</td></tr>
+          <tr><td><strong>Gross Pay</strong></td><td style="text-align:right"><strong>72,000</strong></td></tr>
+        </tbody>
+      </table>
+      <table>
+        <thead><tr><th>Deductions</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          <tr><td>Provident Fund</td><td style="text-align:right">6,000</td></tr>
+          <tr><td>Income Tax (TDS)</td><td style="text-align:right">8,400</td></tr>
+          <tr><td><strong>Total Deductions</strong></td><td style="text-align:right"><strong>14,400</strong></td></tr>
+        </tbody>
+      </table>
+      <div class="netpay">Net Pay: ₹ 57,600</div>
+    </div>
+  </div>
+</section>
+<section class="screen" id="screen-py05" data-tcode="PY-05" data-title="Bank Transfer & Posting">
+  <div class="infotabs"><button class="infotab active" data-target="py05_bank" onclick="showInfotab('py05_bank')">Bank Transfer</button>
+<button class="infotab" data-target="py05_gl" onclick="showInfotab('py05_gl')">GL Posting</button>
+<button class="infotab" data-target="py05_remit" onclick="showInfotab('py05_remit')">Statutory Remittance</button>
+</div>
+  <div class="infoscreen active" id="infoscreen-py05_bank">
+  <div class="panel">
+    <h2>Bank Transfer File — DME (PC00_M99_CDTA)</h2>
+    <div class="hint">Generates the bank payment file used to disburse net salaries.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="py05_bank_paydate">Payment Date</label><input type="date" id="py05_bank_paydate" value=""></div>
+<div class="field"><label for="py05_bank_format">Bank File Format</label><select id="py05_bank_format"><option>NEFT Bulk Upload (CSV)</option><option>SWIFT MT101</option><option>Standard DME</option></select></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('py05_bank')">Generate Bank File</button>
+      <button onclick="clearForm('py05_bank')">New</button>
+      <button onclick="loadSelected('py05_bank')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('py05_bank')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-py05_bank">
+      <thead><tr><th>Employee</th><th>Bank</th><th>Account Number</th><th>Net Amount</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>Arjun Mehta</td><td>HDFC Bank</td><td>XXXXXXXX1234</td><td>57,600</td><td><span class="pill pending">Pending</span></td></tr>
+<tr><td>Sneha Rao</td><td>ICICI Bank</td><td>XXXXXXXX5678</td><td>46,400</td><td><span class="pill pending">Pending</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-py05_gl">
+  <div class="panel">
+    <h2>GL Posting (PC00_M99_CIPE)</h2>
+    <div class="hint">Posts payroll results into Finance/GL as a journal entry — the integration point with your Finance module.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="py05_gl_postdate">Posting Date</label><input type="date" id="py05_gl_postdate" value=""></div>
+<div class="field"><label for="py05_gl_glaccount">GL Account (Salary Expense)</label><input type="text" id="py05_gl_glaccount" placeholder="5010 - Salaries & Wages" value=""></div>
+<div class="field"><label for="py05_gl_costcenter">Cost Center</label><input type="text" id="py05_gl_costcenter" placeholder="CC-IT-01" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('py05_gl')">Post to Finance</button>
+      <button onclick="clearForm('py05_gl')">New</button>
+      <button onclick="loadSelected('py05_gl')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('py05_gl')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-py05_gl">
+      <thead><tr><th>GL Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
+      <tbody>
+      <tr><td>5010 — Salaries & Wages</td><td>Sep 2026 payroll run</td><td>1,30,000</td><td>—</td></tr>
+<tr><td>2110 — Salary Payable</td><td>Sep 2026 payroll run</td><td>—</td><td>1,04,000</td></tr>
+<tr><td>2120 — PF Payable</td><td>Sep 2026 payroll run</td><td>—</td><td>11,000</td></tr>
+<tr><td>2130 — TDS Payable</td><td>Sep 2026 payroll run</td><td>—</td><td>15,000</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="infoscreen" id="infoscreen-py05_remit">
+  <div class="panel">
+    <h2>Statutory Remittance (PC00_M99_URME)</h2>
+    <div class="hint">Third-party remittance to statutory authorities (PF, ESI, TDS).</div>
+    <div class="grid-fields">
+      <div class="field"><label for="py05_remit_authority">Authority</label><select id="py05_remit_authority"><option>EPFO (Provident Fund)</option><option>Income Tax Dept (TDS)</option><option>ESIC</option></select></div>
+<div class="field"><label for="py05_remit_amount">Amount Due</label><input type="number" id="py05_remit_amount" placeholder="11000" value=""></div>
+<div class="field"><label for="py05_remit_duedate">Due Date</label><input type="date" id="py05_remit_duedate" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('py05_remit')">Mark as Remitted</button>
+      <button onclick="clearForm('py05_remit')">New</button>
+      <button onclick="loadSelected('py05_remit')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('py05_remit')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-py05_remit">
+      <thead><tr><th>Authority</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>EPFO (Provident Fund)</td><td>11,000</td><td>2026-10-15</td><td><span class="pill due">Due</span></td></tr>
+<tr><td>Income Tax Dept (TDS)</td><td>15,000</td><td>2026-10-07</td><td><span class="pill due">Due</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</section>
+
+    </main>
+  </div>
+
+</div>
+
+<script>
+  function showScreen(prefix) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const target = document.getElementById('screen-' + prefix);
+    target.classList.add('active');
+    document.querySelector('.nav-item[data-target="' + prefix + '"]').classList.add('active');
+    document.getElementById('topbar-tcode').textContent = target.dataset.tcode;
+    document.getElementById('topbar-title').textContent = target.dataset.title;
+    document.getElementById('topbar-path').innerHTML = 'HR &rsaquo; Payroll &rsaquo; ' + target.dataset.title;
+    window.scrollTo(0,0);
+  }
+
+  function showInfotab(key) {
+    const prefix = key.split('_')[0];
+    document.querySelectorAll('.infotab[data-target^="' + prefix + '_"]').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.infoscreen[id^="infoscreen-' + prefix + '_"]').forEach(s => s.classList.remove('active'));
+    document.querySelector('.infotab[data-target="' + key + '"]').classList.add('active');
+    document.getElementById('infoscreen-' + key).classList.add('active');
+  }
+
+  let selectedRow = {};
+
+  function getFormFields(prefix) {
+    return Array.from(document.querySelectorAll('[id^="' + prefix + '_"]'));
+  }
+
+  function addRow(prefix) {
+    const inputs = getFormFields(prefix);
+    const vals = inputs.map(el => {
+      if (el.type === 'checkbox') return el.checked ? 'Yes' : 'No';
+      return el.value || '—';
+    });
+    const tbl = document.getElementById('grid-' + prefix);
+    if (!tbl) { alert('Saved (demo only).'); return; }
+    const tbody = tbl.querySelector('tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = vals.map(v =>
+      (['Active','Inactive','Pending','Approved','Rejected','Calculated','Error','Open','Locked','Posted','Paid','Due'].includes(v))
+        ? `<td><span class="pill ${v.toLowerCase()}">${v}</span></td>`
+        : `<td>${v}</td>`
+    ).join('');
+    tr.addEventListener('click', () => selectRow(prefix, tr));
+    tbody.appendChild(tr);
+    clearForm(prefix);
+  }
+
+  function setPeriodStatus(status) {
+    const pill = document.getElementById('py01-status-pill');
+    pill.textContent = status;
+    pill.className = 'pill ' + status.toLowerCase();
+  }
+
+  function selectRow(prefix, tr) {
+    const tbl = document.getElementById('grid-' + prefix);
+    tbl.querySelectorAll('tbody tr').forEach(r => r.style.background = '');
+    tr.style.background = 'var(--accent-soft)';
+    selectedRow[prefix] = tr;
+  }
+
+  document.querySelectorAll('table[id^="grid-"]').forEach(tbl => {
+    const prefix = tbl.id.replace('grid-', '');
+    tbl.querySelectorAll('tbody tr').forEach(tr => {
+      tr.addEventListener('click', () => selectRow(prefix, tr));
+    });
+  });
+
+  function clearForm(prefix) {
+    getFormFields(prefix).forEach(el => {
+      if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number' || el.type === 'date')) el.value = '';
+      if (el.tagName === 'INPUT' && el.type === 'checkbox') el.checked = false;
+    });
+    selectedRow[prefix] = null;
+  }
+
+  function loadSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the list first.'); return; }
+    const cells = Array.from(selectedRow[prefix].children).map(td => td.textContent.trim());
+    const inputs = getFormFields(prefix).filter(el => el.type !== 'checkbox');
+    inputs.forEach((el, i) => { if (cells[i] !== undefined) el.value = cells[i]; });
+  }
+
+  function deleteSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the list first.'); return; }
+    if (confirm('Delete this record?')) { selectedRow[prefix].remove(); selectedRow[prefix] = null; }
+  }
+</script>
+</body>
+</html>

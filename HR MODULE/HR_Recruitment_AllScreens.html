@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HR Module — Recruitment (All Screens)</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card-bg: #ffffff; --ink: #1f2422; --ink-soft: #5a615e;
+    --accent: #2f6f5e; --accent-soft: #e6f0ec; --border: #e2e0da;
+    --danger: #a5432f; --danger-soft: #fbe9e5; --warn:#8a6d1c; --warn-soft:#fff3d9;
+    --blue:#2f5f8f; --blue-soft:#e7eef6;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Segoe UI', Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  .app { display:flex; min-height:100vh; }
+
+  .sidebar { width: 270px; flex-shrink:0; background: var(--ink); color:#fff; display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow-y:auto; }
+  .sidebar .brand { padding:20px 18px 14px; border-bottom:1px solid #333b38; }
+  .sidebar .brand .kicker { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#8fb9a9; font-weight:700; }
+  .sidebar .brand h1 { margin:4px 0 0; font-size:15px; font-weight:700; }
+  .nav-group { padding: 14px 10px; }
+  .nav-group .group-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#8b928f; padding:6px 10px 8px; }
+  .nav-item { display:flex; align-items:flex-start; gap:10px; width:100%; text-align:left; background:none; border:none; color:#d8dbd9; font-family:inherit; font-size:12.5px; font-weight:600; padding:9px 10px; border-radius:7px; cursor:pointer; line-height:1.3; }
+  .nav-item .tcode { font-size:10px; font-weight:800; background:#2f6f5e; color:#fff; padding:2px 6px; border-radius:5px; min-width:40px; text-align:center; margin-top:1px; }
+  .nav-item .nlabel small { display:block; font-weight:400; color:#9aa19d; font-size:10.5px; margin-top:1px; }
+  .nav-item:hover { background:#2a302d; }
+  .nav-item.active { background: var(--accent); color:#fff; }
+  .nav-item.active .tcode { background:#fff; color:var(--accent); }
+  .nav-item.active .nlabel small { color:#dfeee8; }
+
+  .content { flex:1; min-width:0; }
+  .topbar { background:#fff; border-bottom:1px solid var(--border); padding:16px 30px; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:5; }
+  .topbar .title-wrap { display:flex; align-items:center; gap:10px; }
+  .topbar .tcode-badge { font-size:12px; font-weight:800; letter-spacing:.04em; background:var(--accent-soft); color:var(--accent); padding:4px 10px; border-radius:6px; }
+  .topbar .title { font-size:16px; font-weight:700; }
+  .topbar .path { font-size:12px; color:var(--ink-soft); }
+
+  main { max-width: 1040px; margin: 0 auto; padding: 26px 30px 70px; }
+  .screen { display:none; }
+  .screen.active { display:block; }
+
+  .panel { background: var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:22px 24px; margin-bottom:20px; }
+  .panel h2 { margin:0 0 16px; font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); border-bottom:1px solid var(--border); padding-bottom:10px; }
+  .grid-fields { display:grid; grid-template-columns: repeat(2, 1fr); gap:16px 24px; }
+  .grid-fields.cols3 { grid-template-columns: repeat(3, 1fr); }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .field input[type=text], .field input[type=date], .field input[type=time], .field input[type=number], .field select {
+    padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; background:#fdfdfc;
+  }
+  .btnrow { display:flex; gap:10px; margin: 18px 0 4px; flex-wrap:wrap; }
+  button { font-family: inherit; font-size:13px; font-weight:600; padding:9px 18px; border-radius:7px; border:1px solid var(--border); background:#fff; color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { background:var(--danger-soft); border-color:#e6c6bd; color:var(--danger); }
+  button.blue { background:var(--blue-soft); border-color:#c3d3e4; color:var(--blue); }
+  button.small { padding:5px 11px; font-size:11.5px; }
+  button:hover { filter:brightness(0.97); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  thead th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); border-bottom:2px solid var(--border); padding:8px 10px; }
+  tbody td { padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  tbody tr:hover { background: var(--accent-soft); }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+  .pill.open, .pill.hired, .pill.offered { background:var(--accent-soft); color:var(--accent); }
+  .pill.closed, .pill.rejected { background:var(--danger-soft); color:var(--danger); }
+  .pill.onhold, .pill.applied { background:var(--warn-soft); color:var(--warn); }
+  .pill.screened, .pill.interviewed { background:var(--blue-soft); color:var(--blue); }
+  .hint { font-size:12px; color:var(--ink-soft); margin: -8px 0 18px; }
+
+  .stagebar { display:flex; align-items:center; gap:0; margin: 4px 0 18px; flex-wrap:wrap; }
+  .stagebar .stage { font-size:11px; font-weight:700; color:var(--ink-soft); background:#f1f0ec; padding:5px 12px; border-radius:999px; margin-right:6px; }
+  .stagebar .stage.done { background:var(--accent-soft); color:var(--accent); }
+  .stagebar .arrow { color:var(--ink-soft); margin-right:6px; font-size:12px; }
+
+  .readonly-banner { background:#f1f0ec; color:var(--ink-soft); font-size:12px; font-weight:600; padding:8px 14px; border-radius:7px; margin-bottom:16px; display:inline-block; }
+
+  @media (max-width: 820px) {
+    .app { flex-direction:column; }
+    .sidebar { width:100%; height:auto; position:relative; }
+    .grid-fields, .grid-fields.cols3 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="sidebar">
+    <div class="brand">
+      <div class="kicker">ERP · HR Module</div>
+      <h1>Recruitment</h1>
+    </div>
+    <div class="nav-group">
+      <div class="group-label">Transactions</div>
+      <button class="nav-item active" data-target="rc01" onclick="showScreen('rc01')">
+      <span class="tcode">RC-01</span><span class="nlabel">Job Requisition<small>SAP: PB40 (Create Vacancy)</small></span>
+    </button>
+<button class="nav-item" data-target="rc02" onclick="showScreen('rc02')">
+      <span class="tcode">RC-02</span><span class="nlabel">Applicant Master Data<small>SAP: PB10 / PB30</small></span>
+    </button>
+<button class="nav-item" data-target="rc03" onclick="showScreen('rc03')">
+      <span class="tcode">RC-03</span><span class="nlabel">Application Pipeline<small>SAP: PB20</small></span>
+    </button>
+<button class="nav-item" data-target="rc04" onclick="showScreen('rc04')">
+      <span class="tcode">RC-04</span><span class="nlabel">Interview Scheduling<small>SAP: IT4003</small></span>
+    </button>
+<button class="nav-item" data-target="rc05" onclick="showScreen('rc05')">
+      <span class="tcode">RC-05</span><span class="nlabel">Hire Conversion<small>SAP: PB40 (Hire)</small></span>
+    </button>
+
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="topbar">
+      <div class="title-wrap">
+        <span class="tcode-badge" id="topbar-tcode">RC-01</span>
+        <span class="title" id="topbar-title">Job Requisition</span>
+      </div>
+      <div class="path" id="topbar-path">HR &rsaquo; Recruitment &rsaquo; Job Requisition</div>
+    </div>
+    <main>
+      <section class="screen active" id="screen-rc01" data-tcode="RC-01" data-title="Job Requisition">
+  <div class="panel">
+    <h2>Job Requisition</h2>
+    <div class="hint">Opens a vacancy against an existing Position — equivalent to SAP's PB40 vacancy creation. Feeds the application pipeline in RC-03.</div>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="rc01_reqid">Requisition ID</label><input type="text" id="rc01_reqid" placeholder="REQ0001" value=""></div>
+<div class="field"><label for="rc01_position">Position</label><select id="rc01_position"><option>PS0003 — Software Engineer (Vacant)</option><option>PS0004 — HR Executive (Vacant)</option></select></div>
+<div class="field"><label for="rc01_orgunit">Org Unit</label><select id="rc01_orgunit"><option>OU0001 — Information Technology</option><option>OU0002 — Application Development</option></select></div>
+<div class="field"><label for="rc01_job">Job</label><select id="rc01_job"><option>JB0001 — Software Engineer</option><option>JB0002 — HR Executive</option></select></div>
+<div class="field"><label for="rc01_openings">Number of Openings</label><input type="number" id="rc01_openings" placeholder="2" value=""></div>
+<div class="field"><label for="rc01_priority">Priority</label><select id="rc01_priority"><option>High</option><option>Medium</option><option>Low</option></select></div>
+<div class="field"><label for="rc01_posted">Posted Date</label><input type="date" id="rc01_posted" value=""></div>
+<div class="field"><label for="rc01_targetclose">Target Close Date</label><input type="date" id="rc01_targetclose" value=""></div>
+<div class="field"><label for="rc01_status">Status</label><select id="rc01_status"><option>Open</option><option>On Hold</option><option>Closed</option></select></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('rc01')">Save</button>
+      <button onclick="clearForm('rc01')">New</button>
+      <button onclick="loadSelected('rc01')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('rc01')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-rc01">
+      <thead><tr><th>Requisition ID</th><th>Position</th><th>Org Unit</th><th>Openings</th><th>Priority</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>REQ0001</td><td>PS0003 — Software Engineer</td><td>Application Development</td><td>2</td><td>High</td><td><span class="pill open">Open</span></td></tr>
+<tr><td>REQ0002</td><td>PS0004 — HR Executive</td><td>Human Resources</td><td>1</td><td>Medium</td><td><span class="pill open">Open</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-rc02" data-tcode="RC-02" data-title="Applicant Master Data">
+  <div class="panel">
+    <h2>Applicant Master Data</h2>
+    <div class="hint">Candidate profile captured at application time — equivalent to SAP's PB10 (quick entry) / PB30 (full maintenance).</div>
+    <div class="grid-fields">
+      <div class="field"><label for="rc02_candid">Candidate ID</label><input type="text" id="rc02_candid" placeholder="CAND0001" value=""></div>
+<div class="field"><label for="rc02_name">Full Name</label><input type="text" id="rc02_name" placeholder="Kavya Iyer" value=""></div>
+<div class="field"><label for="rc02_email">Email</label><input type="text" id="rc02_email" placeholder="kavya.iyer@email.com" value=""></div>
+<div class="field"><label for="rc02_phone">Phone</label><input type="text" id="rc02_phone" placeholder="+91 98765 43210" value=""></div>
+<div class="field"><label for="rc02_source">Source</label><select id="rc02_source"><option>Referral</option><option>Job Portal</option><option>Campus</option><option>Agency</option><option>LinkedIn</option></select></div>
+<div class="field full"><label for="rc02_resume">Resume Link</label><input type="text" id="rc02_resume" placeholder="https://.../kavya_iyer_resume.pdf" value=""></div>
+<div class="field"><label for="rc02_appliedfor">Applied For (Requisition)</label><select id="rc02_appliedfor"><option>REQ0001 — Software Engineer</option><option>REQ0002 — HR Executive</option></select></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('rc02')">Save</button>
+      <button onclick="clearForm('rc02')">New</button>
+      <button onclick="loadSelected('rc02')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('rc02')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-rc02">
+      <thead><tr><th>Candidate ID</th><th>Name</th><th>Email</th><th>Source</th><th>Applied For</th></tr></thead>
+      <tbody>
+      <tr><td>CAND0001</td><td>Kavya Iyer</td><td>kavya.iyer@email.com</td><td>LinkedIn</td><td>REQ0001 — Software Engineer</td></tr>
+<tr><td>CAND0002</td><td>Rohan Verma</td><td>rohan.verma@email.com</td><td>Referral</td><td>REQ0001 — Software Engineer</td></tr>
+<tr><td>CAND0003</td><td>Meera Pillai</td><td>meera.pillai@email.com</td><td>Job Portal</td><td>REQ0002 — HR Executive</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-rc03" data-tcode="RC-03" data-title="Application Pipeline">
+  <div class="panel">
+    <h2>Application pipeline</h2>
+    <div class="hint">Tracks each candidate through the hiring stages — equivalent to SAP's PB20 applicant actions. Advance or reject a candidate using the buttons in each row.</div>
+    <table id="grid-rc03">
+      <thead><tr><th>Candidate</th><th>Requisition</th><th>Stage</th><th>Applied Date</th><th>Actions</th></tr></thead>
+      <tbody>
+        <tr data-stage="2">
+          <td>Kavya Iyer</td><td>REQ0001 — Software Engineer</td>
+          <td class="stage-cell"><span class="pill interviewed">Interviewed</span></td>
+          <td>2026-08-20</td>
+          <td class="action-cell">
+            <button class="small primary" onclick="advanceStage(this)">Advance</button>
+            <button class="small danger" onclick="rejectCandidate(this)">Reject</button>
+          </td>
+        </tr>
+        <tr data-stage="1">
+          <td>Rohan Verma</td><td>REQ0001 — Software Engineer</td>
+          <td class="stage-cell"><span class="pill screened">Screened</span></td>
+          <td>2026-08-25</td>
+          <td class="action-cell">
+            <button class="small primary" onclick="advanceStage(this)">Advance</button>
+            <button class="small danger" onclick="rejectCandidate(this)">Reject</button>
+          </td>
+        </tr>
+        <tr data-stage="0">
+          <td>Meera Pillai</td><td>REQ0002 — HR Executive</td>
+          <td class="stage-cell"><span class="pill applied">Applied</span></td>
+          <td>2026-09-05</td>
+          <td class="action-cell">
+            <button class="small primary" onclick="advanceStage(this)">Advance</button>
+            <button class="small danger" onclick="rejectCandidate(this)">Reject</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>Pipeline stages</h2>
+    <div class="stagebar">
+      <span class="stage done">Applied</span><span class="arrow">&rarr;</span>
+      <span class="stage done">Screened</span><span class="arrow">&rarr;</span>
+      <span class="stage done">Interviewed</span><span class="arrow">&rarr;</span>
+      <span class="stage">Offered</span><span class="arrow">&rarr;</span>
+      <span class="stage">Hired</span>
+    </div>
+    <div class="hint" style="margin-top:0">A candidate that reaches "Offered" becomes eligible for RC-05 (Hire Conversion), which creates the actual employee record in Core HR.</div>
+  </div>
+</section>
+<section class="screen" id="screen-rc04" data-tcode="RC-04" data-title="Interview Scheduling">
+  <div class="panel">
+    <h2>Interview Scheduling</h2>
+    <div class="hint">Schedules and records feedback for each interview round — equivalent to SAP's IT4003 Applicant Activities.</div>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="rc04_candidate">Candidate</label><select id="rc04_candidate"><option>CAND0001 — Kavya Iyer</option><option>CAND0002 — Rohan Verma</option><option>CAND0003 — Meera Pillai</option></select></div>
+<div class="field"><label for="rc04_round">Interview Round</label><select id="rc04_round"><option>Screening Call</option><option>Technical Round 1</option><option>Technical Round 2</option><option>HR Round</option></select></div>
+<div class="field"><label for="rc04_interviewer">Interviewer</label><input type="text" id="rc04_interviewer" placeholder="Ravi Kumar (IT Manager)" value=""></div>
+<div class="field"><label for="rc04_date">Date</label><input type="date" id="rc04_date" value=""></div>
+<div class="field"><label for="rc04_time">Time</label><input type="time" id="rc04_time" value=""></div>
+<div class="field"><label for="rc04_mode">Mode</label><select id="rc04_mode"><option>Onsite</option><option>Video Call</option><option>Phone</option></select></div>
+<div class="field"><label for="rc04_rating">Rating (1-5)</label><select id="rc04_rating"><option>—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
+<div class="field full"><label for="rc04_feedback">Feedback</label><input type="text" id="rc04_feedback" placeholder="Strong on system design, good communication." value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('rc04')">Save</button>
+      <button onclick="clearForm('rc04')">New</button>
+      <button onclick="loadSelected('rc04')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('rc04')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-rc04">
+      <thead><tr><th>Candidate</th><th>Round</th><th>Interviewer</th><th>Date</th><th>Mode</th><th>Rating</th></tr></thead>
+      <tbody>
+      <tr><td>Kavya Iyer</td><td>Technical Round 1</td><td>Ravi Kumar (IT Manager)</td><td>2026-08-28</td><td>Video Call</td><td>4</td></tr>
+<tr><td>Rohan Verma</td><td>Screening Call</td><td>HR Team</td><td>2026-08-27</td><td>Phone</td><td>3</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-rc05" data-tcode="RC-05" data-title="Hire Conversion">
+  <span class="readonly-banner">Converts an "Offered" candidate into an employee — this is the integration point into Core HR's PA40 Hire action (see CH-01).</span>
+
+  <div class="panel">
+    <h2>Select candidate to hire</h2>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="rc05_candidate">Candidate (Offered)</label><select id="rc05_candidate"><option>CAND0001 — Kavya Iyer (REQ0001)</option></select></div>
+      <div class="field"><label for="rc05_hiredate">Effective Hire Date</label><input type="date" id="rc05_hiredate" value=""></div>
+      <div class="field"><label for="rc05_salary">Offered Basic Salary</label><input type="number" id="rc05_salary" placeholder="68000" value=""></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Auto-mapped from requisition (read-only)</h2>
+    <div class="grid-fields cols3">
+      <div class="field"><label>Position</label><input type="text" value="PS0003 — Software Engineer" disabled></div>
+      <div class="field"><label>Org Unit</label><input type="text" value="OU0002 — Application Development" disabled></div>
+      <div class="field"><label>Job</label><input type="text" value="JB0001 — Software Engineer" disabled></div>
+      <div class="field"><label>Company Code</label><input type="text" value="CO01 — Acme Manufacturing" disabled></div>
+      <div class="field"><label>Personnel Area</label><input type="text" value="PA01 — Head Office" disabled></div>
+      <div class="field"><label>Requisition</label><input type="text" value="REQ0001" disabled></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="hireCandidate()">Convert to Employee (Hire)</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Conversion history</h2>
+    <table id="grid-rc05">
+      <thead><tr><th>Candidate</th><th>New Employee ID</th><th>Position</th><th>Hire Date</th><th>Source Requisition</th></tr></thead>
+      <tbody>
+        <tr><td>Arjun Mehta</td><td>EMP1001</td><td>PS0002 — Senior Software Engineer</td><td>2024-01-15</td><td>REQ0000</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+</div>
+
+<script>
+  const STAGES = ['Applied','Screened','Interviewed','Offered','Hired'];
+  const STAGE_CLASS = {'Applied':'applied','Screened':'screened','Interviewed':'interviewed','Offered':'offered','Hired':'hired','Rejected':'rejected'};
+
+  function showScreen(prefix) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const target = document.getElementById('screen-' + prefix);
+    target.classList.add('active');
+    document.querySelector('.nav-item[data-target="' + prefix + '"]').classList.add('active');
+    document.getElementById('topbar-tcode').textContent = target.dataset.tcode;
+    document.getElementById('topbar-title').textContent = target.dataset.title;
+    document.getElementById('topbar-path').innerHTML = 'HR &rsaquo; Recruitment &rsaquo; ' + target.dataset.title;
+    window.scrollTo(0,0);
+  }
+
+  function advanceStage(btn) {
+    const tr = btn.closest('tr');
+    let stage = parseInt(tr.dataset.stage, 10);
+    if (stage >= STAGES.length - 1) return;
+    stage += 1;
+    tr.dataset.stage = stage;
+    const stageName = STAGES[stage];
+    tr.querySelector('.stage-cell').innerHTML = `<span class="pill ${STAGE_CLASS[stageName]}">${stageName}</span>`;
+    if (stageName === 'Hired') {
+      tr.querySelector('.action-cell').innerHTML = '—';
+    }
+  }
+
+  function rejectCandidate(btn) {
+    const tr = btn.closest('tr');
+    tr.querySelector('.stage-cell').innerHTML = `<span class="pill rejected">Rejected</span>`;
+    tr.querySelector('.action-cell').innerHTML = '—';
+  }
+
+  function hireCandidate() {
+    const cand = document.getElementById('rc05_candidate').value;
+    const hiredate = document.getElementById('rc05_hiredate').value || '—';
+    const name = cand.split(' — ')[1] ? cand.split(' — ')[1].split(' (')[0] : cand;
+    const newId = 'EMP' + (1000 + Math.floor(Math.random()*900) + 3);
+    const tbody = document.querySelector('#grid-rc05 tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${name}</td><td>${newId}</td><td>PS0003 — Software Engineer</td><td>${hiredate}</td><td>REQ0001</td>`;
+    tbody.appendChild(tr);
+    alert(name + ' converted to employee ' + newId + '. In your real build this calls the Core HR Hire action (CH-01 / PA40).');
+  }
+
+  let selectedRow = {};
+
+  function getFormFields(prefix) {
+    return Array.from(document.querySelectorAll('[id^="' + prefix + '_"]'));
+  }
+
+  function addRow(prefix) {
+    const inputs = getFormFields(prefix);
+    const vals = inputs.map(el => el.value || '—');
+    const tbl = document.getElementById('grid-' + prefix);
+    if (!tbl) { alert('Saved (demo only).'); return; }
+    const tbody = tbl.querySelector('tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = vals.map(v =>
+      (['Open','Closed','On Hold','Applied','Screened','Interviewed','Offered','Hired','Rejected'].includes(v))
+        ? `<td><span class="pill ${v.toLowerCase().replace(' ','')}">${v}</span></td>`
+        : `<td>${v}</td>`
+    ).join('');
+    tr.addEventListener('click', () => selectRow(prefix, tr));
+    tbody.appendChild(tr);
+    clearForm(prefix);
+  }
+
+  function selectRow(prefix, tr) {
+    const tbl = document.getElementById('grid-' + prefix);
+    tbl.querySelectorAll('tbody tr').forEach(r => r.style.background = '');
+    tr.style.background = 'var(--accent-soft)';
+    selectedRow[prefix] = tr;
+  }
+
+  document.querySelectorAll('table[id^="grid-"]').forEach(tbl => {
+    const prefix = tbl.id.replace('grid-', '');
+    tbl.querySelectorAll('tbody tr').forEach(tr => {
+      if (!tr.querySelector('.action-cell')) tr.addEventListener('click', () => selectRow(prefix, tr));
+    });
+  });
+
+  function clearForm(prefix) {
+    getFormFields(prefix).forEach(el => {
+      if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number' || el.type === 'date' || el.type === 'time')) el.value = '';
+    });
+    selectedRow[prefix] = null;
+  }
+
+  function loadSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the list first.'); return; }
+    const cells = Array.from(selectedRow[prefix].children).map(td => td.textContent.trim());
+    const inputs = getFormFields(prefix);
+    inputs.forEach((el, i) => { if (cells[i] !== undefined) el.value = cells[i]; });
+  }
+
+  function deleteSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the list first.'); return; }
+    if (confirm('Delete this record?')) { selectedRow[prefix].remove(); selectedRow[prefix] = null; }
+  }
+</script>
+</body>
+</html>

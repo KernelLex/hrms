@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HR Module — Yearly Tax Deduction / Form 16 (All Screens)</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card-bg: #ffffff; --ink: #1f2422; --ink-soft: #5a615e;
+    --accent: #2f6f5e; --accent-soft: #e6f0ec; --border: #e2e0da;
+    --danger: #a5432f; --danger-soft: #fbe9e5; --warn:#8a6d1c; --warn-soft:#fff3d9;
+    --blue:#2f5f8f; --blue-soft:#e7eef6;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Segoe UI', Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  .app { display:flex; min-height:100vh; }
+
+  .sidebar { width: 270px; flex-shrink:0; background: var(--ink); color:#fff; display:flex; flex-direction:column; position:sticky; top:0; height:100vh; overflow-y:auto; }
+  .sidebar .brand { padding:20px 18px 14px; border-bottom:1px solid #333b38; }
+  .sidebar .brand .kicker { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#8fb9a9; font-weight:700; }
+  .sidebar .brand h1 { margin:4px 0 0; font-size:15px; font-weight:700; }
+  .nav-group { padding: 14px 10px; }
+  .nav-group .group-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#8b928f; padding:6px 10px 8px; }
+  .nav-item { display:flex; align-items:flex-start; gap:10px; width:100%; text-align:left; background:none; border:none; color:#d8dbd9; font-family:inherit; font-size:12.5px; font-weight:600; padding:9px 10px; border-radius:7px; cursor:pointer; line-height:1.3; }
+  .nav-item .tcode { font-size:10px; font-weight:800; background:#2f6f5e; color:#fff; padding:2px 6px; border-radius:5px; min-width:40px; text-align:center; margin-top:1px; }
+  .nav-item .nlabel small { display:block; font-weight:400; color:#9aa19d; font-size:10.5px; margin-top:1px; }
+  .nav-item:hover { background:#2a302d; }
+  .nav-item.active { background: var(--accent); color:#fff; }
+  .nav-item.active .tcode { background:#fff; color:var(--accent); }
+  .nav-item.active .nlabel small { color:#dfeee8; }
+
+  .content { flex:1; min-width:0; }
+  .topbar { background:#fff; border-bottom:1px solid var(--border); padding:16px 30px; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:5; }
+  .topbar .title-wrap { display:flex; align-items:center; gap:10px; }
+  .topbar .tcode-badge { font-size:12px; font-weight:800; letter-spacing:.04em; background:var(--accent-soft); color:var(--accent); padding:4px 10px; border-radius:6px; }
+  .topbar .title { font-size:16px; font-weight:700; }
+  .topbar .path { font-size:12px; color:var(--ink-soft); }
+
+  main { max-width: 1040px; margin: 0 auto; padding: 26px 30px 70px; }
+  .screen { display:none; }
+  .screen.active { display:block; }
+
+  .panel { background: var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:22px 24px; margin-bottom:20px; }
+  .panel h2 { margin:0 0 16px; font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); border-bottom:1px solid var(--border); padding-bottom:10px; }
+  .grid-fields { display:grid; grid-template-columns: repeat(2, 1fr); gap:16px 24px; }
+  .grid-fields.cols3 { grid-template-columns: repeat(3, 1fr); }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size:12px; font-weight:600; color:var(--ink-soft); }
+  .field input[type=text], .field input[type=date], .field input[type=number], .field select {
+    padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; background:#fdfdfc;
+  }
+  .field input:disabled { background:#f1f0ec; color:#5a615e; font-weight:600; }
+  .btnrow { display:flex; gap:10px; margin: 18px 0 4px; flex-wrap:wrap; }
+  button { font-family: inherit; font-size:13px; font-weight:600; padding:9px 18px; border-radius:7px; border:1px solid var(--border); background:#fff; color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { background:var(--danger-soft); border-color:#e6c6bd; color:var(--danger); }
+  button.blue { background:var(--blue-soft); border-color:#c3d3e4; color:var(--blue); }
+  button.small { padding:5px 11px; font-size:11.5px; }
+  button:hover { filter:brightness(0.97); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  thead th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); border-bottom:2px solid var(--border); padding:8px 10px; }
+  tbody td { padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  tbody tr:hover { background: var(--accent-soft); }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+  .pill.declared, .pill.filed, .pill.generated, .pill.deposited { background:var(--accent-soft); color:var(--accent); }
+  .pill.verified { background:var(--blue-soft); color:var(--blue); }
+  .pill.pending, .pill.draft { background:var(--warn-soft); color:var(--warn); }
+  .pill.overdue, .pill.mismatch { background:var(--danger-soft); color:var(--danger); }
+  .hint { font-size:12px; color:var(--ink-soft); margin: -8px 0 18px; }
+
+  .certificate { border:1px dashed var(--border); border-radius:10px; padding:22px; background:#fdfdfb; }
+  .certificate .cert-header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid var(--border); padding-bottom:14px; margin-bottom:16px; }
+  .certificate .cert-header h3 { margin:0 0 4px; font-size:1.05rem; }
+  .certificate .cert-header .sub { font-size:11.5px; color:var(--ink-soft); }
+  .certificate .cert-meta { font-size:12px; color:var(--ink-soft); text-align:right; line-height:1.6; }
+  .certificate table { margin-bottom:14px; }
+  .certificate .totalrow td { font-weight:800; border-top:2px solid var(--border); }
+  .certificate .section-label { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--accent); font-weight:800; margin:16px 0 8px; }
+  .certificate .netbox { text-align:right; font-size:1.05rem; font-weight:800; color:var(--accent); padding-top:10px; border-top:2px solid var(--border); margin-top:6px; }
+
+  .readonly-banner { background:#f1f0ec; color:var(--ink-soft); font-size:12px; font-weight:600; padding:8px 14px; border-radius:7px; margin-bottom:16px; display:inline-block; }
+
+  @media (max-width: 820px) {
+    .app { flex-direction:column; }
+    .sidebar { width:100%; height:auto; position:relative; }
+    .grid-fields, .grid-fields.cols3 { grid-template-columns: 1fr; }
+    .certificate .cert-header { flex-direction:column; gap:10px; }
+    .certificate .cert-meta { text-align:left; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="sidebar">
+    <div class="brand">
+      <div class="kicker">ERP · HR Module</div>
+      <h1>Yearly Tax Deduction (TDS)</h1>
+    </div>
+    <div class="nav-group">
+      <div class="group-label">Transactions</div>
+      <button class="nav-item active" data-target="tds01" onclick="showScreen('tds01')">
+      <span class="tcode">TDS-01</span><span class="nlabel">Section & Rate Master<small>Config</small></span>
+    </button>
+<button class="nav-item" data-target="tds02" onclick="showScreen('tds02')">
+      <span class="tcode">TDS-02</span><span class="nlabel">Employee Tax Declaration<small>IT Declaration</small></span>
+    </button>
+<button class="nav-item" data-target="tds03" onclick="showScreen('tds03')">
+      <span class="tcode">TDS-03</span><span class="nlabel">TDS Deduction Register<small>Form 24Q source</small></span>
+    </button>
+<button class="nav-item" data-target="tds04" onclick="showScreen('tds04')">
+      <span class="tcode">TDS-04</span><span class="nlabel">Form 16 — Part A<small>TRACES Summary</small></span>
+    </button>
+<button class="nav-item" data-target="tds05" onclick="showScreen('tds05')">
+      <span class="tcode">TDS-05</span><span class="nlabel">Form 16 — Part B<small>Salary/Tax Annexure</small></span>
+    </button>
+
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="topbar">
+      <div class="title-wrap">
+        <span class="tcode-badge" id="topbar-tcode">TDS-01</span>
+        <span class="title" id="topbar-title">Section & Rate Master</span>
+      </div>
+      <div class="path" id="topbar-path">HR &rsaquo; Tax Deduction &rsaquo; Section & Rate Master</div>
+    </div>
+    <main>
+      <section class="screen active" id="screen-tds01" data-tcode="TDS-01" data-title="Section & Rate Master">
+  <div class="panel">
+    <h2>TDS Section & Rate Master</h2>
+    <div class="hint">Statutory TDS sections and rates under the Income Tax Act — the base configuration everything else in this module reads from.</div>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="tds01_section">Section Code</label><select id="tds01_section"><option>192 — Salary</option><option>194A — Interest</option><option>194C — Contractor Payment</option><option>194H — Commission/Brokerage</option><option>194J — Professional/Technical Fees</option><option>194-IA — Sale of Property</option></select></div>
+<div class="field full"><label for="tds01_desc">Description</label><input type="text" id="tds01_desc" placeholder="TDS on Salary Income" value=""></div>
+<div class="field"><label for="tds01_rate">TDS Rate %</label><input type="number" id="tds01_rate" placeholder="10" value=""></div>
+<div class="field"><label for="tds01_threshold">Annual Threshold Limit (₹)</label><input type="number" id="tds01_threshold" placeholder="250000" value=""></div>
+<div class="field"><label for="tds01_applicableto">Applicable To</label><select id="tds01_applicableto"><option>Employee (Salary)</option><option>Vendor / Contractor</option><option>Individual (Non-Vendor)</option></select></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('tds01')">Save</button>
+      <button onclick="clearForm('tds01')">New</button>
+      <button onclick="loadSelected('tds01')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('tds01')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-tds01">
+      <thead><tr><th>Section</th><th>Description</th><th>Rate %</th><th>Threshold (₹)</th><th>Applicable To</th></tr></thead>
+      <tbody>
+      <tr><td>192 — Salary</td><td>TDS on Salary Income (slab-based)</td><td>Slab</td><td>2,50,000</td><td>Employee (Salary)</td></tr>
+<tr><td>194J — Professional/Technical Fees</td><td>TDS on professional/consultancy fees</td><td>10</td><td>30,000</td><td>Vendor / Contractor</td></tr>
+<tr><td>194C — Contractor Payment</td><td>TDS on contractor/sub-contractor payments</td><td>1-2</td><td>30,000 (single) / 1,00,000 (annual)</td><td>Vendor / Contractor</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-tds02" data-tcode="TDS-02" data-title="Employee Tax Declaration">
+  <div class="panel">
+    <h2>Employee Tax Declaration</h2>
+    <div class="hint">Investment and exemption declarations collected once a year — this is the source data for Form 16 Part B's tax computation.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="tds02_emp">Employee</label><select id="tds02_emp"><option>EMP1001 — Arjun Mehta</option><option>EMP1002 — Sneha Rao</option></select></div>
+<div class="field"><label for="tds02_fy">Financial Year</label><select id="tds02_fy"><option>2025-26 (AY 2026-27)</option><option>2024-25 (AY 2025-26)</option></select></div>
+<div class="field"><label for="tds02_regime">Tax Regime</label><select id="tds02_regime"><option>Old Regime</option><option>New Regime</option></select></div>
+<div class="field"><label for="tds02_sec80c">Section 80C (PF, LIC, ELSS etc.)</label><input type="number" id="tds02_sec80c" placeholder="150000" value=""></div>
+<div class="field"><label for="tds02_sec80d">Section 80D (Medical Insurance)</label><input type="number" id="tds02_sec80d" placeholder="25000" value=""></div>
+<div class="field"><label for="tds02_hraexempt">HRA Exemption Claimed</label><input type="number" id="tds02_hraexempt" placeholder="144000" value=""></div>
+<div class="field"><label for="tds02_otherincome">Other Income Declared</label><input type="number" id="tds02_otherincome" placeholder="0" value=""></div>
+<div class="field"><label for="tds02_status">Status</label><select id="tds02_status"><option>Declared</option><option>Verified</option><option>Pending</option></select></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('tds02')">Save</button>
+      <button onclick="clearForm('tds02')">New</button>
+      <button onclick="loadSelected('tds02')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('tds02')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-tds02">
+      <thead><tr><th>Employee</th><th>FY</th><th>Regime</th><th>80C</th><th>80D</th><th>HRA Exemption</th><th>Status</th></tr></thead>
+      <tbody>
+      <tr><td>Arjun Mehta</td><td>2025-26 (AY 2026-27)</td><td>Old Regime</td><td>1,50,000</td><td>25,000</td><td>1,44,000</td><td><span class="pill verified">Verified</span></td></tr>
+<tr><td>Sneha Rao</td><td>2025-26 (AY 2026-27)</td><td>New Regime</td><td>—</td><td>—</td><td>—</td><td><span class="pill declared">Declared</span></td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-tds03" data-tcode="TDS-03" data-title="TDS Deduction Register">
+  <div class="panel">
+    <h2>TDS Deduction Register</h2>
+    <div class="hint">Monthly/quarterly record of salary paid, tax deducted, and the challan used to deposit it with the government — source data for Form 24Q filing and Form 16 Part A.</div>
+    <div class="grid-fields">
+      <div class="field"><label for="tds03_emp">Employee</label><select id="tds03_emp"><option>EMP1001 — Arjun Mehta</option><option>EMP1002 — Sneha Rao</option></select></div>
+<div class="field"><label for="tds03_quarter">Quarter</label><select id="tds03_quarter"><option>Q1 (Apr-Jun)</option><option>Q2 (Jul-Sep)</option><option>Q3 (Oct-Dec)</option><option>Q4 (Jan-Mar)</option></select></div>
+<div class="field"><label for="tds03_grosspaid">Gross Salary Paid (₹)</label><input type="number" id="tds03_grosspaid" placeholder="216000" value=""></div>
+<div class="field"><label for="tds03_tdsdeducted">TDS Deducted (₹)</label><input type="number" id="tds03_tdsdeducted" placeholder="12600" value=""></div>
+<div class="field"><label for="tds03_challan">Challan / BSR Code</label><input type="text" id="tds03_challan" placeholder="BSR0001234 / CIN123456" value=""></div>
+<div class="field"><label for="tds03_depositdate">Deposit Date</label><input type="date" id="tds03_depositdate" value=""></div>
+    </div>
+    <div class="btnrow">
+      <button class="primary" onclick="addRow('tds03')">Save</button>
+      <button onclick="clearForm('tds03')">New</button>
+      <button onclick="loadSelected('tds03')">Edit selected</button>
+      <button class="danger" onclick="deleteSelected('tds03')">Delete selected</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Record list</h2>
+    <table id="grid-tds03">
+      <thead><tr><th>Employee</th><th>Quarter</th><th>Gross Paid (₹)</th><th>TDS Deducted (₹)</th><th>Challan / BSR</th><th>Deposit Date</th></tr></thead>
+      <tbody>
+      <tr><td>Arjun Mehta</td><td>Q1 (Apr-Jun)</td><td>2,16,000</td><td>12,600</td><td>BSR0001234 / CIN123456</td><td>2025-07-07</td></tr>
+<tr><td>Arjun Mehta</td><td>Q2 (Jul-Sep)</td><td>2,16,000</td><td>12,600</td><td>BSR0001234 / CIN123789</td><td>2025-10-07</td></tr>
+<tr><td>Sneha Rao</td><td>Q1 (Apr-Jun)</td><td>1,74,000</td><td>6,200</td><td>BSR0001234 / CIN123456</td><td>2025-07-07</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="screen" id="screen-tds04" data-tcode="TDS-04" data-title="Form 16 — Part A">
+  <div class="panel">
+    <h2>Generate Form 16 — Part A</h2>
+    <div class="hint">Part A is the TRACES-generated summary of tax deducted and deposited each quarter, along with employer/employee PAN-TAN details.</div>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="tds04_emp">Employee</label><select id="tds04_emp"><option>EMP1001 — Arjun Mehta</option><option>EMP1002 — Sneha Rao</option></select></div>
+      <div class="field"><label for="tds04_fy">Financial Year</label><select id="tds04_fy"><option>2025-26 (AY 2026-27)</option><option>2024-25 (AY 2025-26)</option></select></div>
+      <div class="field"><label for="tds04_pan">Employee PAN</label><input type="text" id="tds04_pan" placeholder="ABCPM1234D" value=""></div>
+    </div>
+    <div class="btnrow"><button class="primary" onclick="alert('This is a UI mockup — wire this to your TRACES/Form 24Q export and PDF generator.')">Generate Part A</button></div>
+  </div>
+
+  <div class="panel">
+    <h2>Certificate preview</h2>
+    <div class="certificate">
+      <div class="cert-header">
+        <div>
+          <h3>FORM NO. 16 — PART A</h3>
+          <div class="sub">Certificate under section 203 of the Income-tax Act, 1961 for Tax Deducted at Source on Salary</div>
+        </div>
+        <div class="cert-meta">
+          Certificate No: TDS/2026/00147<br>
+          Last updated: 15-Sep-2026
+        </div>
+      </div>
+
+      <div class="grid-fields" style="margin-bottom:18px">
+        <div class="field"><label>Employer (Deductor)</label><input type="text" value="Acme Manufacturing Pvt Ltd" disabled></div>
+        <div class="field"><label>Employer TAN</label><input type="text" value="BLRA12345B" disabled></div>
+        <div class="field"><label>Employer PAN</label><input type="text" value="AACCA1234B" disabled></div>
+        <div class="field"><label>Employee (Deductee)</label><input type="text" value="Arjun Mehta" disabled></div>
+        <div class="field"><label>Employee PAN</label><input type="text" value="ABCPM1234D" disabled></div>
+        <div class="field"><label>Assessment Year</label><input type="text" value="2026-27" disabled></div>
+      </div>
+
+      <div class="section-label">Summary of tax deducted at source</div>
+      <table>
+        <thead><tr><th>Quarter</th><th>Receipt Number (Form 24Q)</th><th>Amount Paid/Credited (₹)</th><th>Amount of Tax Deducted (₹)</th><th>Amount Deposited (₹)</th></tr></thead>
+        <tbody>
+          <tr><td>Q1 (Apr-Jun)</td><td>QTRABCD1234</td><td>2,16,000</td><td>12,600</td><td>12,600</td></tr>
+          <tr><td>Q2 (Jul-Sep)</td><td>QTRABCD5678</td><td>2,16,000</td><td>12,600</td><td>12,600</td></tr>
+          <tr><td>Q3 (Oct-Dec)</td><td>QTRABCD9012</td><td>2,16,000</td><td>12,600</td><td>12,600</td></tr>
+          <tr><td>Q4 (Jan-Mar)</td><td>QTRABCD3456</td><td>2,20,000</td><td>13,200</td><td>13,200</td></tr>
+          <tr class="totalrow"><td colspan="2">Total</td><td>8,68,000</td><td>51,000</td><td>51,000</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+<section class="screen" id="screen-tds05" data-tcode="TDS-05" data-title="Form 16 — Part B">
+  <div class="panel">
+    <h2>Generate Form 16 — Part B</h2>
+    <div class="hint">Part B is the detailed annexure: gross salary, exemptions, Chapter VI-A deductions, and the full tax computation. Pulls from TDS-02 (declarations) and TDS-03 (deductions).</div>
+    <div class="grid-fields cols3">
+      <div class="field"><label for="tds05_emp">Employee</label><select id="tds05_emp"><option>EMP1001 — Arjun Mehta</option><option>EMP1002 — Sneha Rao</option></select></div>
+      <div class="field"><label for="tds05_fy">Financial Year</label><select id="tds05_fy"><option>2025-26 (AY 2026-27)</option><option>2024-25 (AY 2025-26)</option></select></div>
+    </div>
+    <div class="btnrow"><button class="primary" onclick="alert('This is a UI mockup — wire this to your slab-based tax computation engine and PDF generator.')">Generate Part B</button></div>
+  </div>
+
+  <div class="panel">
+    <h2>Certificate preview</h2>
+    <div class="certificate">
+      <div class="cert-header">
+        <div>
+          <h3>FORM NO. 16 — PART B (ANNEXURE)</h3>
+          <div class="sub">Details of Salary Paid and Tax Deducted — Financial Year 2025-26 (Assessment Year 2026-27)</div>
+        </div>
+        <div class="cert-meta">
+          Employee: Arjun Mehta (EMP1001)<br>
+          Old Tax Regime
+        </div>
+      </div>
+
+      <div class="section-label">Gross salary</div>
+      <table>
+        <tbody>
+          <tr><td>Salary as per Section 17(1)</td><td style="text-align:right">8,64,000</td></tr>
+          <tr><td>Total Gross Salary</td><td style="text-align:right">8,64,000</td></tr>
+        </tbody>
+      </table>
+
+      <div class="section-label">Exemptions under Section 10</div>
+      <table>
+        <tbody>
+          <tr><td>House Rent Allowance Exemption</td><td style="text-align:right">1,44,000</td></tr>
+          <tr class="totalrow"><td>Balance (Income under head Salaries)</td><td style="text-align:right">7,20,000</td></tr>
+        </tbody>
+      </table>
+
+      <div class="section-label">Deductions under Chapter VI-A</div>
+      <table>
+        <tbody>
+          <tr><td>Section 80C (PF, LIC, ELSS)</td><td style="text-align:right">1,50,000</td></tr>
+          <tr><td>Section 80D (Medical Insurance)</td><td style="text-align:right">25,000</td></tr>
+          <tr class="totalrow"><td>Total Deductions</td><td style="text-align:right">1,75,000</td></tr>
+        </tbody>
+      </table>
+
+      <div class="section-label">Tax computation</div>
+      <table>
+        <tbody>
+          <tr><td>Total Taxable Income</td><td style="text-align:right">5,45,000</td></tr>
+          <tr><td>Tax on Total Income (old regime slabs)</td><td style="text-align:right">24,000</td></tr>
+          <tr><td>Add: Health &amp; Education Cess @ 4%</td><td style="text-align:right">960</td></tr>
+          <tr><td>Total Tax Payable</td><td style="text-align:right">24,960</td></tr>
+          <tr><td>Less: Total TDS Deducted (from Part A)</td><td style="text-align:right">51,000</td></tr>
+        </tbody>
+      </table>
+      <div class="netbox">Net Tax Refundable: ₹ 26,040</div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+</div>
+
+<script>
+  function showScreen(prefix) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const target = document.getElementById('screen-' + prefix);
+    target.classList.add('active');
+    document.querySelector('.nav-item[data-target="' + prefix + '"]').classList.add('active');
+    document.getElementById('topbar-tcode').textContent = target.dataset.tcode;
+    document.getElementById('topbar-title').textContent = target.dataset.title;
+    document.getElementById('topbar-path').innerHTML = 'HR &rsaquo; Tax Deduction &rsaquo; ' + target.dataset.title;
+    window.scrollTo(0,0);
+  }
+
+  let selectedRow = {};
+
+  function getFormFields(prefix) {
+    return Array.from(document.querySelectorAll('[id^="' + prefix + '_"]')).filter(el => !el.disabled);
+  }
+
+  function addRow(prefix) {
+    const inputs = Array.from(document.querySelectorAll('[id^="' + prefix + '_"]'));
+    const vals = inputs.map(el => el.value || '—');
+    const tbl = document.getElementById('grid-' + prefix);
+    if (!tbl) { alert('Saved (demo only).'); return; }
+    const PILLS = ["Declared","Verified","Pending","Draft","Filed","Generated","Deposited","Overdue","Mismatch"];
+    const tbody = tbl.querySelector('tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = vals.map(v =>
+      PILLS.includes(v)
+        ? `<td><span class="pill ${v.toLowerCase()}">${v}</span></td>`
+        : `<td>${v}</td>`
+    ).join('');
+    tr.addEventListener('click', () => selectRow(prefix, tr));
+    tbody.appendChild(tr);
+    clearForm(prefix);
+  }
+
+  function selectRow(prefix, tr) {
+    const tbl = document.getElementById('grid-' + prefix);
+    tbl.querySelectorAll('tbody tr').forEach(r => r.style.background = '');
+    tr.style.background = 'var(--accent-soft)';
+    selectedRow[prefix] = tr;
+  }
+
+  document.querySelectorAll('table[id^="grid-"]').forEach(tbl => {
+    const prefix = tbl.id.replace('grid-', '');
+    tbl.querySelectorAll('tbody tr').forEach(tr => {
+      tr.addEventListener('click', () => selectRow(prefix, tr));
+    });
+  });
+
+  function clearForm(prefix) {
+    getFormFields(prefix).forEach(el => {
+      if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number' || el.type === 'date')) el.value = '';
+    });
+    selectedRow[prefix] = null;
+  }
+
+  function loadSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the list first.'); return; }
+    const cells = Array.from(selectedRow[prefix].children).map(td => td.textContent.trim());
+    const inputs = getFormFields(prefix);
+    inputs.forEach((el, i) => { if (cells[i] !== undefined) el.value = cells[i]; });
+  }
+
+  function deleteSelected(prefix) {
+    if (!selectedRow[prefix]) { alert('Select a row from the list first.'); return; }
+    if (confirm('Delete this record?')) { selectedRow[prefix].remove(); selectedRow[prefix] = null; }
+  }
+</script>
+</body>
+</html>
