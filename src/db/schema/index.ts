@@ -3,3 +3,5 @@ export * from "./security";
 export * from "./org";
 export * from "./personnel";
 export * from "./time";
+export * from "./payroll";
+export * from "./tax";

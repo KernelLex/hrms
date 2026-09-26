@@ -1,6 +1,6 @@
 # Project status
 
-**Last updated:** 26 Sept 2026 · **Current phase:** 5 of 9 (payroll, next)
+**Last updated:** 26 Sept 2026 · **Current phase:** 6 of 9 (recruitment, next)
 
 Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUILD_PLAN.md); for what the product does see [README.md](README.md).
 
@@ -10,11 +10,11 @@ Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUI
 
 | | |
 |---|---|
-| Phases complete | 5 of 10 (phases 0 to 4) |
-| Real screens built | 18 of 38 |
-| Placeholder screens | 6 |
-| Database tables | 30 of ~61 |
-| Engines built | 2 of 4, plus time evaluation |
+| Phases complete | 6 of 10 (phases 0 to 5) |
+| Real screens built | 23 of 38 |
+| Placeholder screens | 4 |
+| Database tables | 47 of ~61 |
+| Engines built | 4 of 4, plus time evaluation |
 | Deployed | yes, but gated — see blockers |
 
 ---
@@ -53,8 +53,8 @@ Installed per-user under `C:\Users\AMOG\tools` because the account is not an adm
 | 2 | Org management — OM-01…08 | done |
 | 3 | Core HR — CH-01…05, time-slice engine | done |
 | 4 | Time and absence — TM-01…05, quota engine | done |
-| 5 | Payroll — PY-01…05, payroll engine | **next** |
-| 6 | Recruitment — RC-01…05, hire conversion | not started |
+| 5 | Payroll — PY-01…05, payroll engine | done |
+| 6 | Recruitment — RC-01…05, hire conversion | **next** |
 | 7 | Performance — PM-01…05, increment push | not started |
 | 8 | Tax and Form 16 — TDS-01…05, tax engine | not started |
 | 9 | Finish — dashboards, command menu, R2, print, a11y | not started |
@@ -125,40 +125,52 @@ Details that matter:
 
 Verified by `/api/health/quota-check` — 7 of 7 pass.
 
+**Payroll and tax — all five screens and both engines (phase 5).** Payroll periods, wage types, recurring and one-off payments, the run, payslips, and the bank file, ledger posting and statutory remittance that follow it.
+
+The run works gross to net in the order each step feeds the next: basic pay valid in the period, prorated for unpaid absence, then percentage allowances computed on the prorated basic, then recurring and one-off payments, then provident fund and tax.
+
+The tax engine landed here rather than in phase 8, because payroll needs real TDS and a stub would have been thrown away. Slabs are data for both regimes, so a rate change is a row edit.
+
+- **The control record bites.** An open period refuses to run; a period cannot be posted without a run; a posted period is final.
+- **Anyone who cannot be paid is reported, not skipped.** No bank details produces an error row naming the missing record, rather than a run that quietly pays fewer people.
+- **Payslip lines sum exactly to the totals**, because they are the same numbers — the totals are derived from the lines.
+- **PF respects the ₹15,000 wage ceiling.**
+- **The ledger journal balances** by construction: both sides come from the same result lines, and the screen says so if they ever disagree.
+- **Statutory due dates fall out of the posting date**, and overdue money is the one thing on that screen shown in red.
+
+Verified by `/api/health/payroll-check` — 13 of 13 pass, including cumulative slab arithmetic (₹40,000 on ₹10,00,000, not a flat rate) and 4% cess on tax after rebate.
+
 ---
 
 ## What is left
 
-### Screens — 38 total, 13 built
+### Screens — 38 total, 23 built
 
 | Module | Screens | Nested tabs |
 |---|---|---|
 | ~~Org management~~ | ~~OM-01…08~~ — done | — |
 | ~~Core HR~~ | ~~CH-01…05~~ — done | 8 infotype tabs — done |
 | ~~Time and absence~~ | ~~TM-01…05~~ — done | — |
-| Payroll | PY-01…05 | 6 across PY-02 and PY-05 |
+| ~~Payroll~~ | ~~PY-01…05~~ — done | — |
 | Recruitment | RC-01…05 | — |
 | Performance | PM-01…05 | — |
 | Tax and Form 16 | TDS-01…05 | — |
 
-51 distinct form surfaces once nested tabs are counted.
+### Engines — all four done
 
-### Engines — 2 of 4, plus time evaluation
-
-1. ~~**Time-slice**~~ — done, 6 of 6 checks pass.
-2. ~~**Quota**~~ — done, 7 of 7 checks pass.
-3. ~~**Time evaluation**~~ — done; produces the unpaid-day count payroll prorates against.
-3. **Payroll** — gross to net with proration, PF and TDS. Blocks payroll.
-4. **Tax** — slab-based, both regimes, feeding Form 16 Part B.
+1. ~~**Time-slice**~~ — 6 of 6 checks pass.
+2. ~~**Quota**~~ — 7 of 7 checks pass.
+3. ~~**Time evaluation**~~ — produces the unpaid-day count payroll prorates against.
+4. ~~**Payroll** and **tax**~~ — 13 of 13 checks pass.
 
 ### Cross-module transactions — 0 of 2
 
 - **Hire conversion** — recruitment creates an employee plus four infotypes atomically.
 - **Increment push** — performance writes a new basic-pay slice payroll then reads.
 
-### Remaining tables — about 31
+### Remaining tables — about 14
 
-`py_*` (12), `rc_*` (6), `pm_*` (6), `tds_*` (6), `app_document` (1).
+`rc_*` (6), `pm_*` (6), `app_document` (1). The `tds_*` tables landed early with the tax engine.
 
 ---
 

@@ -1,12 +1,7 @@
-import { ModulePlaceholder } from "@/components/placeholder";
+import { redirect } from "next/navigation";
+import { getSession, hasRole } from "@/lib/auth";
 
-export default function Page() {
-  return (
-    <ModulePlaceholder
-      title="Payroll"
-      subtitle="Periods, wage types, the payroll run, payslips and posting."
-      phase={5}
-      screens="Five screens: control record, wage types and payments, the run, payslips, bank transfer and posting."
-    />
-  );
+export default async function PayrollIndex() {
+  const session = await getSession();
+  redirect(hasRole(session, "HR_ADMIN") ? "/payroll/periods" : "/payroll/my-payslips");
 }
