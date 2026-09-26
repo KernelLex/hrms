@@ -29,22 +29,36 @@ Audited on 26 Sept 2026. Windows 11 Pro 10.0.26200, AMD64, Windows PowerShell 5.
 | Vercel CLI | Local env pull, manual deploys | npm global, after Node | — |
 | Wrangler | R2 bucket management from the terminal (optional — the dashboard also works) | npm global, after Node | — |
 
-### winget caveat — read before running installs
+### How these were actually installed — winget was not usable
 
-The `msstore` source agreement has never been accepted on this machine. Any bare `winget search` or `winget install` aborts with *"One or more of the source agreements were not agreed to. Operation cancelled."*
+Two blockers ruled winget out on this machine:
 
-Pin every call to the `winget` source and accept its agreement:
+1. **The account is not an administrator.** `SUPERCOM-2\AMOG` is a standard user, `EnableLUA=1`, `ConsentPromptBehaviorAdmin=5`. A machine-scope winget install raises a UAC *credential* dialog, which a non-interactive shell cannot answer and which blocks until timeout.
+2. **The `msstore` source agreement was never accepted**, so even a bare `winget search` aborts with *"One or more of the source agreements were not agreed to."* Pinning `--source winget --accept-source-agreements` fixes that part, but not the elevation problem.
+
+**Resolution: per-user portable installs, no elevation.** Official upstream archives extracted to `C:\Users\AMOG\tools`, with those paths appended to the persistent user PATH (`HKCU:\Environment`).
+
+| Tool | Source | Installed to |
+|---|---|---|
+| Node.js 24.21.0 LTS | `nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip` | `C:\Users\AMOG\tools\node` |
+| Git 2.55.0.windows.5 | PortableGit self-extracting archive | `C:\Users\AMOG\tools\git` |
+| GitHub CLI 2.101.0 | `gh_2.101.0_windows_amd64.zip` | `C:\Users\AMOG\tools\gh` |
+
+Verified working: `node v24.21.0`, `npm 11.19.0`, `git 2.55.0.windows.5`, `gh 2.101.0`. npm reaches the registry in about 1.8s.
+
+PATH entries added, including `%APPDATA%\npm` for future npm globals:
+
+```
+C:\Users\AMOG\tools\node
+C:\Users\AMOG\tools\git\cmd
+C:\Users\AMOG\tools\gh\bin
+%APPDATA%\npm
+```
+
+A new terminal is required to pick these up. If this machine later gains admin rights, the winget route is the tidier long-term option:
 
 ```powershell
 winget install --id OpenJS.NodeJS.LTS --exact --source winget --accept-source-agreements --accept-package-agreements
-winget install --id Git.Git           --exact --source winget --accept-source-agreements --accept-package-agreements
-winget install --id GitHub.cli        --exact --source winget --accept-source-agreements --accept-package-agreements
-```
-
-Open a new terminal afterwards — winget does not refresh PATH in the running session. Then verify:
-
-```powershell
-node -v; npm -v; git --version; gh --version
 ```
 
 Then the npm globals:
@@ -69,7 +83,7 @@ Vercel, Turso and Cloudflare (R2 enabled), plus push access to `github.com/Kerne
 
 | Layer | Choice | Why |
 |---|---|---|
-| Framework | Next.js 15, App Router, TypeScript | Server Components query Turso directly; one codebase, one deploy |
+| Framework | Next.js 16, App Router, TypeScript | Server Components query Turso directly; one codebase, one deploy |
 | Styling | Tailwind CSS 4 | `DESIGN_LANGUAGE.md` §15 ships the token block and the Tailwind mapping ready to paste |
 | Type | Geist via `next/font` | Named in the design language; free on Google Fonts |
 | Icons | `lucide-react` | Named in the design language, outline, 24px grid |
