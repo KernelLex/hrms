@@ -1,6 +1,6 @@
 # Project status
 
-**Last updated:** 26 Sept 2026 · **Current phase:** 6 of 9 (recruitment, next)
+**Last updated:** 26 Sept 2026 · **Current phase:** 7 of 9 (performance, next) — paused here at the user's request
 
 Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUILD_PLAN.md); for what the product does see [README.md](README.md).
 
@@ -10,11 +10,12 @@ Updated at the end of every milestone. For the full plan see [BUILD_PLAN.md](BUI
 
 | | |
 |---|---|
-| Phases complete | 6 of 10 (phases 0 to 5) |
-| Real screens built | 23 of 38 |
-| Placeholder screens | 4 |
-| Database tables | 47 of ~61 |
+| Phases complete | 7 of 10 (phases 0 to 6) |
+| Real screens built | 28 of 38 |
+| Placeholder screens | 3 |
+| Database tables | 53 of ~61 |
 | Engines built | 4 of 4, plus time evaluation |
+| Cross-module transactions | 1 of 2 (hire conversion) |
 | Deployed | yes, but gated — see blockers |
 
 ---
@@ -54,8 +55,8 @@ Installed per-user under `C:\Users\AMOG\tools` because the account is not an adm
 | 3 | Core HR — CH-01…05, time-slice engine | done |
 | 4 | Time and absence — TM-01…05, quota engine | done |
 | 5 | Payroll — PY-01…05, payroll engine | done |
-| 6 | Recruitment — RC-01…05, hire conversion | **next** |
-| 7 | Performance — PM-01…05, increment push | not started |
+| 6 | Recruitment — RC-01…05, hire conversion | done |
+| 7 | Performance — PM-01…05, increment push | **next** |
 | 8 | Tax and Form 16 — TDS-01…05, tax engine | not started |
 | 9 | Finish — dashboards, command menu, R2, print, a11y | not started |
 
@@ -140,6 +141,19 @@ The tax engine landed here rather than in phase 8, because payroll needs real TD
 
 Verified by `/api/health/payroll-check` — 13 of 13 pass, including cumulative slab arithmetic (₹40,000 on ₹10,00,000, not a flat rate) and 4% cess on tax after rebate.
 
+**Recruitment — all five screens and the hire conversion (phase 6).** Requisitions, candidates, the pipeline, interview scheduling, and the conversion that turns an offered candidate into an employee.
+
+The conversion is the point of the module. It creates the employee and six infotypes in one transaction, marks the position filled, moves the application to hired, records which candidate became which employee, and closes the requisition once its openings are used up. It deliberately does exactly what the Core HR hire action does — two ways of creating an employee would drift apart, and one of them would end up missing an infotype payroll needs.
+
+Other behaviour:
+
+- **Requisitions only open against vacant positions**, and the department and job follow from the position rather than being re-entered.
+- **Stages advance one step at a time** and every move is written to a history table, so the pipeline is a record rather than a single mutable field.
+- **Moving to offered asks for the salary**, which is then carried into the conversion.
+- **A position filled between offer and conversion** blocks the conversion with an explanation rather than failing at the database.
+- **A hired candidate cannot be deleted or rejected**, so the audit trail survives.
+- The pipeline uses a progress track — ink for reached, `control` for unreached, `danger-mark` for rejected — rather than the mockup's four differently coloured pills, which carry no meaning in greyscale.
+
 ---
 
 ## What is left
@@ -152,7 +166,7 @@ Verified by `/api/health/payroll-check` — 13 of 13 pass, including cumulative 
 | ~~Core HR~~ | ~~CH-01…05~~ — done | 8 infotype tabs — done |
 | ~~Time and absence~~ | ~~TM-01…05~~ — done | — |
 | ~~Payroll~~ | ~~PY-01…05~~ — done | — |
-| Recruitment | RC-01…05 | — |
+| ~~Recruitment~~ | ~~RC-01…05~~ — done | — |
 | Performance | PM-01…05 | — |
 | Tax and Form 16 | TDS-01…05 | — |
 
@@ -163,14 +177,14 @@ Verified by `/api/health/payroll-check` — 13 of 13 pass, including cumulative 
 3. ~~**Time evaluation**~~ — produces the unpaid-day count payroll prorates against.
 4. ~~**Payroll** and **tax**~~ — 13 of 13 checks pass.
 
-### Cross-module transactions — 0 of 2
+### Cross-module transactions — 1 of 2
 
-- **Hire conversion** — recruitment creates an employee plus four infotypes atomically.
+- ~~**Hire conversion**~~ — done. Recruitment creates the employee and six infotypes atomically, using the same path as the Core HR hire action.
 - **Increment push** — performance writes a new basic-pay slice payroll then reads.
 
-### Remaining tables — about 14
+### Remaining tables — about 8
 
-`rc_*` (6), `pm_*` (6), `app_document` (1). The `tds_*` tables landed early with the tax engine.
+`pm_*` (6), `app_document` (1). The `tds_*` tables landed early with the tax engine, `rc_*` with recruitment.
 
 ---
 
