@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
-import { requireRole, requireSession, hasRole } from "@/lib/auth";
+import { can, requireAnyPermission, requirePermission } from "@/lib/access";
 import { actorOf, audited, recordChanges, recordCreated, recordDeleted, subjectOf } from "@/lib/change-log";
 import {
   tdsSectionMaster,
@@ -45,7 +45,7 @@ export async function saveSection(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("tax.manage"));
   const original = opt(form.get("originalCode"));
   const code = str(form.get("code")).toUpperCase();
   const description = str(form.get("description"));
@@ -95,7 +95,7 @@ export async function deleteSection(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("tax.manage"));
   await recordDeleted(
     actor,
     "tds_section_master",
@@ -121,16 +121,16 @@ export async function saveDeclaration(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireSession();
+  const session = await requireAnyPermission("self.tax", "tax.manage");
   const actor = actorOf(session);
 
   const requestedEmployee = num(form.get("employeeId"));
-  const employeeId = hasRole(session, "HR_ADMIN")
+  const employeeId = can(session, "tax.manage")
     ? requestedEmployee || session.employeeId
     : session.employeeId;
 
   if (!employeeId) return fail("No employee to record a declaration against.");
-  if (!hasRole(session, "HR_ADMIN") && requestedEmployee && requestedEmployee !== employeeId) {
+  if (!can(session, "tax.manage") && requestedEmployee && requestedEmployee !== employeeId) {
     return fail("You can only record your own declaration.");
   }
 
@@ -159,7 +159,7 @@ export async function saveDeclaration(
     section80DPaise: section80D,
     hraExemptionPaise: money(form.get("hraExemption")),
     otherIncomePaise: money(form.get("otherIncome")),
-    status: hasRole(session, "HR_ADMIN")
+    status: can(session, "tax.manage")
       ? str(form.get("status")) || "Verified"
       : "Declared",
     updatedAt: now(),
@@ -173,7 +173,7 @@ export async function saveDeclaration(
   });
 
   if (existing) {
-    if (existing.status === "Verified" && !hasRole(session, "HR_ADMIN")) {
+    if (existing.status === "Verified" && !can(session, "tax.manage")) {
       return fail("That declaration has been verified and can no longer be changed.");
     }
     await audited(
@@ -205,7 +205,7 @@ export async function deleteDeclaration(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("tax.manage"));
   await recordDeleted(
     actor,
     "tds_employee_declaration",
@@ -232,7 +232,7 @@ export async function buildRegister(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("tax.manage"));
   const financialYear = str(form.get("financialYear"));
   if (!/^\d{4}-\d{2}$/.test(financialYear)) return fail("Choose a financial year.");
 
@@ -306,7 +306,7 @@ export async function saveChallan(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("tax.manage"));
   const id = num(form.get("id"));
 
   const depositDate = opt(form.get("depositDate"));
@@ -349,7 +349,7 @@ export async function generateForm16(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("tax.manage");
   const actor = actorOf(session);
   const employeeId = num(form.get("employeeId"));
   const financialYear = str(form.get("financialYear"));
@@ -453,7 +453,7 @@ export async function deleteForm16(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("tax.manage"));
   await recordDeleted(
     actor,
     "tds_form16",

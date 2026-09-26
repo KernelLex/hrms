@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, desc, eq } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
 import { pyPayrollPeriod, pyPayrollRun } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { formatINR } from "@/lib/money";
 import { formatDate, formatMonth, todayInIndia } from "@/lib/dates";
 import { periodEnd } from "@/lib/engines/payroll";
@@ -35,8 +34,7 @@ import { RunForm, OffCycleForm, type OffCycleCandidate } from "./form";
 export default async function RunPage(props: {
   searchParams: Promise<{ period?: string; run?: string; page?: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/payroll/my-payslips");
+  await requirePage(["payroll.view"], "/payroll/my-payslips");
 
   const params = await props.searchParams;
   const periods = await db

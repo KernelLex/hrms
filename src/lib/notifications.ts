@@ -21,6 +21,10 @@ export const NOTIFICATION_KINDS = {
     label: "Leave requests from my team",
     description: "When someone who reports to you asks for leave.",
   },
+  "approval.waiting": {
+    label: "Approvals waiting for me",
+    description: "When a request reaches you at a later approval step, or is overdue and escalated to you.",
+  },
   "leave.decided": {
     label: "Decisions on my leave",
     description: "When your manager approves or rejects a request.",
@@ -160,26 +164,6 @@ export async function hrUserIds(): Promise<number[]> {
      WHERE ur.role_code = 'HR_ADMIN' AND u.is_active = 1`,
   );
   return r.rows.map((u) => Number(u.id));
-}
-
-/**
- * Whoever an employee reports to, through their position's reporting line —
- * the same person who sees their requests in Approvals. HR when nobody does.
- */
-export async function approverUserIds(employeeId: number): Promise<number[]> {
-  const d = today();
-  const r = await rawClient().execute({
-    sql: `SELECT DISTINCT u.id FROM pa_it0001_org_assignment mine
-          JOIN om_position pos ON pos.code = mine.position_code
-          JOIN pa_it0001_org_assignment theirs
-            ON theirs.position_code = pos.reports_to_code
-           AND theirs.valid_from <= ?2 AND theirs.valid_to >= ?2
-          JOIN sec_app_user u ON u.employee_id = theirs.employee_id AND u.is_active = 1
-          WHERE mine.employee_id = ?1 AND mine.valid_from <= ?2 AND mine.valid_to >= ?2`,
-    args: [employeeId, d],
-  });
-  const managers = r.rows.map((u) => Number(u.id));
-  return managers.length > 0 ? managers : hrUserIds();
 }
 
 /* ----------------------------------------------------------------- inbox */

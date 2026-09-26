@@ -7,7 +7,7 @@ import {
   formatTime,
 } from "@/lib/dates";
 
-/** §12: "Dates read 26 Sept 2026, and times 10:50 pm." */
+/** §8.12: "Dates read 26 Sept 2026, and times 10:50 pm." */
 describe("date formatting", () => {
   it("writes a date the way the design language does", () => {
     expect(formatDate("2026-09-26")).toBe("26 Sept 2026");

@@ -6,7 +6,7 @@ import { rawClient } from "@/lib/db";
  * Email: built here, queued in the outbox, delivered by a job.
  *
  * Delivery goes through a transport. Until a provider is chosen and its
- * sending domain verified (build_plan_extended_features.md, phase 25), the
+ * sending domain verified (HANDOVER.md §9.6, phase 25), the
  * only transport records each message as it would have been sent, so every
  * email in the product can be written, tested and read on the Outbox screen
  * without any account.

@@ -11,6 +11,7 @@
  */
 import type { Client } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
+import { ADOPT_PENDING_LEAVE } from "../../lib/workflow/adopt";
 import bcrypt from "bcryptjs";
 import * as s from "../schema";
 import { seedPersonnel } from "./personnel";
@@ -138,6 +139,22 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     ])
     .onConflictDoNothing();
 
+  // A role HR created, to show one: hiring, with no view of pay. The
+  // built-in roles and their permissions come from migration 0008.
+  await db
+    .insert(s.secRole)
+    .values({
+      code: "RECRUITER",
+      name: "Recruiter",
+      description: "Runs hiring: requisitions, candidates, the pipeline and interviews. Sees no pay.",
+      isBuiltIn: false,
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(s.secRolePermission)
+    .values({ roleCode: "RECRUITER", permissionCode: "recruitment.manage" })
+    .onConflictDoNothing();
+
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
   const createdAt = s.now();
 
@@ -145,6 +162,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     { username: "hr.admin", displayName: "Priya Sharma", roles: ["HR_ADMIN"] },
     { username: "ravi.kumar", displayName: "Ravi Kumar", roles: ["MANAGER", "EMPLOYEE"] },
     { username: "arjun.mehta", displayName: "Arjun Mehta", roles: ["EMPLOYEE"] },
+    { username: "neha.iyer", displayName: "Neha Iyer", roles: ["RECRUITER"] },
   ] as const;
 
   for (const u of users) {
@@ -178,10 +196,14 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   const recruitmentNotes = await seedRecruitment(db);
   const performanceNotes = await seedPerformance(db);
 
+  // Pending leave goes onto the approval engine, as migration 0008 does for
+  // requests that existed before it.
+  for (const sql of ADOPT_PENDING_LEAVE) await client.execute(sql);
+
   return [
     "  2 companies, 2 personnel areas, 2 sub-areas, 2 jobs",
     "  3 org units, 4 positions, 2 reporting lines",
-    `  3 users, all with password ${DEMO_PASSWORD}`,
+    `  4 users, all with password ${DEMO_PASSWORD}, one a recruiter who sees no pay`,
     ...personnelNotes,
     ...timeNotes,
     ...payrollNotes,

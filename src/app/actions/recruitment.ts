@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db, rawClient } from "@/lib/db";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/access";
 import {
   actorOf,
   audited,
@@ -64,7 +64,7 @@ export async function saveRequisition(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("recruitment.manage"));
   const original = opt(form.get("originalCode"));
   const positionCode = str(form.get("positionCode"));
   const openings = num(form.get("openings"));
@@ -124,7 +124,7 @@ export async function deleteRequisition(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("recruitment.manage"));
   const code = str(form.get("code"));
 
   const req = await db.query.rcRequisition.findFirst({
@@ -170,7 +170,7 @@ export async function saveCandidate(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("recruitment.manage");
   const actor = actorOf(session);
   const original = opt(form.get("originalCode"));
 
@@ -222,7 +222,7 @@ export async function deleteCandidate(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("recruitment.manage"));
   const code = str(form.get("code"));
   const candidate = await db.query.rcCandidate.findFirst({
     where: eq(rcCandidate.code, code),
@@ -261,7 +261,7 @@ export async function uploadResume(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("recruitment.manage");
   const actor = actorOf(session);
   const candidateId = num(form.get("candidateId"));
   const candidate = await db.query.rcCandidate.findFirst({
@@ -307,7 +307,7 @@ export async function removeResume(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("recruitment.manage"));
   const doc = await db.query.appDocument.findFirst({
     where: and(eq(appDocument.id, num(form.get("documentId"))), eq(appDocument.ownerType, "candidate")),
   });
@@ -358,7 +358,7 @@ export async function createApplication(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("recruitment.manage");
   const actor = actorOf(session);
   const candidateId = num(form.get("candidateId"));
   const requisitionId = num(form.get("requisitionId"));
@@ -387,7 +387,7 @@ export async function advanceApplication(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("recruitment.manage");
   const actor = actorOf(session);
   const id = num(form.get("id"));
 
@@ -441,7 +441,7 @@ export async function rejectApplication(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("recruitment.manage");
   const actor = actorOf(session);
   const id = num(form.get("id"));
 
@@ -486,7 +486,7 @@ export async function saveInterview(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("recruitment.manage"));
   const original = opt(form.get("originalCode"));
   const applicationId = num(form.get("applicationId"));
   const scheduledDate = str(form.get("scheduledDate"));
@@ -532,7 +532,7 @@ export async function deleteInterview(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("recruitment.manage"));
   await recordDeleted(
     actor,
     "rc_interview",
@@ -556,7 +556,7 @@ export async function convertToEmployee(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("recruitment.hire");
   const actor = actorOf(session);
 
   const applicationId = num(form.get("applicationId"));

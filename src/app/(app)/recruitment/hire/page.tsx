@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -11,7 +11,6 @@ import {
   omOrgUnit,
   omJob,
 } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { formatINR, toRupees } from "@/lib/money";
 import {
@@ -33,8 +32,7 @@ import { formatDate } from "@/lib/dates";
 
 /** RC-05 — hire conversion, the bridge into Core HR. */
 export default async function HireConversionPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["recruitment.hire"], "/recruitment");
 
   const [offered, conversions, positions, units, jobs, employees] = await Promise.all([
     db

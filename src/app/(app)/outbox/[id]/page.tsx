@@ -1,5 +1,5 @@
-import { notFound, redirect } from "next/navigation";
-import { getSession, hasRole } from "@/lib/auth";
+import { notFound } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { getOutboxMessage } from "@/lib/email";
 import { formatTimestamp } from "@/lib/dates";
 import { Card, CardHeader, KeyValue, KeyValueRow, PageHeader } from "@/components/ui";
@@ -18,8 +18,7 @@ const STATUS: Record<string, string> = {
  * browser; the plain-text version sits beside it.
  */
 export default async function OutboxMessagePage(props: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["audit.view"], "/");
 
   const id = Number((await props.params).id);
   if (!Number.isInteger(id)) notFound();

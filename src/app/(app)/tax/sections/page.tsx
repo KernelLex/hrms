@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tdsSectionMaster, tdsTaxSlab } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { formatINR, toRupees } from "@/lib/money";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveSection, deleteSection } from "@/app/actions/tax";
@@ -49,8 +48,7 @@ const FIELDS: FieldDef[] = [
 
 /** TDS-01 — sections and rates, plus the slab table the engine reads. */
 export default async function SectionsPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/tax/declarations");
+  await requirePage(["tax.manage"], "/tax/declarations");
 
   const [rows, slabs] = await Promise.all([
     db.select().from(tdsSectionMaster).orderBy(asc(tdsSectionMaster.code)),

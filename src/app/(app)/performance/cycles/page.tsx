@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pmAppraisalCycle, pmAppraisalTemplate, pmAppraisal } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveCycle, deleteCycle } from "@/app/actions/performance";
 import { Status } from "@/components/ui";
@@ -22,8 +21,7 @@ const COLUMNS: Column[] = [
 
 /** PM-01 — appraisal cycle setup. */
 export default async function CyclesPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/performance");
+  await requirePage(["performance.manage"], "/performance");
 
   const [rows, templates, appraisalCounts] = await Promise.all([
     db.select().from(pmAppraisalCycle).orderBy(desc(pmAppraisalCycle.startDate)),

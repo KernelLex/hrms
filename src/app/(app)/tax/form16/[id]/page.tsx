@@ -1,8 +1,8 @@
 import { notFound, redirect } from "next/navigation";
+import { can, requirePage } from "@/lib/access";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tdsForm16, tdsDeductionRegister } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { logAccess } from "@/lib/access-log";
 import { getEmployee, fullName } from "@/lib/repositories/employees";
 import { Card, PageHeader } from "@/components/ui";
@@ -13,8 +13,7 @@ import { PrintButton } from "@/components/print-button";
 export default async function Form16CertificatePage(props: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
+  const session = await requirePage(["self.tax", "tax.manage"]);
 
   const { id } = await props.params;
   const certificateId = Number(id);
@@ -25,8 +24,8 @@ export default async function Form16CertificatePage(props: {
   });
   if (!certificate) notFound();
 
-  // An employee may only open their own certificate.
-  if (!hasRole(session, "HR_ADMIN") && session.employeeId !== certificate.employeeId) {
+  // Without the right to keep everyone's tax, only your own certificate.
+  if (!can(session, "tax.manage") && session.employeeId !== certificate.employeeId) {
     redirect("/tax/form16");
   }
 

@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { Eye } from "lucide-react";
-import { getSession } from "@/lib/auth";
 import { getProfile } from "@/lib/repositories/profile";
 import { fullName } from "@/lib/repositories/employees";
 import { documentsFor } from "@/lib/storage";
 import { formatINR } from "@/lib/money";
-import { formatDate, formatTimestamp, todayInIndia } from "@/lib/dates";
+import { formatDate, formatDateRange, formatTimestamp, todayInIndia } from "@/lib/dates";
 import {
   Card,
   CardHeader,
@@ -18,6 +18,9 @@ import {
   RowLink,
 } from "@/components/ui";
 import { DocumentList } from "@/components/documents";
+import { delegationsOf } from "@/lib/workflow/engine";
+import { listUsers } from "@/lib/repositories/access";
+import { AwayCard } from "./away";
 
 /**
  * Employee self-service: what the company holds about you, as it stands
@@ -37,9 +40,27 @@ function yearsOfService(hireDate: string, today: string): string {
   return years === 1 ? "1 year" : `${years} years`;
 }
 
+/** "While I am away": this person's hand-overs, both ways, and who they could hand to. */
+async function awayCard(userId: number, today: string) {
+  const [delegations, people] = await Promise.all([delegationsOf(userId), listUsers()]);
+  return (
+    <AwayCard
+      today={today}
+      people={people.filter((p) => p.id !== userId)}
+      delegations={delegations.map((d) => ({
+        id: d.id,
+        mine: d.fromUserId === userId,
+        other: d.fromUserId === userId ? d.toName : d.fromName,
+        range: formatDateRange(d.fromDate, d.toDate),
+      }))}
+    />
+  );
+}
+
 export default async function MyProfilePage() {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
+  const session = await requirePage(["self.profile"]);
+  const today = todayInIndia();
+  const away = await awayCard(session.userId, today);
 
   if (!session.employeeId) {
     return (
@@ -48,11 +69,11 @@ export default async function MyProfilePage() {
         <Notice>
           This sign-in is not linked to an employee record, so there is no profile to show.
         </Notice>
+        <div className="mt-6 max-w-[640px]">{away}</div>
       </>
     );
   }
 
-  const today = todayInIndia();
   const [profile, documents] = await Promise.all([
     getProfile(session.employeeId, today),
     documentsFor("employee", [session.employeeId]),
@@ -148,6 +169,8 @@ export default async function MyProfilePage() {
               </KeyValue>
             </div>
           </Card>
+
+          {away}
 
           <Card>
             <CardHeader title="Notifications" />

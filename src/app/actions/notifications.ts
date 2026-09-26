@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { rawClient } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAccess } from "@/lib/access";
 import { NOTIFICATION_KINDS, type NotificationKind } from "@/lib/notifications";
 
 /**
@@ -26,7 +26,7 @@ function safeLink(link: unknown): string {
 
 /** Marks one notification read and follows its link. */
 export async function openNotification(form: FormData): Promise<void> {
-  const session = await requireSession();
+  const session = await requireAccess();
   const id = Number(form.get("id"));
   const r = await rawClient().execute({
     sql: `UPDATE app_notification SET read_at = COALESCE(read_at, ?)
@@ -38,7 +38,7 @@ export async function openNotification(form: FormData): Promise<void> {
 }
 
 export async function markAllRead(): Promise<void> {
-  const session = await requireSession();
+  const session = await requireAccess();
   await rawClient().execute({
     sql: "UPDATE app_notification SET read_at = ? WHERE user_id = ? AND read_at IS NULL",
     args: [new Date().toISOString(), session.userId],
@@ -54,7 +54,7 @@ export async function saveNotificationPrefs(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireSession();
+  const session = await requireAccess();
   const kinds = Object.keys(NOTIFICATION_KINDS) as NotificationKind[];
   await rawClient().batch(
     kinds.map((kind) => ({

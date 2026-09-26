@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { and, asc, count, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -10,7 +10,6 @@ import {
   pyGlPostingLine,
   pyStatutoryRemittance,
 } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { formatINR } from "@/lib/money";
 import { formatDate, formatMonth, todayInIndia } from "@/lib/dates";
 import { Pagination, pageFrom } from "@/components/pagination";
@@ -36,8 +35,7 @@ import { PostingForms, RemitButton } from "./forms";
 export default async function PostingPage(props: {
   searchParams: Promise<{ run?: string; page?: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/payroll/my-payslips");
+  await requirePage(["payroll.view"], "/payroll/my-payslips");
 
   const params = await props.searchParams;
 

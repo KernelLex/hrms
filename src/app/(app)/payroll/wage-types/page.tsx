@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pyWageType } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveWageType, deleteWageType } from "@/app/actions/payroll";
 import { Status } from "@/components/ui";
@@ -56,8 +55,7 @@ const FIELDS: FieldDef[] = [
 
 /** PY-02 — the wage type master. */
 export default async function WageTypesPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/payroll/my-payslips");
+  await requirePage(["payroll.setup"], "/payroll/my-payslips");
 
   const rows = await db.select().from(pyWageType).orderBy(asc(pyWageType.sortOrder));
 

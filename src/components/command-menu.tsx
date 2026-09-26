@@ -35,14 +35,14 @@ import { matches, type Command } from "@/lib/commands";
 import { searchPeople, type PersonHit } from "@/app/actions/search";
 
 /**
- * Command menu — DESIGN_LANGUAGE.md §9.
+ * Command menu — HANDOVER.md §8.9.
  *
  * Ctrl K (⌘K on a Mac) from anywhere, or the sidebar's search button. Centred,
  * 512px, 14% down the screen. Actions first, then pages, then people once two
  * characters are typed. Arrow keys move, Enter opens, Esc closes.
  *
  * Built on the platform <dialog> so focus stays inside, and on the ARIA
- * combobox pattern so a screen reader follows the highlighted row (§13).
+ * combobox pattern so a screen reader follows the highlighted row (§8.13).
  */
 
 const ICONS: Record<string, LucideIcon> = {

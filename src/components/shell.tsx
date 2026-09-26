@@ -26,6 +26,8 @@ import {
   Bell,
   History,
   Mail,
+  ShieldCheck,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -51,6 +53,8 @@ const ICONS: Record<string, LucideIcon> = {
   FileBadge,
   History,
   Mail,
+  ShieldCheck,
+  Workflow,
 };
 
 /* -------------------------------------------------------------- brand mark */
@@ -70,7 +74,7 @@ function Brand() {
 
 /* ----------------------------------------------------------- search button */
 
-/** §9 Sidebar: a 36px soft search button reading "Search", with the shortcut. */
+/** §8.9 Sidebar: a 36px soft search button reading "Search", with the shortcut. */
 function SearchButton() {
   const open = useCommandMenu();
   return (
@@ -104,7 +108,7 @@ function SearchIconButton() {
 /* -------------------------------------------------------------------- bell */
 
 /**
- * Notifications, with the unread count as a §9 count pill: ink, at least
+ * Notifications, with the unread count as a §8.9 count pill: ink, at least
  * 20px wide, white 11px tabular figures.
  */
 function BellLink({ unread, onNavigate }: { unread: number; onNavigate?: () => void }) {
@@ -246,7 +250,7 @@ export function Shell({
 
   return (
     <div className="min-h-screen">
-      {/* §13 — keyboard users skip the navigation on every page */}
+      {/* §8.13 — keyboard users skip the navigation on every page */}
       <a
         href="#main"
         className="sr-only z-50 rounded-full bg-ink px-4 py-2 text-sm font-medium text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3"

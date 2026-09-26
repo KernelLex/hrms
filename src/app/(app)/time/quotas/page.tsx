@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptAbsenceQuota, ptQuotaType } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { formatDays } from "@/lib/engines/quota";
 import {
@@ -25,8 +24,7 @@ import { GenerateQuotaForm } from "./form";
 export default async function QuotasPage(props: {
   searchParams: Promise<{ year?: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/time/my-leave");
+  await requirePage(["time.manage"], "/time/my-leave");
 
   const params = await props.searchParams;
   const year = Number(params.year) || new Date().getUTCFullYear();
@@ -127,7 +125,7 @@ export default async function QuotasPage(props: {
                         <span className="font-medium text-ink">{formatDays(balance)}</span>
                       </Td>
                       <Td>
-                        {/* §10 Meters: an 8px pill, soft track, ink fill. */}
+                        {/* §8.10 Meters: an 8px pill, soft track, ink fill. */}
                         <div className="flex items-center gap-2">
                           <div className="h-2 w-24 overflow-hidden rounded-full bg-soft">
                             <div

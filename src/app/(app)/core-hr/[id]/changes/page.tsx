@@ -1,4 +1,5 @@
 import { History } from "lucide-react";
+import { requirePage } from "@/lib/access";
 import { listChanges } from "@/lib/repositories/change-log";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
 import { ChangeLogTable } from "@/components/change-log";
@@ -15,6 +16,7 @@ export default async function EmployeeChangeLogPage(props: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ page?: string }>;
 }) {
+  await requirePage(["audit.view"]);
   const [{ id }, params] = await Promise.all([props.params, props.searchParams]);
   const employeeId = Number(id);
   const { page, limit, offset } = pageFrom(params.page);

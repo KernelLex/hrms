@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { can, requirePage } from "@/lib/access";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
-import { getSession, hasRole } from "@/lib/auth";
 import { listDirectReports } from "@/lib/repositories/employees";
 import { teamCalendar, type DayState } from "@/lib/repositories/calendar";
 import { formatMonth, todayInIndia } from "@/lib/dates";
@@ -11,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { TimeTabs } from "../tabs";
 
 /**
- * Who is away, day by day — DESIGN_LANGUAGE.md §10's availability grid.
+ * Who is away, day by day — HANDOVER.md §8.10's availability grid.
  *
  * Day cells are 14 by 28 pixels, 2 apart, with a 3px radius. Every cell has a
  * plain-text tooltip, every state is distinct in greyscale, and each person's
@@ -48,10 +47,9 @@ function summary(days: { state: DayState; note: string }[]): string {
 export default async function TeamCalendarPage(props: {
   searchParams: Promise<{ month?: string; page?: string }>;
 }) {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
-  const isHr = hasRole(session, "HR_ADMIN");
-  if (!isHr && !hasRole(session, "MANAGER")) redirect("/time/my-leave");
+  const session = await requirePage(["time.team_calendar"], "/time/my-leave");
+  // Whoever may see every employee sees everyone; a manager, their team.
+  const isHr = can(session, "employee.view_all");
 
   const params = await props.searchParams;
   const m = /^(\d{4})-(\d{2})$/.exec(params.month ?? "") ?? /^(\d{4})-(\d{2})/.exec(todayInIndia())!;
@@ -69,7 +67,7 @@ export default async function TeamCalendarPage(props: {
 
   return (
     <>
-      {isHr ? <TimeTabs /> : null}
+      {can(session, "time.manage") ? <TimeTabs /> : null}
       <PageHeader
         title="Team calendar"
         subtitle={

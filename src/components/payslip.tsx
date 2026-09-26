@@ -2,7 +2,7 @@ import { formatINRExact } from "@/lib/money";
 import { formatDate } from "@/lib/dates";
 
 /**
- * A payslip, built to DESIGN_LANGUAGE.md §11 "Printed documents".
+ * A payslip, built to HANDOVER.md §8.11 "Printed documents".
  *
  * Ink only, hairline tables, sized for A4, amounts right-aligned in tabular
  * figures with totals at weight 600. The letterhead is the one place a middle

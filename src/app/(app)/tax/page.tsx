@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { getSession, hasRole } from "@/lib/auth";
+import { can, getAccess } from "@/lib/access";
 
 export default async function TaxIndex() {
-  const session = await getSession();
-  redirect(hasRole(session, "HR_ADMIN") ? "/tax/sections" : "/tax/declarations");
+  const session = await getAccess();
+  redirect(can(session, "tax.manage") ? "/tax/sections" : "/tax/declarations");
 }

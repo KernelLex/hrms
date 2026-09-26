@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 
-// DESIGN_LANGUAGE.md §3 — Geist, weights 400/500/600. Nothing heavier.
+// HANDOVER.md §8.3 — Geist, weights 400/500/600. Nothing heavier.
 const geist = Geist({
   subsets: ["latin"],
   weight: ["400", "500", "600"],

@@ -1,4 +1,5 @@
 import { inArray } from "drizzle-orm";
+import { requirePage } from "@/lib/access";
 import { Eye } from "lucide-react";
 import { db } from "@/lib/db";
 import { secAppUser } from "@/db/schema";
@@ -14,6 +15,7 @@ import { Card, CardHeader, EmptyState, Table, Th, Tr, Td, TwoLine } from "@/comp
  * HR-only, like the rest of the employee record (the layout checks).
  */
 export default async function AccessLogPage(props: { params: Promise<{ id: string }> }) {
+  await requirePage(["audit.view"]);
   const { id } = await props.params;
   const entries = await accessLogFor(Number(id), 100);
 

@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tdsDeductionRegister, tdsTaxSlab } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { formatINR } from "@/lib/money";
 import {
@@ -31,8 +30,7 @@ const QUARTERS = ["Q1 (Apr-Jun)", "Q2 (Jul-Sep)", "Q3 (Oct-Dec)", "Q4 (Jan-Mar)"
 export default async function RegisterPage(props: {
   searchParams: Promise<{ fy?: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/tax/declarations");
+  await requirePage(["tax.manage"], "/tax/declarations");
 
   const params = await props.searchParams;
   const slabYears = await db.select({ fy: tdsTaxSlab.financialYear }).from(tdsTaxSlab);

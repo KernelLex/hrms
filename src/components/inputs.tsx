@@ -1,7 +1,7 @@
 /**
- * Form controls built to DESIGN_LANGUAGE.md §9.
+ * Form controls built to HANDOVER.md §8.9.
  *
- * Every input has a visible label (§13). Placeholders are examples, not labels.
+ * Every input has a visible label (§8.13). Placeholders are examples, not labels.
  * Errors appear in one block under the fields and say what to change.
  */
 import * as React from "react";
@@ -51,7 +51,7 @@ export function Input({
   return <input className={cn(CONTROL_BASE, className)} {...props} />;
 }
 
-/** Amounts and counts line up in columns, so they use tabular figures (§3). */
+/** Amounts and counts line up in columns, so they use tabular figures (§8.3). */
 export function NumberInput({
   className,
   ...props
@@ -129,7 +129,7 @@ export function Checkbox({
 
 /* ------------------------------------------------------------- form layout */
 
-/** One column, 16px between fields (§11 Forms). */
+/** One column, 16px between fields (§8.11 Forms). */
 export function FormGrid({
   columns = 2,
   className,
@@ -159,7 +159,7 @@ export function FormFull({ children }: { children: React.ReactNode }) {
   return <div className="sm:col-span-2 lg:col-span-3">{children}</div>;
 }
 
-/** Optional fields stay folded away until asked for (§9). */
+/** Optional fields stay folded away until asked for (§8.9). */
 export function MoreDetails({
   children,
   label = "More details",

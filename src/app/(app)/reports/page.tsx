@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { getSession, hasRole } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { reports } from "@/lib/repositories/reports";
 import { formatLakh } from "@/lib/money";
 import { todayInIndia } from "@/lib/dates";
@@ -8,12 +7,11 @@ import { BarList } from "@/components/charts";
 
 /**
  * HR reports: the numbers someone asks for in a meeting — how many people,
- * where, what they cost, how much leave, how many left. One hue per §10:
+ * where, what they cost, how much leave, how many left. One hue per §8.10:
  * ink bars on soft tracks, values at the tips.
  */
 export default async function ReportsPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["reports.view"], "/");
 
   const r = await reports(todayInIndia());
 

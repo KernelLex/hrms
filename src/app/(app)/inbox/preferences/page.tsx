@@ -1,13 +1,11 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { emailsFor, preferencesOf } from "@/lib/notifications";
 import { Card, CardHeader, Notice, PageHeader, Tab, Tabs } from "@/components/ui";
 import { PreferencesForm } from "./form";
 
 /** Per kind of notification: in the inbox, by email, both or neither. */
 export default async function NotificationPreferencesPage() {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
+  const session = await requirePage();
 
   const [prefs, emails] = await Promise.all([
     preferencesOf(session.userId),

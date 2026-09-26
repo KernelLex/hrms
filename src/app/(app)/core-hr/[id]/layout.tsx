@@ -1,5 +1,5 @@
-import { notFound, redirect } from "next/navigation";
-import { getSession, hasRole } from "@/lib/auth";
+import { notFound } from "next/navigation";
+import { can, inScope, requirePage } from "@/lib/access";
 import { getEmployee, fullName } from "@/lib/repositories/employees";
 import { PageHeader, Badge } from "@/components/ui";
 import { InfotypeTabs } from "./tabs";
@@ -8,8 +8,7 @@ export default async function EmployeeLayout(props: {
   children: React.ReactNode;
   params: Promise<{ id: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  const session = await requirePage(["employee.view_all"]);
 
   const { id } = await props.params;
   const employeeId = Number(id);
@@ -17,6 +16,8 @@ export default async function EmployeeLayout(props: {
 
   const employee = await getEmployee(employeeId);
   if (!employee) notFound();
+  // A role limited to some companies or areas cannot open anyone else.
+  if (!(await inScope(session, employeeId))) notFound();
 
   const status = employee.employment_status;
 
@@ -41,7 +42,12 @@ export default async function EmployeeLayout(props: {
           </Badge>
         }
       />
-      <InfotypeTabs employeeId={employeeId} />
+      <InfotypeTabs
+        employeeId={employeeId}
+        seesPay={can(session, "pay.view")}
+        seesBank={can(session, "bank.view")}
+        seesChanges={can(session, "audit.view")}
+      />
       {props.children}
     </>
   );

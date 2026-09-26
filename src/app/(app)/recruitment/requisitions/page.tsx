@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { rcRequisition, rcApplication, omPosition, omOrgUnit } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveRequisition, deleteRequisition } from "@/app/actions/recruitment";
 import { Status, TwoLine } from "@/components/ui";
@@ -20,8 +19,7 @@ const COLUMNS: Column[] = [
 
 /** RC-01 — job requisitions, opened against a vacant position. */
 export default async function RequisitionsPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["recruitment.manage"], "/");
 
   const [rows, positions, units, applicationCounts] = await Promise.all([
     db.select().from(rcRequisition).orderBy(desc(rcRequisition.postedDate)),

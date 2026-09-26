@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { Users, UserPlus, Layers, Download } from "lucide-react";
-import { getSession, hasRole } from "@/lib/auth";
+import { can, requirePage } from "@/lib/access";
 import {
   searchEmployees,
   listDepartmentNames,
@@ -39,10 +38,9 @@ import { Pagination, pageFrom } from "@/components/pagination";
 export default async function EmployeesPage(props: {
   searchParams: Promise<{ q?: string; status?: string; unit?: string; page?: string }>;
 }) {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
-  const isHr = hasRole(session, "HR_ADMIN");
-  if (!isHr && !hasRole(session, "MANAGER")) redirect("/");
+  const session = await requirePage(["employee.view_all", "employee.view_team"]);
+  const isHr = can(session, "employee.view_all");
+  const seesPay = isHr && can(session, "pay.view");
 
   const params = await props.searchParams;
   const q = (params.q ?? "").trim();
@@ -50,6 +48,8 @@ export default async function EmployeesPage(props: {
   const unit = params.unit ?? "";
   const { page, limit, offset } = pageFrom(params.page);
 
+  // A role limited to some companies or areas sees only the people there.
+  const scope = isHr ? session.scope : null;
   const onlyIds = isHr
     ? undefined
     : session.employeeId
@@ -57,8 +57,8 @@ export default async function EmployeesPage(props: {
       : [];
 
   const [{ rows, total }, everyone, units] = await Promise.all([
-    searchEmployees({ q, status, unit, onlyIds }, { limit, offset }),
-    q || status || unit ? searchEmployees({ onlyIds }, { limit: 1, offset: 0 }) : null,
+    searchEmployees({ q, status, unit, onlyIds, scope }, { limit, offset }),
+    q || status || unit ? searchEmployees({ onlyIds, scope }, { limit: 1, offset: 0 }) : null,
     listDepartmentNames(),
   ]);
   const overall = everyone?.total ?? total;
@@ -76,22 +76,30 @@ export default async function EmployeesPage(props: {
         actions={
           isHr ? (
             <>
-              <ButtonAnchor
-                href={`/api/export/employees?${new URLSearchParams({ q, status, unit }).toString()}`}
-                download
-                variant="ghost"
-              >
-                <Download />
-                Export CSV
-              </ButtonAnchor>
-              <ButtonLink href="/core-hr/mass-update">
-                <Layers />
-                Mass update
-              </ButtonLink>
-              <ButtonLink href="/core-hr/hire" variant="primary">
-                <UserPlus />
-                Hire employee
-              </ButtonLink>
+              {can(session, "reports.view") ? (
+                <ButtonAnchor
+                  href={`/api/export/employees?${new URLSearchParams({ q, status, unit }).toString()}`}
+                  download
+                  variant="ghost"
+                >
+                  <Download />
+                  Export CSV
+                </ButtonAnchor>
+              ) : null}
+              {can(session, "employee.edit") ? (
+                <>
+                  <ButtonLink href="/core-hr/mass-update">
+                    <Layers />
+                    Mass update
+                  </ButtonLink>
+                  {can(session, "pay.view") ? (
+                    <ButtonLink href="/core-hr/hire" variant="primary">
+                      <UserPlus />
+                      Hire employee
+                    </ButtonLink>
+                  ) : null}
+                </>
+              ) : null}
             </>
           ) : undefined
         }
@@ -184,7 +192,7 @@ export default async function EmployeesPage(props: {
                   <Th>Position</Th>
                   <Th>Department</Th>
                   <Th>Joined</Th>
-                  {isHr ? <Th numeric>Basic pay</Th> : null}
+                  {seesPay ? <Th numeric>Basic pay</Th> : null}
                   <Th>Status</Th>
                   {isHr ? (
                     <Th>
@@ -218,7 +226,7 @@ export default async function EmployeesPage(props: {
                     <Td>
                       <span className="tabular text-secondary">{formatDate(e.hire_date)}</span>
                     </Td>
-                    {isHr ? (
+                    {seesPay ? (
                       <Td numeric>
                         {e.amount_paise !== null ? (
                           formatINR(e.amount_paise)

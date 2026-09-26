@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { History } from "lucide-react";
-import { getSession, hasRole } from "@/lib/auth";
 import { changeFacets, listChanges } from "@/lib/repositories/change-log";
 import { entityLabel } from "@/lib/change-format";
 import { Button, Card, EmptyState, PageHeader } from "@/components/ui";
@@ -16,8 +15,7 @@ import { Pagination, pageFrom } from "@/components/pagination";
 export default async function ChangeLogPage(props: {
   searchParams: Promise<{ entity?: string; actor?: string; from?: string; to?: string; page?: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["audit.view"], "/");
 
   const params = await props.searchParams;
   const filter = {

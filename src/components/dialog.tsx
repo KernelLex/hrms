@@ -5,10 +5,10 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Dialog — DESIGN_LANGUAGE.md §9.
+ * Dialog — HANDOVER.md §8.9.
  *
  * Uses the platform `<dialog>` element so focus stays inside and Esc closes it
- * (§13). 448px, or 672px for complex forms; on phones the screen width minus
+ * (§8.13). 448px, or 672px for complex forms; on phones the screen width minus
  * 32px. 24px radius, floating shadow, scrim and entrance motion come from
  * globals.css.
  */

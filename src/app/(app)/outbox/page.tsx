@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { Mail } from "lucide-react";
-import { getSession, hasRole } from "@/lib/auth";
 import { listOutbox } from "@/lib/email";
 import { formatTimestamp } from "@/lib/dates";
 import {
@@ -46,8 +45,7 @@ const FILTERS = [
 export default async function OutboxPage(props: {
   searchParams: Promise<{ status?: string; page?: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["audit.view"], "/");
 
   const params = await props.searchParams;
   const status = FILTERS.some((f) => f.value === params.status) ? params.status : "";

@@ -111,6 +111,8 @@ export type EmployeeFilter = {
   unit?: string;
   /** Restrict to these employees — a manager's direct reports. */
   onlyIds?: number[];
+  /** Restrict to these companies or personnel areas — a scoped role. Null for everyone. */
+  scope?: { companies: string[]; areas: string[] } | null;
 };
 
 /**
@@ -143,6 +145,14 @@ function filterSql(filter: EmployeeFilter): { where: string; args: (string | num
         ? "0"
         : `e.id IN (${filter.onlyIds.map((id) => bind(id)).join(", ")})`,
     );
+  }
+  if (filter.scope) {
+    const { companies, areas } = filter.scope;
+    const parts = [
+      ...(companies.length ? [`o.company_code IN (${companies.map((c) => bind(c)).join(", ")})`] : []),
+      ...(areas.length ? [`o.area_code IN (${areas.map((a) => bind(a)).join(", ")})`] : []),
+    ];
+    clauses.push(parts.length ? `(${parts.join(" OR ")})` : "0");
   }
   return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", args };
 }

@@ -1,12 +1,12 @@
-import type { RoleCode } from "@/db/schema";
+import type { Permission } from "@/lib/permissions";
 import { NAV } from "@/lib/nav";
 
 /**
- * What the command menu offers (DESIGN_LANGUAGE.md §9 Command menu): actions
+ * What the command menu offers (HANDOVER.md §8.9 Command menu): actions
  * first, then pages, then people once two characters are typed.
  *
- * Every entry names the roles that may see it, the same way the sidebar does,
- * so the menu never offers a page that would only redirect.
+ * Every entry names the permissions that show it, the same way the sidebar
+ * does, so the menu never offers a page that would only redirect.
  */
 
 export type Command = {
@@ -14,78 +14,80 @@ export type Command = {
   href: string;
   /** lucide-react icon name, resolved in the menu. */
   icon: string;
-  roles: RoleCode[];
+  /** Shown to anyone holding at least one of these. */
+  anyOf: Permission[];
   /** Other words someone might type for this. */
   keywords?: string;
 };
 
-const ALL: RoleCode[] = ["HR_ADMIN", "MANAGER", "EMPLOYEE"];
-const HR: RoleCode[] = ["HR_ADMIN"];
-const HR_MGR: RoleCode[] = ["HR_ADMIN", "MANAGER"];
+
+/** Pages everyone signed in has: an empty list means no permission is needed. */
+const ALL_SIGNED_IN: Permission[] = [];
 
 export const ACTIONS: Command[] = [
-  { label: "See who changed what", href: "/change-log", icon: "History", roles: HR, keywords: "audit history trail" },
-  { label: "Hire an employee", href: "/core-hr/hire", icon: "UserPlus", roles: HR, keywords: "new joiner onboard" },
-  { label: "Run payroll", href: "/payroll/run", icon: "Banknote", roles: HR, keywords: "salary pay" },
-  { label: "Record an absence", href: "/time/absences", icon: "CalendarDays", roles: HR, keywords: "leave sick" },
-  { label: "Open a requisition", href: "/recruitment/requisitions", icon: "Briefcase", roles: HR, keywords: "vacancy job opening" },
-  { label: "Convert an offered candidate", href: "/recruitment/hire", icon: "UserCheck", roles: HR, keywords: "hire offer" },
-  { label: "Build the tax register", href: "/tax/register", icon: "ReceiptText", roles: HR, keywords: "tds challan quarter" },
-  { label: "Generate Form 16", href: "/tax/form16", icon: "FileBadge", roles: HR, keywords: "certificate tax" },
-  { label: "Review leave requests", href: "/time/approvals", icon: "Inbox", roles: HR_MGR, keywords: "approve reject" },
-  { label: "Rate my team", href: "/performance/ratings", icon: "Target", roles: ["MANAGER"], keywords: "appraisal review" },
-  { label: "Apply for leave", href: "/time/my-leave", icon: "CalendarCheck", roles: ["MANAGER", "EMPLOYEE"], keywords: "holiday time off" },
-  { label: "Declare tax investments", href: "/tax/declarations", icon: "ReceiptText", roles: ["MANAGER", "EMPLOYEE"], keywords: "80c 80d regime" },
-  { label: "Write my self review", href: "/performance/mine", icon: "ClipboardCheck", roles: ["MANAGER", "EMPLOYEE"], keywords: "appraisal" },
+  { label: "See who changed what", href: "/change-log", icon: "History", anyOf: ["audit.view"], keywords: "audit history trail" },
+  { label: "Hire an employee", href: "/core-hr/hire", icon: "UserPlus", anyOf: ["employee.edit"], keywords: "new joiner onboard" },
+  { label: "Run payroll", href: "/payroll/run", icon: "Banknote", anyOf: ["payroll.run"], keywords: "salary pay" },
+  { label: "Record an absence", href: "/time/absences", icon: "CalendarDays", anyOf: ["time.manage"], keywords: "leave sick" },
+  { label: "Open a requisition", href: "/recruitment/requisitions", icon: "Briefcase", anyOf: ["recruitment.manage"], keywords: "vacancy job opening" },
+  { label: "Convert an offered candidate", href: "/recruitment/hire", icon: "UserCheck", anyOf: ["recruitment.hire"], keywords: "hire offer" },
+  { label: "Build the tax register", href: "/tax/register", icon: "ReceiptText", anyOf: ["tax.manage"], keywords: "tds challan quarter" },
+  { label: "Generate Form 16", href: "/tax/form16", icon: "FileBadge", anyOf: ["tax.manage"], keywords: "certificate tax" },
+  { label: "Review requests waiting for me", href: "/approvals", icon: "Inbox", anyOf: ["employee.view_team", "leave.decide_any"], keywords: "approve reject" },
+  { label: "Rate my team", href: "/performance/ratings", icon: "Target", anyOf: ["performance.rate_team"], keywords: "appraisal review" },
+  { label: "Apply for leave", href: "/time/my-leave", icon: "CalendarCheck", anyOf: ["self.leave"], keywords: "holiday time off" },
+  { label: "Declare tax investments", href: "/tax/declarations", icon: "ReceiptText", anyOf: ["self.tax"], keywords: "80c 80d regime" },
+  { label: "Write my self review", href: "/performance/mine", icon: "ClipboardCheck", anyOf: ["self.appraisal"], keywords: "appraisal" },
 ];
 
 /** Pages below the sidebar's top level, so the menu reaches every screen. */
 const SUBPAGES: Command[] = [
-  { label: "Companies", href: "/org/companies", icon: "Network", roles: HR },
-  { label: "Personnel areas", href: "/org/personnel-areas", icon: "Network", roles: HR, keywords: "location" },
-  { label: "Sub-areas", href: "/org/sub-areas", icon: "Network", roles: HR },
-  { label: "Jobs", href: "/org/jobs", icon: "Network", roles: HR },
-  { label: "Departments", href: "/org/departments", icon: "Network", roles: HR, keywords: "org unit" },
-  { label: "Positions", href: "/org/positions", icon: "Network", roles: HR, keywords: "vacancy" },
-  { label: "Reporting lines", href: "/org/reporting-lines", icon: "Network", roles: HR, keywords: "manager" },
-  { label: "Org chart", href: "/org/chart", icon: "Network", roles: HR, keywords: "tree hierarchy" },
-  { label: "Mass update", href: "/core-hr/mass-update", icon: "Users", roles: HR, keywords: "bulk" },
-  { label: "Absences", href: "/time/absences", icon: "CalendarDays", roles: HR },
-  { label: "Team calendar", href: "/time/calendar", icon: "CalendarRange", roles: HR_MGR, keywords: "away leave who" },
-  { label: "Attendance", href: "/time/attendances", icon: "CalendarDays", roles: HR, keywords: "overtime" },
-  { label: "Leave quotas", href: "/time/quotas", icon: "CalendarDays", roles: HR, keywords: "entitlement balance" },
-  { label: "Time evaluation", href: "/time/evaluation", icon: "CalendarDays", roles: HR },
-  { label: "Work schedules", href: "/time/schedules", icon: "CalendarDays", roles: HR, keywords: "shift" },
-  { label: "Public holidays", href: "/time/holidays", icon: "CalendarDays", roles: HR },
-  { label: "Payroll periods", href: "/payroll/periods", icon: "Banknote", roles: HR, keywords: "lock post" },
-  { label: "Wage types", href: "/payroll/wage-types", icon: "Banknote", roles: HR, keywords: "allowance deduction" },
-  { label: "Recurring payments", href: "/payroll/recurring", icon: "Banknote", roles: HR },
-  { label: "One-off payments", href: "/payroll/additional", icon: "Banknote", roles: HR, keywords: "bonus additional" },
-  { label: "Bank file, ledger and remittances", href: "/payroll/posting", icon: "Banknote", roles: HR, keywords: "neft gl posting epfo" },
-  { label: "Requisitions", href: "/recruitment/requisitions", icon: "UserPlus", roles: HR },
-  { label: "Candidates", href: "/recruitment/candidates", icon: "UserPlus", roles: HR, keywords: "resume" },
-  { label: "Pipeline", href: "/recruitment/pipeline", icon: "UserPlus", roles: HR, keywords: "stage" },
-  { label: "Interviews", href: "/recruitment/interviews", icon: "UserPlus", roles: HR },
-  { label: "Appraisal cycles", href: "/performance/cycles", icon: "Target", roles: HR },
-  { label: "Goals", href: "/performance/goals", icon: "Target", roles: HR_MGR, keywords: "kra objective" },
-  { label: "Ratings", href: "/performance/ratings", icon: "Target", roles: HR_MGR },
-  { label: "Calibration", href: "/performance/calibration", icon: "Target", roles: HR },
-  { label: "Increments", href: "/performance/increments", icon: "Target", roles: HR, keywords: "raise salary" },
-  { label: "Tax sections and slabs", href: "/tax/sections", icon: "ReceiptText", roles: HR },
-  { label: "Tax declarations", href: "/tax/declarations", icon: "ReceiptText", roles: HR },
-  { label: "Deduction register", href: "/tax/register", icon: "ReceiptText", roles: HR, keywords: "tds 24q" },
-  { label: "Notifications", href: "/inbox", icon: "Bell", roles: ALL, keywords: "inbox alerts unread" },
-  { label: "Notification preferences", href: "/inbox/preferences", icon: "Bell", roles: ALL, keywords: "email settings" },
+  { label: "Companies", href: "/org/companies", icon: "Network", anyOf: ["org.view"] },
+  { label: "Personnel areas", href: "/org/personnel-areas", icon: "Network", anyOf: ["org.view"], keywords: "location" },
+  { label: "Sub-areas", href: "/org/sub-areas", icon: "Network", anyOf: ["org.view"] },
+  { label: "Jobs", href: "/org/jobs", icon: "Network", anyOf: ["org.view"] },
+  { label: "Departments", href: "/org/departments", icon: "Network", anyOf: ["org.view"], keywords: "org unit" },
+  { label: "Positions", href: "/org/positions", icon: "Network", anyOf: ["org.view"], keywords: "vacancy" },
+  { label: "Reporting lines", href: "/org/reporting-lines", icon: "Network", anyOf: ["org.view"], keywords: "manager" },
+  { label: "Org chart", href: "/org/chart", icon: "Network", anyOf: ["org.view"], keywords: "tree hierarchy" },
+  { label: "Mass update", href: "/core-hr/mass-update", icon: "Users", anyOf: ["employee.edit"], keywords: "bulk" },
+  { label: "Absences", href: "/time/absences", icon: "CalendarDays", anyOf: ["time.manage"] },
+  { label: "Team calendar", href: "/time/calendar", icon: "CalendarRange", anyOf: ["time.team_calendar"], keywords: "away leave who" },
+  { label: "Attendance", href: "/time/attendances", icon: "CalendarDays", anyOf: ["time.manage"], keywords: "overtime" },
+  { label: "Leave quotas", href: "/time/quotas", icon: "CalendarDays", anyOf: ["time.manage"], keywords: "entitlement balance" },
+  { label: "Time evaluation", href: "/time/evaluation", icon: "CalendarDays", anyOf: ["time.manage"] },
+  { label: "Work schedules", href: "/time/schedules", icon: "CalendarDays", anyOf: ["time.manage"], keywords: "shift" },
+  { label: "Public holidays", href: "/time/holidays", icon: "CalendarDays", anyOf: ["time.manage"] },
+  { label: "Payroll periods", href: "/payroll/periods", icon: "Banknote", anyOf: ["payroll.view"], keywords: "lock post" },
+  { label: "Wage types", href: "/payroll/wage-types", icon: "Banknote", anyOf: ["payroll.setup"], keywords: "allowance deduction" },
+  { label: "Recurring payments", href: "/payroll/recurring", icon: "Banknote", anyOf: ["payroll.setup"] },
+  { label: "One-off payments", href: "/payroll/additional", icon: "Banknote", anyOf: ["payroll.setup"], keywords: "bonus additional" },
+  { label: "Bank file, ledger and remittances", href: "/payroll/posting", icon: "Banknote", anyOf: ["payroll.view"], keywords: "neft gl posting epfo" },
+  { label: "Requisitions", href: "/recruitment/requisitions", icon: "UserPlus", anyOf: ["recruitment.manage"] },
+  { label: "Candidates", href: "/recruitment/candidates", icon: "UserPlus", anyOf: ["recruitment.manage"], keywords: "resume" },
+  { label: "Pipeline", href: "/recruitment/pipeline", icon: "UserPlus", anyOf: ["recruitment.manage"], keywords: "stage" },
+  { label: "Interviews", href: "/recruitment/interviews", icon: "UserPlus", anyOf: ["recruitment.manage"] },
+  { label: "Appraisal cycles", href: "/performance/cycles", icon: "Target", anyOf: ["performance.manage"] },
+  { label: "Goals", href: "/performance/goals", icon: "Target", anyOf: ["performance.rate_any", "performance.rate_team"], keywords: "kra objective" },
+  { label: "Ratings", href: "/performance/ratings", icon: "Target", anyOf: ["performance.rate_any", "performance.rate_team"] },
+  { label: "Calibration", href: "/performance/calibration", icon: "Target", anyOf: ["performance.manage"] },
+  { label: "Increments", href: "/performance/increments", icon: "Target", anyOf: ["performance.manage"], keywords: "raise salary" },
+  { label: "Tax sections and slabs", href: "/tax/sections", icon: "ReceiptText", anyOf: ["tax.manage"] },
+  { label: "Tax declarations", href: "/tax/declarations", icon: "ReceiptText", anyOf: ["tax.manage"] },
+  { label: "Deduction register", href: "/tax/register", icon: "ReceiptText", anyOf: ["tax.manage"], keywords: "tds 24q" },
+  { label: "Notifications", href: "/inbox", icon: "Bell", anyOf: ALL_SIGNED_IN, keywords: "inbox alerts unread" },
+  { label: "Notification preferences", href: "/inbox/preferences", icon: "Bell", anyOf: ALL_SIGNED_IN, keywords: "email settings" },
+  { label: "Hand my approvals to someone while I am away", href: "/me#away", icon: "CircleUser", anyOf: ["self.profile"], keywords: "delegate holiday leave" },
 ];
 
 export const PAGES: Command[] = [
-  { label: "Home", href: "/", icon: "House", roles: ALL, keywords: "dashboard" },
-  ...NAV.flatMap((g) => g.items.map((i) => ({ ...i }))),
+  { label: "Home", href: "/", icon: "House", anyOf: ALL_SIGNED_IN, keywords: "dashboard" },
+  ...NAV.flatMap((g) => g.items.map(({ label, href, icon, anyOf }) => ({ label, href, icon, anyOf }))),
   ...SUBPAGES,
 ];
 
-export function commandsFor(roles: RoleCode[]): { actions: Command[]; pages: Command[] } {
-  const allowed = (c: Command) => c.roles.some((r) => roles.includes(r));
+export function commandsFor(permissions: ReadonlySet<Permission>): { actions: Command[]; pages: Command[] } {
+  const allowed = (c: Command) => c.anyOf.length === 0 || c.anyOf.some((p) => permissions.has(p));
   const seen = new Set<string>();
   const pages = PAGES.filter(allowed).filter((p) => {
     if (seen.has(p.href)) return false;

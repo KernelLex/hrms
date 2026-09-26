@@ -1,5 +1,5 @@
 /**
- * Bar list — DESIGN_LANGUAGE.md §10.
+ * Bar list — HANDOVER.md §8.10.
  *
  * One hue: ink bars on soft tracks. Label on the left, up to 144px and
  * truncated; bar 12px tall with a 4px rounded end; the value at the tip in

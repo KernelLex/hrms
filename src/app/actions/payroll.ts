@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/access";
 import {
   pyWageType,
   pyPayrollPeriod,
@@ -53,7 +53,7 @@ export async function setPeriodStatus(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.post");
   const id = num(form.get("id"));
   const target = str(form.get("status"));
 
@@ -118,7 +118,7 @@ export async function createPeriod(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.post");
   const areaCode = str(form.get("areaCode"));
   const year = num(form.get("year"));
   const month = num(form.get("month"));
@@ -158,7 +158,7 @@ export async function saveWageType(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.setup");
   const original = opt(form.get("originalCode"));
   const code = str(form.get("code")).toUpperCase();
   const name = str(form.get("name"));
@@ -211,7 +211,7 @@ export async function deleteWageType(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.setup");
   const code = str(form.get("code"));
 
   const used = await db.query.pyRecurringPayment.findFirst({
@@ -232,7 +232,7 @@ export async function saveRecurringPayment(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.setup");
   const amount = num(form.get("amount"));
   if (!Number.isFinite(amount) || amount <= 0) return fail("Enter an amount above zero.");
 
@@ -262,7 +262,7 @@ export async function deleteRecurringPayment(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.setup");
   const id = num(form.get("id"));
   const before = await db.query.pyRecurringPayment.findFirst({ where: eq(pyRecurringPayment.id, id) });
   await db.delete(pyRecurringPayment).where(eq(pyRecurringPayment.id, id));
@@ -277,7 +277,7 @@ export async function saveAdditionalPayment(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.setup");
   const amount = num(form.get("amount"));
   if (!Number.isFinite(amount) || amount <= 0) return fail("Enter an amount above zero.");
 
@@ -304,7 +304,7 @@ export async function deleteAdditionalPayment(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.setup");
   const id = num(form.get("id"));
   const payment = await db.query.pyAdditionalPayment.findFirst({
     where: eq(pyAdditionalPayment.id, id),
@@ -338,7 +338,7 @@ export async function startRunAction(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.run");
   const periodId = num(form.get("periodId"));
   if (!periodId) return fail("Choose a period.");
 
@@ -365,7 +365,7 @@ export async function startOffCycleAction(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.run");
   const periodId = num(form.get("periodId"));
   const employeeIds = form
     .getAll("employeeId")
@@ -410,7 +410,7 @@ export async function startOffCycleAction(
 export async function watchRun(
   runId: number,
 ): Promise<RunProgress | { error: string }> {
-  await requireRole("HR_ADMIN");
+  await requirePermission("payroll.run");
   const id = Number(runId);
   const progress = await readRunProgress(id);
   if (!progress) return { error: "That payroll run no longer exists." };
@@ -432,7 +432,7 @@ export async function watchRun(
 
 /** Puts a stopped run back in the queue. */
 export async function resumeRun(runId: number): Promise<RunProgress | { error: string }> {
-  await requireRole("HR_ADMIN");
+  await requirePermission("payroll.run");
   const progress = await readRunProgress(Number(runId));
   if (!progress) return { error: "That payroll run no longer exists." };
   if (!progress.completed) await queueRun(Number(runId));
@@ -445,7 +445,7 @@ export async function generateBankFile(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.post");
   const runId = num(form.get("runId"));
   const paymentDate = str(form.get("paymentDate"));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) return fail("Enter a payment date.");
@@ -524,7 +524,7 @@ export async function postToLedger(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.post");
   const runId = num(form.get("runId"));
   const postingDate = str(form.get("postingDate"));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(postingDate)) return fail("Enter a posting date.");
@@ -670,7 +670,7 @@ export async function markRemitted(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("payroll.post");
   const id = num(form.get("id"));
   await audited(
     actorOf(session),
@@ -688,12 +688,4 @@ export async function markRemitted(
   );
   revalidatePayroll();
   return OK;
-}
-
-/** The regular run for a period, used by several screens. */
-export async function latestRunForPeriod(periodId: number) {
-  return db.query.pyPayrollRun.findFirst({
-    where: and(eq(pyPayrollRun.periodId, periodId), eq(pyPayrollRun.runType, "Regular")),
-    orderBy: [desc(pyPayrollRun.runAt)],
-  });
 }

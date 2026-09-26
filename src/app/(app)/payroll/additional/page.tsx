@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, eq, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pyAdditionalPayment, pyWageType } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveAdditionalPayment, deleteAdditionalPayment } from "@/app/actions/payroll";
@@ -22,8 +21,7 @@ const COLUMNS: Column[] = [
 /** PY-02 — IT0015 one-off payments, paid in a single period. */
 export default async function AdditionalPage(props: { searchParams: Promise<{ page?: string }> }) {
   const { page, limit, offset } = pageFrom((await props.searchParams).page);
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/payroll/my-payslips");
+  await requirePage(["payroll.setup"], "/payroll/my-payslips");
 
   const [{ n: total }] = await db.select({ n: count() }).from(pyAdditionalPayment);
   const [rows, wageTypes, employees] = await Promise.all([

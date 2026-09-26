@@ -12,7 +12,7 @@ type Account = { username: string; name: string; role: string; sees: string };
 const INITIAL: SignInState = {};
 
 /**
- * §11 Sign-in: "a card listing accounts as rows". Each row is a submit button
+ * §8.11 Sign-in: "a card listing accounts as rows". Each row is a submit button
  * carrying its own username, so one click signs in as that person.
  */
 export function DemoAccounts({ accounts }: { accounts: readonly Account[] }) {

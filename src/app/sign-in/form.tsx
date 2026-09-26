@@ -35,7 +35,7 @@ export function SignInForm() {
 
       {state.error ? <FormError>{state.error}</FormError> : null}
 
-      {/* §8 Loading: a spinner inside the button that was pressed, disabled. */}
+      {/* §8.8 Loading: a spinner inside the button that was pressed, disabled. */}
       <Button type="submit" variant="primary" size="lg" disabled={pending}>
         {pending ? <Loader2 className="animate-spin" /> : null}
         Sign in

@@ -1,5 +1,5 @@
-import { getSession, hasRole, type Session } from "@/lib/auth";
-import { roleLabel } from "@/lib/nav";
+import { getAccess, can, roleLabel, type Access } from "@/lib/access";
+import { navFor } from "@/lib/nav";
 import { formatINR, formatLakh } from "@/lib/money";
 import { formatDate, formatDateRange, formatMonth, todayInIndia } from "@/lib/dates";
 import { formatDays } from "@/lib/engines/quota";
@@ -7,7 +7,7 @@ import { financialYearOf } from "@/lib/engines/tax";
 import { listDirectReports } from "@/lib/repositories/employees";
 import { hrHome, selfHome, teamHome, type SelfHome } from "@/lib/repositories/home";
 import { RATING_LABELS } from "@/db/schema";
-import { FigureRow, Figure } from "@/components/ui";
+import { Card, CardHeader, FigureRow, Figure, RowLink } from "@/components/ui";
 import {
   AttentionCard,
   ComingUpCard,
@@ -18,7 +18,7 @@ import {
 } from "@/components/home";
 
 /**
- * §11 Home: a muted date line, the greeting at 32px, one card of what needs
+ * §8.11 Home: a muted date line, the greeting at 32px, one card of what needs
  * attention, the four figures that matter to this person, then what is coming.
  *
  * Each role opens to a different home, built only from what that person has
@@ -46,7 +46,7 @@ function dateLine(): string {
 }
 
 export default async function HomePage() {
-  const session = await getSession();
+  const session = await getAccess();
   if (!session) return null;
 
   const today = todayInIndia();
@@ -58,15 +58,17 @@ export default async function HomePage() {
         <h1 className="mt-1 text-[32px] leading-tight font-semibold tracking-[-0.025em] text-ink">
           {greeting(session.displayName)}
         </h1>
-        <p className="mt-1 text-[15px] text-muted">Signed in as {roleLabel(session.roles)}.</p>
+        <p className="mt-1 text-[15px] text-muted">Signed in as {roleLabel(session)}.</p>
       </div>
 
-      {hasRole(session, "HR_ADMIN") ? (
+      {can(session, "employee.view_all") ? (
         <HrHome session={session} today={today} />
-      ) : hasRole(session, "MANAGER") ? (
+      ) : can(session, "employee.view_team") ? (
         <ManagerHome session={session} today={today} />
-      ) : (
+      ) : session.employeeId ? (
         <EmployeeHome session={session} today={today} />
+      ) : (
+        <WorkHome session={session} />
       )}
     </>
   );
@@ -74,7 +76,7 @@ export default async function HomePage() {
 
 /* ----------------------------------------------------------------- HR */
 
-async function HrHome({ session, today }: { session: Session; today: string }) {
+async function HrHome({ session, today }: { session: Access; today: string }) {
   const [h, self] = await Promise.all([
     hrHome(today),
     session.employeeId ? selfHome(session.employeeId, today) : Promise.resolve(null),
@@ -143,7 +145,7 @@ async function HrHome({ session, today }: { session: Session; today: string }) {
   if (h.pendingLeave > 0) {
     items.push({
       tone: "action",
-      href: "/time/approvals",
+      href: "/approvals?process=leave",
       children: (
         <>
           <Key>{plural(h.pendingLeave, "leave request", "leave requests")}</Key>{" "}
@@ -278,7 +280,7 @@ async function HrHome({ session, today }: { session: Session; today: string }) {
 
 /* ------------------------------------------------------------ manager */
 
-async function ManagerHome({ session, today }: { session: Session; today: string }) {
+async function ManagerHome({ session, today }: { session: Access; today: string }) {
   const reports = session.employeeId ? await listDirectReports(session.employeeId, today) : [];
   const [team, self] = await Promise.all([
     teamHome(
@@ -292,7 +294,7 @@ async function ManagerHome({ session, today }: { session: Session; today: string
   if (team.pendingLeave > 0) {
     items.push({
       tone: "action",
-      href: "/time/approvals",
+      href: "/approvals?process=leave",
       children: (
         <>
           <Key>{plural(team.pendingLeave, "leave request", "leave requests")}</Key> from your
@@ -338,13 +340,13 @@ async function ManagerHome({ session, today }: { session: Session; today: string
             label="Waiting on you"
             value={team.pendingLeave + team.awaitingRating}
             hint="requests and ratings"
-            href="/time/approvals"
+            href="/approvals?process=leave"
           />
           <Figure
             label="Away this week"
             value={team.awayThisWeek}
             hint="from your team"
-            href="/time/approvals"
+            href="/approvals?process=leave"
           />
           <LeaveFigure self={self} />
         </FigureRow>
@@ -363,7 +365,7 @@ async function ManagerHome({ session, today }: { session: Session; today: string
 
 /* ----------------------------------------------------------- employee */
 
-async function EmployeeHome({ session, today }: { session: Session; today: string }) {
+async function EmployeeHome({ session, today }: { session: Access; today: string }) {
   const self = session.employeeId ? await selfHome(session.employeeId, today) : null;
 
   return (
@@ -529,4 +531,26 @@ function mergeEvents(...lists: ComingUp[][]): ComingUp[] {
     merged.push(e);
   }
   return merged.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/* ------------------------------------------------------------ other roles */
+
+/**
+ * For a role HR created that has no home of its own, and no employee record
+ * behind the sign-in: where their work is.
+ */
+function WorkHome({ session }: { session: Access }) {
+  const groups = navFor(session.permissions);
+  return (
+    <Card>
+      <CardHeader title="Your work" description="The screens your role gives you." />
+      <div className="pb-3">
+        {groups.flatMap((g) => g.items).map((item) => (
+          <RowLink key={item.href} href={item.href}>
+            <span className="text-sm font-medium text-ink">{item.label}</span>
+          </RowLink>
+        ))}
+      </div>
+    </Card>
+  );
 }

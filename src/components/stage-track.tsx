@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Progress track — DESIGN_LANGUAGE.md §9.
+ * Progress track — HANDOVER.md §8.9.
  *
  * Equal segments, 4px tall with pill ends and 6px gaps. Reached segments are
  * ink, unreached are `control`, and a failed one is `danger-mark`. Labels sit

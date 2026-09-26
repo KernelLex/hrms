@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptWorkScheduleRule } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveWorkSchedule, deleteWorkSchedule } from "@/app/actions/time";
 import { Status } from "@/components/ui";
@@ -26,8 +25,7 @@ const FIELDS: FieldDef[] = [
 
 /** TM-05 — work schedule rules, assigned to employees through IT0007. */
 export default async function SchedulesPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/time/my-leave");
+  await requirePage(["time.manage"], "/time/my-leave");
 
   const rows = await db
     .select()

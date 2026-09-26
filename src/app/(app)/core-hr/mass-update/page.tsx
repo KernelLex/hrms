@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { getSession, hasRole } from "@/lib/auth";
+import { requirePage } from "@/lib/access";
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptWorkScheduleRule } from "@/db/schema";
@@ -13,7 +12,7 @@ export default async function MassUpdatePage() {
   // Creating and changing employee records is HR's alone. The Server
   // Functions check this too; the page checks so nobody sees a form they
   // cannot submit.
-  if (!hasRole(await getSession(), "HR_ADMIN")) redirect("/");
+  await requirePage(["employee.edit"], "/");
 
   const [employees, schedules] = await Promise.all([
     listEmployees(),

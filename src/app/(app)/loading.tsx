@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 /**
  * Shown while a screen's data loads, inside the shell so navigation stays put.
  *
- * §8 rules out skeleton shimmer and full-page spinners, so this is one quiet
+ * §8.8 rules out skeleton shimmer and full-page spinners, so this is one quiet
  * line. It fades in after a short delay: most screens arrive before it would
  * appear, and a flash of "Loading" on every click is worse than nothing.
  */

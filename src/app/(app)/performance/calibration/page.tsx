@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -7,7 +7,6 @@ import {
   pmCalibration,
   RATING_LABELS,
 } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import {
   Card,
@@ -27,8 +26,7 @@ import { CalibrateButton } from "./actions";
 
 /** PM-04 — calibration, so a 4 means the same thing across teams. */
 export default async function CalibrationPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/performance");
+  await requirePage(["performance.manage"], "/performance");
 
   const [rows, employees] = await Promise.all([
     db
@@ -82,7 +80,7 @@ export default async function CalibrationPage() {
                   {d.rating} — {d.label}
                 </div>
                 <div className="flex-1">
-                  {/* §10 bar list: ink bar, longest reaching 85% of the width. */}
+                  {/* §8.10 bar list: ink bar, longest reaching 85% of the width. */}
                   <div
                     className="h-3 rounded-r-[4px] bg-ink"
                     style={{ width: `${(d.count / maxCount) * 85}%`, minWidth: d.count > 0 ? "2px" : "0" }}

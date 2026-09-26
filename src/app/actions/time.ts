@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, rawClient } from "@/lib/db";
-import { requireRole, requireSession, hasRole } from "@/lib/auth";
+import { can, requireAccess, requireAnyPermission, requirePermission } from "@/lib/access";
 import {
   ptAbsence,
   ptAbsenceType,
@@ -12,7 +12,6 @@ import {
   ptLeaveRequest,
   ptHoliday,
   ptWorkScheduleRule,
-  ptAbsenceQuota,
   now,
 } from "@/db/schema";
 import {
@@ -21,19 +20,14 @@ import {
   restoreQuota,
   generateQuotas,
   daysToUnits,
-  shortfall,
 } from "@/lib/engines/quota";
 import { evaluatePeriod } from "@/lib/engines/time-evaluation";
 import { actorOf, audited, changeStatement, recordChanges, recordCreate, recordDelete } from "@/lib/change-log";
-import {
-  approverUserIds,
-  notificationStatements,
-  usersForEmployees,
-  type NotificationItem,
-} from "@/lib/notifications";
+import { notificationStatements, type NotificationItem } from "@/lib/notifications";
+import { cancelStatements, decide, planRequest, requestFor, writeRequest } from "@/lib/workflow/engine";
 import { kickJobs } from "@/lib/jobs/runner";
 import { formatDateRange } from "@/lib/dates";
-import { getEmployee, fullName, listDirectReports } from "@/lib/repositories/employees";
+import { getEmployee, fullName } from "@/lib/repositories/employees";
 import type { InStatement } from "@libsql/client";
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -79,8 +73,11 @@ export async function submitLeaveRequest(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireSession();
-  const employeeId = session.employeeId ?? num(form.get("employeeId"));
+  const session = await requireAnyPermission("self.leave", "time.manage");
+  // Someone without a record of their own may enter leave for another person
+  // only if they keep time records.
+  const employeeId =
+    session.employeeId ?? (can(session, "time.manage") ? num(form.get("employeeId")) : 0);
   if (!employeeId) {
     return fail("Your sign-in is not linked to an employee record.");
   }
@@ -106,16 +103,32 @@ export async function submitLeaveRequest(
   }
   const payrollDays = Math.round((v.isHalfDay ? 0.5 : workingDays) * 2) / 2;
 
-  const [type, employee, approvers] = await Promise.all([
+  const [type, employee] = await Promise.all([
     db.query.ptAbsenceType.findFirst({ where: eq(ptAbsenceType.code, v.absenceTypeCode) }),
     getEmployee(employeeId),
-    approverUserIds(employeeId),
   ]);
   const who = employee ? fullName(employee) : "Someone";
   const range = formatDateRange(v.fromDate, v.toDate);
+  const what = `${payrollDays} working ${payrollDays === 1 ? "day" : "days"} of ${type?.name.toLowerCase() ?? "leave"}`;
+  const approval = {
+    process: "leave" as const,
+    subjectType: "pt_leave_request",
+    subjectEmployeeId: employeeId,
+    requester: session,
+    summary: `${who}: ${what}, ${range}`,
+    facts: { days: payrollDays },
+  };
 
-  // The request, its change-log entry and the approver's notification commit
+  // Who approves is read first; the request, its place on the approval flow,
+  // its change-log entry and the approvers' notifications then commit
   // together: nobody is told about a request that was not saved.
+  let plan;
+  try {
+    plan = await planRequest({ ...approval, subjectId: 0 });
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : "Leave approval is not set up.");
+  }
+
   const tx = await rawClient().transaction("write");
   try {
     const inserted = await tx.execute({
@@ -126,19 +139,16 @@ export async function submitLeaveRequest(
     });
     const request = inserted.rows[0] as unknown as Record<string, unknown>;
     const requestId = Number(request.id);
+    await writeRequest(tx, { ...approval, subjectId: requestId }, plan);
 
-    const items: NotificationItem[] = approvers
-      .filter((userId) => userId !== session.userId)
-      .map((userId) => ({
-        userId,
-        kind: "leave.submitted" as const,
-        title: `${who} asked for leave: ${range}`,
-        body:
-          `${payrollDays} working ${payrollDays === 1 ? "day" : "days"} of ${type?.name.toLowerCase() ?? "leave"}` +
-          (v.reason ? `. "${v.reason}"` : "."),
-        link: "/time/approvals",
-        dedupeKey: `leave.submitted:${requestId}:${userId}`,
-      }));
+    const items: NotificationItem[] = plan.recipients.map((userId) => ({
+      userId,
+      kind: "leave.submitted" as const,
+      title: `${who} asked for leave: ${range}`,
+      body: `${what.charAt(0).toUpperCase()}${what.slice(1)}` + (v.reason ? `. "${v.reason}"` : "."),
+      link: "/approvals?process=leave",
+      dedupeKey: `leave.submitted:${requestId}:${userId}`,
+    }));
 
     const statements: InStatement[] = [
       changeStatement(actorOf(session), {
@@ -165,188 +175,37 @@ export async function submitLeaveRequest(
 }
 
 /**
- * Manager decision. Approving is the transaction that matters: it claims the
- * request, takes the days from the quota, writes the absence record, logs
- * each change and tells the employee — all in one commit. The claim is a
- * conditional update, so two people deciding at once cannot both win, and
- * the quota update refuses to overdraw, so the balance can never go below
- * zero however the clicks interleave.
+ * A decision on a leave request, through the approval engine: whoever the
+ * request is waiting for — the reporting manager by default, or the next step
+ * of a longer flow — or a delegate standing in for them, or someone who may
+ * decide any leave request. The engine claims the request and, on the last
+ * approval, takes the quota and writes the absence in the same transaction.
  */
 export async function decideLeaveRequest(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireSession();
-  if (!hasRole(session, "HR_ADMIN", "MANAGER")) {
-    return fail("Only a manager or HR can decide a leave request.");
-  }
-
+  const session = await requireAccess();
   const id = num(form.get("id"));
   const decision = str(form.get("decision"));
-  const note = opt(form.get("decisionNote"));
   if (decision !== "Approved" && decision !== "Rejected") {
     return fail("That decision is not recognised.");
   }
 
-  const request = await db.query.ptLeaveRequest.findFirst({
-    where: eq(ptLeaveRequest.id, id),
-  });
+  const request = await requestFor("pt_leave_request", id);
   if (!request) return fail("That request no longer exists.");
-  if (request.status !== "Pending") {
-    return fail(`That request was already ${request.status.toLowerCase()}.`);
-  }
-
-  // HR decides anything; a manager decides for their own reports, and nobody
-  // decides their own request. Checked here, not by the screen, because a
-  // Server Function can be called directly.
-  if (session.employeeId !== null && request.employeeId === session.employeeId) {
-    return fail("You cannot decide your own leave request. It goes to your manager.");
-  }
-  if (!hasRole(session, "HR_ADMIN")) {
-    const reports = session.employeeId
-      ? (await listDirectReports(session.employeeId)).map((e) => e.id)
-      : [];
-    if (!reports.includes(request.employeeId)) {
-      return fail("You can only decide requests from people who report to you.");
-    }
-  }
-
-  const type = await db.query.ptAbsenceType.findFirst({
-    where: eq(ptAbsenceType.code, request.absenceTypeCode),
+  const result = await decide({
+    requestId: request.id,
+    actor: session,
+    decision,
+    comment: opt(form.get("decisionNote")),
+    canOverride: can(session, "leave.decide_any"),
   });
-  if (decision === "Approved" && !type) return fail("That leave type no longer exists.");
-
-  const actor = actorOf(session);
-  const decidedAt = now();
-  const range = formatDateRange(request.fromDate, request.toDate);
-  const approved = decision === "Approved";
-  const users = await usersForEmployees([request.employeeId]);
-  const recipient = users.get(request.employeeId);
-  const notice = await notificationStatements(
-    recipient
-      ? [
-          {
-            userId: recipient,
-            kind: "leave.decided",
-            title: approved ? `Your leave for ${range} was approved` : `Your leave for ${range} was not approved`,
-            body: note ?? (approved ? "Enjoy the time off." : "Talk to your manager if you want to ask again."),
-            link: "/time/my-leave",
-            dedupeKey: `leave.decided:${request.id}`,
-          },
-        ]
-      : [],
-  );
-
-  const year = Number(request.fromDate.slice(0, 4));
-  const units = daysToUnits(request.payrollDays);
-  const usesQuota = approved && type?.countsAgainstQuota && type.quotaTypeCode;
-  const quotaBefore = usesQuota
-    ? await db.query.ptAbsenceQuota.findFirst({
-        where: and(
-          eq(ptAbsenceQuota.employeeId, request.employeeId),
-          eq(ptAbsenceQuota.quotaTypeCode, type!.quotaTypeCode!),
-          eq(ptAbsenceQuota.year, year),
-        ),
-      })
-    : undefined;
-  if (usesQuota && !quotaBefore) {
-    return fail(`No ${type!.quotaTypeCode} entitlement exists for ${year}. Generate the quota first.`);
-  }
-
-  const tx = await rawClient().transaction("write");
-  try {
-    const claimed = await tx.execute({
-      sql: `UPDATE pt_leave_request
-            SET status = ?, decided_at = ?, decided_by_employee_id = ?, decision_note = ?
-            WHERE id = ? AND status = 'Pending'`,
-      args: [decision, decidedAt, session.employeeId, note, id],
-    });
-    if (claimed.rowsAffected === 0) {
-      await tx.rollback();
-      return fail("That request was decided a moment ago. Reload to see the outcome.");
-    }
-    const statements: (InStatement | null)[] = [
-      changeStatement(actor, {
-        entity: "pt_leave_request",
-        entityId: id,
-        subjectEmployeeId: request.employeeId,
-        action: "update",
-        before: request,
-        after: {
-          ...request,
-          status: decision,
-          decidedAt,
-          decidedByEmployeeId: session.employeeId,
-          decisionNote: note,
-        },
-      }),
-    ];
-
-    if (approved) {
-      if (usesQuota && quotaBefore) {
-        const taken = await tx.execute({
-          sql: `UPDATE pt_it2006_absence_quota SET used_half_days = used_half_days + ?1
-                WHERE id = ?2 AND entitled_half_days - used_half_days >= ?1`,
-          args: [units, quotaBefore.id],
-        });
-        if (taken.rowsAffected === 0) {
-          await tx.rollback();
-          return fail(shortfall(units, quotaBefore.entitledHalfDays - quotaBefore.usedHalfDays));
-        }
-        statements.push(
-          changeStatement(actor, {
-            entity: "pt_it2006_absence_quota",
-            entityId: quotaBefore.id,
-            subjectEmployeeId: request.employeeId,
-            action: "update",
-            before: quotaBefore,
-            after: { ...quotaBefore, usedHalfDays: quotaBefore.usedHalfDays + units },
-          }),
-        );
-      }
-
-      const absence = await tx.execute({
-        sql: `INSERT INTO pt_it2001_absence
-                (employee_id, absence_type_code, start_date, end_date, payroll_days, calendar_days,
-                 is_half_day, remarks, source_request_id, created_by, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
-        args: [
-          request.employeeId,
-          request.absenceTypeCode,
-          request.fromDate,
-          request.toDate,
-          Math.round(request.payrollDays),
-          calendarDaysBetween(request.fromDate, request.toDate),
-          request.isHalfDay ? 1 : 0,
-          request.reason,
-          request.id,
-          session.username,
-          decidedAt,
-        ],
-      });
-      const row = absence.rows[0] as unknown as Record<string, unknown>;
-      statements.push(
-        changeStatement(actor, {
-          entity: "pt_it2001_absence",
-          entityId: Number(row.id),
-          subjectEmployeeId: request.employeeId,
-          action: "create",
-          after: row,
-        }),
-      );
-    }
-
-    for (const st of [...statements, ...notice]) if (st) await tx.execute(st);
-    await tx.commit();
-  } catch (err) {
-    await tx.rollback();
-    throw err;
-  } finally {
-    tx.close();
-  }
+  if ("error" in result) return fail(result.error);
 
   await kickJobs();
   revalidateTime();
+  revalidatePath("/approvals");
   return OK;
 }
 
@@ -355,7 +214,7 @@ export async function cancelLeaveRequest(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireSession();
+  const session = await requireAccess();
   const id = num(form.get("id"));
 
   const request = await db.query.ptLeaveRequest.findFirst({
@@ -364,23 +223,36 @@ export async function cancelLeaveRequest(
   if (!request) return fail("That request no longer exists.");
 
   const isOwner = session.employeeId === request.employeeId;
-  if (!isOwner && !hasRole(session, "HR_ADMIN")) {
+  if (!isOwner && !can(session, "time.manage")) {
     return fail("You can only cancel your own requests.");
   }
   if (request.status !== "Pending") {
     return fail("Only a pending request can be cancelled.");
   }
 
-  await audited(
-    actorOf(session),
-    { entity: "pt_leave_request", entityId: id, subjectEmployeeId: request.employeeId },
-    () => db.query.ptLeaveRequest.findFirst({ where: eq(ptLeaveRequest.id, id) }),
-    () =>
-      db
-        .update(ptLeaveRequest)
-        .set({ status: "Cancelled", decidedAt: now() })
-        .where(and(eq(ptLeaveRequest.id, id), eq(ptLeaveRequest.status, "Pending"))),
+  // The request and its place on the approval flow are withdrawn together.
+  const decidedAt = now();
+  await rawClient().batch(
+    [
+      {
+        sql: "UPDATE pt_leave_request SET status = 'Cancelled', decided_at = ? WHERE id = ? AND status = 'Pending'",
+        args: [decidedAt, id],
+      },
+      ...(await cancelStatements("pt_leave_request", id, session)),
+    ],
+    "write",
   );
+  await recordChanges(actorOf(session), [
+    {
+      entity: "pt_leave_request",
+      entityId: id,
+      subjectEmployeeId: request.employeeId,
+      action: "update",
+      before: request,
+      after: { ...request, status: "Cancelled", decidedAt },
+    },
+  ]);
+  revalidatePath("/approvals");
 
   revalidateTime();
   return OK;
@@ -392,7 +264,7 @@ export async function saveAbsence(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("time.manage");
 
   const employeeId = num(form.get("employeeId"));
   const absenceTypeCode = str(form.get("absenceTypeCode"));
@@ -435,7 +307,7 @@ export async function deleteAbsence(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("time.manage");
   const id = num(form.get("id"));
 
   const absence = await db.query.ptAbsence.findFirst({ where: eq(ptAbsence.id, id) });
@@ -473,7 +345,7 @@ export async function saveAttendance(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("time.manage");
   const employeeId = num(form.get("employeeId"));
   const date = str(form.get("date"));
   const hours = num(form.get("hours"));
@@ -506,7 +378,7 @@ export async function deleteAttendance(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("time.manage");
   const id = num(form.get("id"));
   const before = await db.query.ptAttendance.findFirst({ where: eq(ptAttendance.id, id) });
   await db.delete(ptAttendance).where(eq(ptAttendance.id, id));
@@ -521,7 +393,7 @@ export async function generateQuotaAction(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("time.manage");
 
   const year = num(form.get("year"));
   const quotaTypeCode = str(form.get("quotaTypeCode"));
@@ -558,7 +430,7 @@ export async function runTimeEvaluation(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireRole("HR_ADMIN");
+  await requirePermission("time.manage");
   const year = num(form.get("year"));
   const month = num(form.get("month"));
 
@@ -578,7 +450,7 @@ export async function saveWorkSchedule(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("time.manage");
   const original = opt(form.get("originalCode"));
   const code = str(form.get("code")).toUpperCase();
   const name = str(form.get("name"));
@@ -622,7 +494,7 @@ export async function deleteWorkSchedule(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("time.manage");
   const code = str(form.get("code"));
   const before = await db.query.ptWorkScheduleRule.findFirst({ where: eq(ptWorkScheduleRule.code, code) });
   await db.delete(ptWorkScheduleRule).where(eq(ptWorkScheduleRule.code, code));
@@ -635,7 +507,7 @@ export async function saveHoliday(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("time.manage");
   const original = opt(form.get("originalCode"));
   const date = str(form.get("date"));
   const name = str(form.get("name"));
@@ -668,7 +540,7 @@ export async function deleteHoliday(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("time.manage");
   const id = num(form.get("code")) || num(form.get("id"));
   const before = await db.query.ptHoliday.findFirst({ where: eq(ptHoliday.id, id) });
   await db.delete(ptHoliday).where(eq(ptHoliday.id, id));

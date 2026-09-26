@@ -1,6 +1,6 @@
 /**
  * Walks every screen as each role, at desktop and phone width, and reports
- * what DESIGN_LANGUAGE.md §16 can check mechanically:
+ * what HANDOVER.md §8.16 can check mechanically:
  *
  *   - the page does not scroll sideways at 375px (tables may, inside a card);
  *   - axe finds no WCAG 2 A or AA violations;
@@ -36,6 +36,7 @@ const ROLES = [
   { key: "hr", username: "hr.admin" },
   { key: "manager", username: "ravi.kumar" },
   { key: "employee", username: "arjun.mehta" },
+  { key: "recruiter", username: "neha.iyer" },
 ] as const;
 
 /** Static routes. Dynamic ones are discovered from links on list pages. */
@@ -54,6 +55,8 @@ const ROUTES = [
   "/performance/calibration", "/performance/increments", "/performance/mine",
   "/tax", "/tax/sections", "/tax/declarations", "/tax/register", "/tax/form16",
   "/inbox", "/inbox/preferences", "/change-log", "/outbox",
+  "/approvals", "/admin/roles", "/admin/roles/new", "/admin/roles/HR_ADMIN", "/admin/roles/RECRUITER",
+  "/admin/approval-flows", "/admin/approval-flows/leave",
 ];
 
 /** List page, and the pattern of the detail links to follow from it. */

@@ -1,3 +1,4 @@
+import { can, requirePage } from "@/lib/access";
 import { documentsFor } from "@/lib/storage";
 import { Card, CardHeader } from "@/components/ui";
 import { DocumentList } from "@/components/documents";
@@ -8,6 +9,7 @@ import { DocumentList } from "@/components/documents";
  * HR-only here, like the rest of the employee record (the layout checks).
  */
 export default async function EmployeeDocumentsPage(props: { params: Promise<{ id: string }> }) {
+  const session = await requirePage(["employee.view_all"]);
   const { id } = await props.params;
   const employeeId = Number(id);
   const documents = await documentsFor("employee", [employeeId]);
@@ -18,7 +20,7 @@ export default async function EmployeeDocumentsPage(props: { params: Promise<{ i
         title="Documents"
         description="Kept in document storage and registered one by one. Each download is recorded in the access log."
       />
-      <DocumentList employeeId={employeeId} documents={documents} canManage />
+      <DocumentList employeeId={employeeId} documents={documents} canManage={can(session, "employee.documents")} />
     </Card>
   );
 }

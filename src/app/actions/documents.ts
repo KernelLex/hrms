@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/auth";
+import { inScope, requirePermission } from "@/lib/access";
 import { actorOf, recordCreated, recordDeleted } from "@/lib/change-log";
 import { appDocument, paEmployee } from "@/db/schema";
 import {
@@ -29,7 +29,7 @@ export async function uploadEmployeeDocument(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("employee.documents");
   const actor = actorOf(session);
   const employeeId = Number(form.get("employeeId"));
   const kind = String(form.get("kind") ?? "");
@@ -37,6 +37,9 @@ export async function uploadEmployeeDocument(
 
   const employee = await db.query.paEmployee.findFirst({ where: eq(paEmployee.id, employeeId) });
   if (!employee) return { error: "That employee no longer exists." };
+  if (!(await inScope(session, employeeId))) {
+    return { error: "That employee is outside the companies and areas your role covers." };
+  }
   if (!(EMPLOYEE_DOCUMENT_KINDS as readonly string[]).includes(kind)) {
     return { error: "Choose what kind of document this is." };
   }
@@ -64,11 +67,15 @@ export async function removeEmployeeDocument(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const session = await requirePermission("employee.documents");
+  const actor = actorOf(session);
   const doc = await db.query.appDocument.findFirst({
     where: and(eq(appDocument.id, Number(form.get("documentId"))), eq(appDocument.ownerType, "employee")),
   });
   if (!doc) return { error: "That document has already been removed." };
+  if (!(await inScope(session, doc.ownerId))) {
+    return { error: "That employee is outside the companies and areas your role covers." };
+  }
   await deleteDocument(doc);
   await recordDeleted(actor, "app_document", [documentSummary(doc)]);
   revalidate(doc.ownerId);

@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { desc, eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptTimeEvaluation } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import {
   Card,
@@ -28,8 +27,7 @@ const MONTHS = [
 export default async function EvaluationPage(props: {
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/time/my-leave");
+  await requirePage(["time.manage"], "/time/my-leave");
 
   const params = await props.searchParams;
   const nowDate = new Date();

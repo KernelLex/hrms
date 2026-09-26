@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pyPayrollPeriod, pyPayrollRun, omPersonnelArea } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { formatINR } from "@/lib/money";
 import {
   Card,
@@ -28,8 +27,7 @@ const MONTHS = [
 
 /** PY-01 — the payroll control record. */
 export default async function PeriodsPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/payroll/my-payslips");
+  await requirePage(["payroll.view"], "/payroll/my-payslips");
 
   const [periods, areas, runs] = await Promise.all([
     db

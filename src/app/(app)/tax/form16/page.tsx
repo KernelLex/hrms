@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { can, requirePage } from "@/lib/access";
 import { desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tdsForm16, tdsTaxSlab, tdsDeductionRegister } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { formatINR } from "@/lib/money";
 import {
@@ -23,9 +22,8 @@ import { GenerateForm16Form } from "./actions";
 
 /** TDS-04 and TDS-05 — generating and listing Form 16 certificates. */
 export default async function Form16Page() {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
-  const isHr = hasRole(session, "HR_ADMIN");
+  const session = await requirePage(["self.tax", "tax.manage"]);
+  const isHr = can(session, "tax.manage");
 
   const [all, employees, slabYears, register] = await Promise.all([
     db.select().from(tdsForm16).orderBy(desc(tdsForm16.financialYear)),

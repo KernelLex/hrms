@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -8,7 +8,6 @@ import {
   pmCalibration,
   RATING_LABELS,
 } from "@/db/schema";
-import { getSession } from "@/lib/auth";
 import {
   Card,
   CardHeader,
@@ -29,8 +28,7 @@ import { formatDate } from "@/lib/dates";
 
 /** Employee self-service: your goals and your self review. */
 export default async function MyAppraisalPage() {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
+  const session = await requirePage(["self.appraisal"]);
 
   if (!session.employeeId) {
     return (

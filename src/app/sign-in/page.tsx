@@ -4,7 +4,7 @@ import { MoreDetails } from "@/components/inputs";
 import { DEMO_ACCOUNTS, DEMO_PASSWORD, demoSignInEnabled } from "@/lib/demo";
 
 /**
- * §11 Sign-in: a centred 380px column — brand mark, title and subtitle, then
+ * §8.11 Sign-in: a centred 380px column — brand mark, title and subtitle, then
  * the accounts as rows.
  *
  * While this is a prototype the accounts are the way in: one click opens that

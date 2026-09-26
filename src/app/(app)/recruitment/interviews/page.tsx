@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { rcInterview, rcApplication, rcCandidate, rcRequisition } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveInterview, deleteInterview } from "@/app/actions/recruitment";
 import { TwoLine } from "@/components/ui";
@@ -24,8 +23,7 @@ const MODES = ["Video call", "Onsite", "Phone"];
 
 /** RC-04 — interview scheduling and feedback. */
 export default async function InterviewsPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["recruitment.manage"], "/");
 
   const [rows, applications] = await Promise.all([
     db

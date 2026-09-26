@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptLeaveRequest, ptAbsenceType } from "@/db/schema";
-import { getSession } from "@/lib/auth";
 import { balancesFor, formatDays } from "@/lib/engines/quota";
 import {
   Card,
@@ -24,8 +23,7 @@ import { formatDateRange } from "@/lib/dates";
 
 /** Employee self-service: balances, a request form, and your own history. */
 export default async function MyLeavePage() {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
+  const session = await requirePage(["self.leave"]);
 
   if (!session.employeeId) {
     return (

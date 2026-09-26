@@ -1,5 +1,5 @@
 import { rawClient } from "@/lib/db";
-import { getSession, hasRole } from "@/lib/auth";
+import { can, getAccess } from "@/lib/access";
 import { logAccess } from "@/lib/access-log";
 import { csvResponse, rupees, toCsv, type Cell } from "@/lib/csv";
 
@@ -8,9 +8,9 @@ import { csvResponse, rupees, toCsv, type Cell } from "@/lib/csv";
  * type, the way an accountant reconciles a run. HR only.
  */
 export async function GET(_req: Request, ctx: RouteContext<"/api/export/payroll-run/[id]">) {
-  const session = await getSession();
+  const session = await getAccess();
   if (!session) return new Response("Sign in first.", { status: 401 });
-  if (!hasRole(session, "HR_ADMIN")) return new Response("Not allowed.", { status: 403 });
+  if (!can(session, "payroll.view")) return new Response("Not allowed.", { status: 403 });
 
   const runId = Number((await ctx.params).id);
   const [run, results, lines] = await rawClient().batch(

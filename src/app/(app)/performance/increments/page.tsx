@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -7,7 +7,6 @@ import {
   pmAppraisalCycle,
   RATING_LABELS,
 } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { formatINR } from "@/lib/money";
 import {
@@ -33,8 +32,7 @@ import { formatDate } from "@/lib/dates";
 export default async function IncrementsPage(props: {
   searchParams: Promise<{ cycle?: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/performance");
+  await requirePage(["performance.manage"], "/performance");
 
   const params = await props.searchParams;
 

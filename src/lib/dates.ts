@@ -1,5 +1,5 @@
 /**
- * Dates at the render edge — DESIGN_LANGUAGE.md §12: "26 Sept 2026", "10:50 pm".
+ * Dates at the render edge — HANDOVER.md §8.12: "26 Sept 2026", "10:50 pm".
  *
  * Dates are stored as ISO `YYYY-MM-DD` text and only formatted here, the same
  * way money is stored as paise and only formatted in money.ts. Parsing is by

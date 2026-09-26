@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db, rawClient } from "@/lib/db";
-import { requireRole } from "@/lib/auth";
+import { can, inScope, requirePermission, type Access } from "@/lib/access";
 import {
   paEmployee,
   paOrgAssignment,
@@ -79,7 +79,7 @@ export async function hireEmployee(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("employee.edit", "pay.view");
 
   const parsed = HireInput.safeParse({
     actionType: str(form.get("actionType")) || "Hire",
@@ -248,6 +248,24 @@ export async function hireEmployee(
 
 /* --------------------------------------------- CH-02 maintain master data */
 
+/**
+ * What stops a change to one person's record: someone outside the role's
+ * companies or areas, or pay and bank details for a role that may not see
+ * them. Null when the change may go ahead.
+ */
+async function guardEmployee(access: Access, employeeId: number, infotype?: string): Promise<string | null> {
+  if (!(await inScope(access, employeeId))) {
+    return "That employee is outside the companies and areas your role covers.";
+  }
+  if (infotype === "0008" && !can(access, "pay.view")) {
+    return "Changing basic pay needs permission to see pay.";
+  }
+  if (infotype === "0009" && !can(access, "bank.view")) {
+    return "Changing bank details needs permission to see them.";
+  }
+  return null;
+}
+
 /** Infotypes that hold one valid record at a time, written through the engine. */
 const SLICED_FORMS = {
   "0001": {
@@ -385,7 +403,7 @@ export async function saveInfotypeSlice(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("employee.edit");
 
   const employeeId = num(form.get("employeeId"));
   const code = str(form.get("infotype")) as SlicedInfotype;
@@ -398,6 +416,9 @@ export async function saveInfotypeSlice(
     return fail("Enter a valid-from date.");
   }
   if (validTo < validFrom) return fail("Valid to cannot fall before valid from.");
+
+  const guard = await guardEmployee(session, employeeId, code);
+  if (guard) return fail(guard);
 
   const parsed = config.schema.safeParse(readSliced(code, form));
   if (!parsed.success) return fail(firstIssue(parsed.error));
@@ -424,12 +445,14 @@ export async function deleteInfotypeSlice(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("employee.edit");
   const employeeId = num(form.get("employeeId"));
   const code = str(form.get("infotype")) as SlicedInfotype;
   const id = num(form.get("id"));
   const config = SLICED_FORMS[code];
   if (!config) return fail("That infotype is not recognised.");
+  const guard = await guardEmployee(session, employeeId, code);
+  if (guard) return fail(guard);
 
   const removed = await deleteTimeSlice(config.table, id, actorOf(session));
   if (!removed) return fail("That record no longer exists.");
@@ -448,13 +471,15 @@ export async function saveRepeatingInfotype(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("employee.edit");
   const employeeId = num(form.get("employeeId"));
   const code = str(form.get("infotype"));
   const id = opt(form.get("id"));
   const createdAt = now();
   const validFrom = str(form.get("validFrom")) || today();
   const actor = actorOf(session);
+  const guard = await guardEmployee(session, employeeId);
+  if (guard) return fail(guard);
 
   const base = {
     employeeId,
@@ -543,11 +568,13 @@ export async function deleteRepeatingInfotype(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("employee.edit");
   const employeeId = num(form.get("employeeId"));
   const code = str(form.get("infotype"));
   const id = num(form.get("id"));
   const actor = actorOf(session);
+  const guard = await guardEmployee(session, employeeId);
+  if (guard) return fail(guard);
 
   if (code === "0006") {
     const [row] = await db.delete(paAddress).where(eq(paAddress.id, id)).returning();
@@ -574,7 +601,7 @@ export async function massUpdate(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("employee.edit");
 
   const field = str(form.get("field"));
   const value = str(form.get("newValue"));
@@ -587,6 +614,13 @@ export async function massUpdate(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) return fail("Enter an effective date.");
   if (ids.length === 0) return fail("Select at least one employee.");
   if (!value) return fail("Enter the new value.");
+  if ((field === "payScaleGroup" || field === "amount") && !can(session, "pay.view")) {
+    return fail("Changing pay needs permission to see pay.");
+  }
+  for (const employeeId of ids) {
+    const guard = await guardEmployee(session, employeeId);
+    if (guard) return fail(guard);
+  }
 
   const actor = actorOf(session);
   const reason = `Mass update of ${ids.length} ${ids.length === 1 ? "employee" : "employees"}`;
@@ -653,12 +687,14 @@ export async function setEmploymentStatus(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("employee.edit");
   const employeeId = num(form.get("employeeId"));
   const status = str(form.get("status"));
   if (!["Active", "On leave", "Terminated"].includes(status)) {
     return fail("That status is not recognised.");
   }
+  const guard = await guardEmployee(session, employeeId);
+  if (guard) return fail(guard);
 
   const actor = actorOf(session);
   await audited(
@@ -695,10 +731,4 @@ export async function setEmploymentStatus(
   revalidateEmployee(employeeId);
   revalidatePath("/org", "layout");
   return OK;
-}
-
-/** Count of employees, used for the dashboard figure. */
-export async function employeeCount(): Promise<number> {
-  const [row] = await db.select({ n: sql<number>`count(*)` }).from(paEmployee);
-  return row.n;
 }

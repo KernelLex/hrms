@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { count } from "drizzle-orm";
-import { getSession, hasRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   omCompany,
@@ -18,8 +17,7 @@ export default async function OrgLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["org.view"], "/");
 
   const [companies, areas, subAreas, jobs, orgUnits, positions, lines] =
     await Promise.all([

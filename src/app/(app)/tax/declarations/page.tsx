@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { can, requirePage } from "@/lib/access";
 import { asc, count, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tdsEmployeeDeclaration, tdsTaxSlab } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { formatINR, toRupees } from "@/lib/money";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
@@ -25,9 +24,8 @@ const COLUMNS: Column[] = [
 export default async function DeclarationsPage(props: {
   searchParams: Promise<{ page?: string }>;
 }) {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
-  const isHr = hasRole(session, "HR_ADMIN");
+  const session = await requirePage(["self.tax", "tax.manage"]);
+  const isHr = can(session, "tax.manage");
   const { page, limit, offset } = pageFrom((await props.searchParams).page);
 
   // An employee's request reads only their own declarations, not everyone's

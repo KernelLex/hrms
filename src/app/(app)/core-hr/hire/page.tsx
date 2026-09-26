@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession, hasRole } from "@/lib/auth";
+import { can, requirePage } from "@/lib/access";
 import { asc, eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -18,7 +18,9 @@ export default async function HirePage() {
   // Creating and changing employee records is HR's alone. The Server
   // Functions check this too; the page checks so nobody sees a form they
   // cannot submit.
-  if (!hasRole(await getSession(), "HR_ADMIN")) redirect("/");
+  // Hiring sets a salary, so it needs pay as well as the record.
+  const session = await requirePage(["employee.edit"]);
+  if (!can(session, "pay.view")) redirect("/core-hr");
 
   const [companies, areas, units, vacantPositions, schedules] = await Promise.all([
     db.select().from(omCompany).where(eq(omCompany.isActive, true)).orderBy(asc(omCompany.code)),

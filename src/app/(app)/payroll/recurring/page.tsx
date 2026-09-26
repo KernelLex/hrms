@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, eq, desc, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pyRecurringPayment, pyWageType, OPEN_ENDED } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveRecurringPayment, deleteRecurringPayment } from "@/app/actions/payroll";
@@ -22,8 +21,7 @@ const COLUMNS: Column[] = [
 /** PY-02 — IT0014 recurring payments and deductions. */
 export default async function RecurringPage(props: { searchParams: Promise<{ page?: string }> }) {
   const { page, limit, offset } = pageFrom((await props.searchParams).page);
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/payroll/my-payslips");
+  await requirePage(["payroll.setup"], "/payroll/my-payslips");
 
   const [{ n: total }] = await db.select({ n: count() }).from(pyRecurringPayment);
   const [rows, wageTypes, employees] = await Promise.all([

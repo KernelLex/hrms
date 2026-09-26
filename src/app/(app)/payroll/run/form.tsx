@@ -85,7 +85,7 @@ function useRunDriver(onDone: (runId: number, p: RunProgress) => void) {
   return { progress, error, busy, start, watch };
 }
 
-/** §10 Meters: an 8px pill, ink on a soft track. */
+/** §8.10 Meters: an 8px pill, ink on a soft track. */
 function RunMeter({ progress }: { progress: RunProgress }) {
   const pct = progress.planned === 0 ? 100 : Math.round((progress.done / progress.planned) * 100);
   return (

@@ -5,7 +5,7 @@ import { ptWorkScheduleRule, omPosition, omOrgUnit } from "@/db/schema";
 import { readAsOf, SLICED_TABLES } from "@/lib/engines/timeslice";
 import { getEmployee } from "@/lib/repositories/employees";
 import { formatINR } from "@/lib/money";
-import { getSession } from "@/lib/auth";
+import { can, getAccess } from "@/lib/access";
 import { logAccess } from "@/lib/access-log";
 import { Card, CardHeader, KeyValue, KeyValueRow, Notice } from "@/components/ui";
 import { Field, DateInput } from "@/components/inputs";
@@ -35,7 +35,9 @@ export default async function AsOfPage(props: {
   const employee = await getEmployee(employeeId, asOf);
   if (!employee) notFound();
 
-  const session = await getSession();
+  const session = await getAccess();
+  const seesPay = can(session, "pay.view");
+  const seesBank = can(session, "bank.view");
   if (session) {
     logAccess(session, { subjectEmployeeId: employeeId, resource: "Record as of a date", resourceId: asOf });
   }
@@ -125,6 +127,7 @@ export default async function AsOfPage(props: {
             </div>
           </Card>
 
+          {seesPay ? (
           <Card>
             <CardHeader
               title="Basic pay"
@@ -147,9 +150,10 @@ export default async function AsOfPage(props: {
               ) : null}
             </div>
           </Card>
+          ) : null}
 
           <Card>
-            <CardHeader title="Working time and bank" description={`IT0007 and IT0009 as of ${asOf}`} />
+            <CardHeader title={seesBank ? "Working time and bank" : "Working time"} description={`IT0007 and IT0009 as of ${asOf}`} />
             <div className="px-6 pb-4">
               <KeyValue>
                 <KeyValueRow label="Work schedule">
@@ -158,12 +162,16 @@ export default async function AsOfPage(props: {
                 <KeyValueRow label="Weekly hours">
                   {time ? <span className="tabular">{String(time.weekly_hours)}</span> : null}
                 </KeyValueRow>
-                <KeyValueRow label="Bank">{bank?.bank_name}</KeyValueRow>
-                <KeyValueRow label="Account">
-                  {bank?.account_number ? (
-                    <span className="tabular">{bank.account_number}</span>
-                  ) : null}
-                </KeyValueRow>
+                {seesBank ? (
+                  <>
+                    <KeyValueRow label="Bank">{bank?.bank_name}</KeyValueRow>
+                    <KeyValueRow label="Account">
+                      {bank?.account_number ? (
+                        <span className="tabular">{bank.account_number}</span>
+                      ) : null}
+                    </KeyValueRow>
+                  </>
+                ) : null}
               </KeyValue>
             </div>
           </Card>

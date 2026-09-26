@@ -57,6 +57,13 @@
       "when": 1790455812818,
       "tag": "0007_notifications_jobs_change_log",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790460861074,
+      "tag": "0008_permissions_and_approvals",
+      "breakpoints": true
     }
   ]
 }

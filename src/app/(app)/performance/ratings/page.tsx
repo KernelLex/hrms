@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { can, requirePage } from "@/lib/access";
 import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pmAppraisal, pmAppraisalCycle, RATING_LABELS } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import {
   listEmployees,
   listDirectReports,
@@ -27,11 +26,8 @@ import { ManagerRatingButton } from "./actions";
 
 /** PM-03 — self and manager ratings. */
 export default async function RatingsPage() {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
-  if (!hasRole(session, "HR_ADMIN", "MANAGER")) redirect("/performance/mine");
-
-  const isHr = hasRole(session, "HR_ADMIN");
+  const session = await requirePage(["performance.rate_any", "performance.rate_team"], "/performance/mine");
+  const isHr = can(session, "performance.rate_any");
   const visibleIds = isHr
     ? null
     : session.employeeId

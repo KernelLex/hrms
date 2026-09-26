@@ -5,7 +5,7 @@ import { RotateCcw } from "lucide-react";
 import { Button, ButtonLink, Card, PageHeader } from "@/components/ui";
 
 /**
- * When a screen fails to load, say so in words and offer the next step (§12:
+ * When a screen fails to load, say so in words and offer the next step (§8.12:
  * errors say what went wrong and what to do next). The shell stays, so the
  * rest of the product is still one click away.
  *

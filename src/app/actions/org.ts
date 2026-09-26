@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { eq, and, ne, count } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/access";
 import { actorOf, audited, recordCreated, recordDeleted } from "@/lib/change-log";
 import {
   omCompany,
@@ -26,7 +26,7 @@ import {
  *
  * Deletes check for dependent rows in application code rather than relying on
  * a foreign key error. The constraint would only produce "FOREIGN KEY
- * constraint failed"; §12 asks an error to say what went wrong and what to do
+ * constraint failed"; §8.12 asks an error to say what went wrong and what to do
  * next, which needs to name the thing that is still pointing at this record.
  */
 
@@ -92,7 +92,7 @@ export async function saveCompany(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const original = optional(form.get("originalCode"));
 
   const parsed = CompanyInput.safeParse({
@@ -130,7 +130,7 @@ export async function deleteCompany(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const c = str(form.get("code"));
 
   const [areas] = await db
@@ -175,7 +175,7 @@ export async function saveArea(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const original = optional(form.get("originalCode"));
 
   const parsed = AreaInput.safeParse({
@@ -216,7 +216,7 @@ export async function deleteArea(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const c = str(form.get("code"));
 
   const [subs] = await db
@@ -251,7 +251,7 @@ export async function saveSubArea(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const original = optional(form.get("originalCode"));
 
   const parsed = SubAreaInput.safeParse({
@@ -291,7 +291,7 @@ export async function deleteSubArea(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const c = str(form.get("code"));
   await recordDeleted(
     actor,
@@ -316,7 +316,7 @@ export async function saveJob(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const original = optional(form.get("originalCode"));
 
   const parsed = JobInput.safeParse({
@@ -350,7 +350,7 @@ export async function deleteJob(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const c = str(form.get("code"));
 
   const [positions] = await db
@@ -402,7 +402,7 @@ export async function saveOrgUnit(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const original = optional(form.get("originalCode"));
 
   const parsed = OrgUnitInput.safeParse({
@@ -452,7 +452,7 @@ export async function deleteOrgUnit(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const c = str(form.get("code"));
 
   const [children] = await db
@@ -519,7 +519,7 @@ export async function savePosition(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const original = optional(form.get("originalCode"));
 
   const parsed = PositionInput.safeParse({
@@ -571,7 +571,7 @@ export async function deletePosition(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const c = str(form.get("code"));
 
   const [reports] = await db
@@ -615,7 +615,7 @@ export async function saveReportingLine(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
 
   const parsed = ReportingLineInput.safeParse({
     positionCode: str(form.get("positionCode")),
@@ -657,7 +657,7 @@ export async function deleteReportingLine(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("org.edit"));
   const id = Number(str(form.get("id")));
   if (!Number.isInteger(id)) return fail("That reporting line could not be identified.");
 

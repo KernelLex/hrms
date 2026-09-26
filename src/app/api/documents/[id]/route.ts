@@ -1,33 +1,35 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appDocument } from "@/db/schema";
-import { getSession, hasRole, type Session } from "@/lib/auth";
+import { can, getAccess, inScope, type Access } from "@/lib/access";
 import { logAccess } from "@/lib/access-log";
 import { readDocument, safeFileName, type StoredDocument } from "@/lib/storage";
 
 /**
  * Downloads a stored document, after checking who is asking.
  *
- * Permission follows what the document belongs to. Candidate files are HR's
- * alone; new owner types must add a rule here, and until they do nobody can
- * read them — the default is no.
+ * Permission follows what the document belongs to: candidate files to whoever
+ * manages recruitment, an employee's files to them and to whoever may open
+ * their record. New owner types must add a rule here, and until they do
+ * nobody can read them — the default is no.
  */
-function mayRead(session: Session, doc: StoredDocument): boolean {
-  if (doc.ownerType === "candidate") return hasRole(session, "HR_ADMIN");
-  // An employee's own documents, and HR.
+async function mayRead(access: Access, doc: StoredDocument): Promise<boolean> {
+  if (doc.ownerType === "candidate") return can(access, "recruitment.manage");
+  // An employee's own documents, and whoever may open their record.
   if (doc.ownerType === "employee") {
-    return hasRole(session, "HR_ADMIN") || session.employeeId === doc.ownerId;
+    if (access.employeeId === doc.ownerId) return true;
+    return can(access, "employee.view_all") && (await inScope(access, doc.ownerId));
   }
   return false;
 }
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/documents/[id]">) {
-  const session = await getSession();
+  const session = await getAccess();
   if (!session) return new Response("Sign in first.", { status: 401 });
 
   const { id } = await ctx.params;
   const doc = await db.query.appDocument.findFirst({ where: eq(appDocument.id, Number(id)) });
-  if (!doc || !mayRead(session, doc)) return new Response("Not found.", { status: 404 });
+  if (!doc || !(await mayRead(session, doc))) return new Response("Not found.", { status: 404 });
 
   const body = await readDocument(doc);
   if (!body) return new Response("The file is missing from storage.", { status: 410 });

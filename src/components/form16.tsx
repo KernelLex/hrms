@@ -2,7 +2,7 @@ import { formatINRExact } from "@/lib/money";
 import { formatDate } from "@/lib/dates";
 
 /**
- * Form 16, Parts A and B — DESIGN_LANGUAGE.md §11 "Printed documents".
+ * Form 16, Parts A and B — HANDOVER.md §8.11 "Printed documents".
  *
  * Part A summarises what was deducted and deposited each quarter. Part B shows
  * the computation that arrives at the year's liability. The two reconcile: the

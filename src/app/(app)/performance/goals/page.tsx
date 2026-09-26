@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pmGoal, pmAppraisalCycle } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveGoal, deleteGoal } from "@/app/actions/performance";
@@ -22,8 +21,7 @@ const CATEGORIES = ["Business goal", "Development goal", "Behavioural competency
 
 /** PM-02 — goal setting for the cycle. */
 export default async function GoalsPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN", "MANAGER")) redirect("/performance/mine");
+  await requirePage(["performance.rate_any", "performance.rate_team"], "/performance/mine");
 
   const [rows, cycles, employees] = await Promise.all([
     db.select().from(pmGoal).orderBy(desc(pmGoal.id)),

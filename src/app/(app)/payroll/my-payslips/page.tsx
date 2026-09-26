@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pyPayrollResult, pyPayrollRun, pyPayrollPeriod } from "@/db/schema";
-import { getSession } from "@/lib/auth";
 import { formatINR } from "@/lib/money";
 import { formatDate, formatMonth } from "@/lib/dates";
 import {
@@ -23,8 +22,7 @@ import { FileText } from "lucide-react";
 
 /** Employee self-service: your own payslips. */
 export default async function MyPayslipsPage() {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
+  const session = await requirePage(["self.pay"]);
 
   if (!session.employeeId) {
     return (

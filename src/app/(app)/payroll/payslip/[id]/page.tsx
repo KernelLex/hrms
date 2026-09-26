@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { can, requirePage } from "@/lib/access";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -9,7 +10,6 @@ import {
   paEmployee,
   omCompany,
 } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { getEmployee, fullName } from "@/lib/repositories/employees";
 import { logAccess } from "@/lib/access-log";
 import { formatMonth } from "@/lib/dates";
@@ -22,8 +22,7 @@ import { PrintButton } from "@/components/print-button";
 export default async function PayslipPage(props: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
+  const session = await requirePage(["self.pay", "payroll.view"]);
 
   const { id } = await props.params;
   const resultId = Number(id);
@@ -34,8 +33,8 @@ export default async function PayslipPage(props: {
   });
   if (!result) notFound();
 
-  // An employee may only open their own payslip.
-  if (!hasRole(session, "HR_ADMIN") && session.employeeId !== result.employeeId) {
+  // Without the right to see payroll, only your own payslip.
+  if (!can(session, "payroll.view") && session.employeeId !== result.employeeId) {
     redirect("/payroll/my-payslips");
   }
 
@@ -81,7 +80,7 @@ export default async function PayslipPage(props: {
     <>
       <PageHeader
         back={
-          hasRole(session, "HR_ADMIN")
+          can(session, "payroll.view")
             ? { href: "/payroll/run", label: "Run payroll" }
             : { href: "/payroll/my-payslips", label: "My payslips" }
         }

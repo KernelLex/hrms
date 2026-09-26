@@ -1,5 +1,5 @@
 import { rawClient } from "@/lib/db";
-import { getSession, hasRole } from "@/lib/auth";
+import { can, getAccess } from "@/lib/access";
 import { logAccess } from "@/lib/access-log";
 import { csvResponse, rupees, toCsv } from "@/lib/csv";
 
@@ -8,9 +8,9 @@ import { csvResponse, rupees, toCsv } from "@/lib/csv";
  * 24Q return. HR only.
  */
 export async function GET(req: Request) {
-  const session = await getSession();
+  const session = await getAccess();
   if (!session) return new Response("Sign in first.", { status: 401 });
-  if (!hasRole(session, "HR_ADMIN")) return new Response("Not allowed.", { status: 403 });
+  if (!can(session, "tax.manage")) return new Response("Not allowed.", { status: 403 });
 
   const fy = new URL(req.url).searchParams.get("fy") ?? "";
   if (!/^\d{4}-\d{2}$/.test(fy)) return new Response("Choose a financial year.", { status: 400 });

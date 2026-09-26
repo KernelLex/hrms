@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { asc, eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -22,7 +22,7 @@ import {
   deleteRepeatingInfotype,
 } from "@/app/actions/core-hr";
 import { formatINR, toRupees } from "@/lib/money";
-import { getSession } from "@/lib/auth";
+import { can, getAccess } from "@/lib/access";
 import { logAccess } from "@/lib/access-log";
 import { formatDate } from "@/lib/dates";
 
@@ -35,8 +35,12 @@ export default async function InfotypePage(props: {
   const meta = infotypeByCode(infotype);
   if (!meta) notFound();
 
-  // The layout has already confirmed an HR session; record what was read.
-  const session = await getSession();
+  // The layout has already confirmed who may open the record; pay and bank
+  // details need their own permission. Record what was read.
+  const session = await getAccess();
+  if ((meta.code === "0008" && !can(session, "pay.view")) || (meta.code === "0009" && !can(session, "bank.view"))) {
+    redirect(`/core-hr/${employeeId}`);
+  }
   if (session) {
     logAccess(session, { subjectEmployeeId: employeeId, resource: `${meta.name} (IT${meta.code})` });
   }

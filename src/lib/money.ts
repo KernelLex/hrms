@@ -37,7 +37,7 @@ const INR_PAISE = new Intl.NumberFormat("en-IN", {
 
 /**
  * "₹72,000" — Indian digit grouping, no decimals.
- * §12: numbers carry their units and use local formats.
+ * §8.12: numbers carry their units and use local formats.
  */
 export function formatINR(paise: number): string {
   return INR.format(toRupees(paise));

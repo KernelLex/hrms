@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 /**
- * Toasts — DESIGN_LANGUAGE.md §9.
+ * Toasts — HANDOVER.md §8.9.
  *
  * Bottom centre, 24px from the edge, above open dialogs. Ink pill, white 13px
  * weight 500. Errors use a danger fill. Each leaves after 3.5 seconds and is

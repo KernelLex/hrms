@@ -5,7 +5,7 @@ import { Card, CardHeader, EmptyState, type Tone } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 /**
- * The pieces of a home screen — DESIGN_LANGUAGE.md §11 Home.
+ * The pieces of a home screen — HANDOVER.md §8.11 Home.
  *
  * "Needs attention" is a single card with one sentence per item: a status dot
  * (red for problems), the key noun in ink weight 500, a chevron at the end.
@@ -32,7 +32,7 @@ const DOT: Record<Tone, string> = {
   problem: "bg-danger-mark",
 };
 
-/** Words for the dot, so status never rests on the shape alone (§13). */
+/** Words for the dot, so status never rests on the shape alone (§8.13). */
 const TONE_LABEL: Record<Tone, string> = {
   done: "Done",
   action: "Needs action",

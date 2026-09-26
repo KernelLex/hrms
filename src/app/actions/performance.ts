@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, desc, gte, inArray, lte } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
-import { requireRole, requireSession, hasRole } from "@/lib/auth";
+import { can, requireAnyPermission, requirePermission, type Access } from "@/lib/access";
 import {
   pmAppraisalCycle,
   pmGoal,
@@ -51,13 +51,20 @@ function ratingOf(v: FormDataEntryValue | null): number | null {
   return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
 }
 
+/** Anyone, for someone who may rate anyone; otherwise only their direct reports. */
+async function mayRateEmployee(access: Access, employeeId: number): Promise<boolean> {
+  if (can(access, "performance.rate_any")) return true;
+  if (!access.employeeId) return false;
+  return (await listDirectReports(access.employeeId)).some((e) => e.id === employeeId);
+}
+
 /* --------------------------------------------------------- PM-01 cycles */
 
 export async function saveCycle(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("performance.manage"));
   const original = opt(form.get("originalCode"));
   const name = str(form.get("name"));
   const startDate = str(form.get("startDate"));
@@ -107,7 +114,7 @@ export async function deleteCycle(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("performance.manage"));
   const id = num(form.get("id"));
 
   const goals = await db.select({ id: pmGoal.id }).from(pmGoal).where(eq(pmGoal.cycleId, id));
@@ -135,7 +142,7 @@ export async function openCycle(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("performance.manage"));
   const id = num(form.get("id"));
 
   const cycle = await db.query.pmAppraisalCycle.findFirst({
@@ -192,7 +199,8 @@ export async function saveGoal(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN", "MANAGER"));
+  const session = await requireAnyPermission("performance.rate_any", "performance.rate_team");
+  const actor = actorOf(session);
   const original = opt(form.get("originalCode"));
   const description = str(form.get("description"));
   const weightage = num(form.get("weightagePercent"));
@@ -212,6 +220,9 @@ export async function saveGoal(
   };
   if (!values.cycleId || !values.employeeId) {
     return fail("Choose a cycle and an employee.");
+  }
+  if (!(await mayRateEmployee(session, values.employeeId))) {
+    return fail("You can only set goals for people who report to you.");
   }
 
   // Weightings across one employee's goals should not exceed 100.
@@ -251,11 +262,17 @@ export async function deleteGoal(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN", "MANAGER"));
+  const session = await requireAnyPermission("performance.rate_any", "performance.rate_team");
+  const id = num(form.get("id"));
+  const goal = await db.query.pmGoal.findFirst({ where: eq(pmGoal.id, id) });
+  if (!goal) return fail("That goal no longer exists.");
+  if (!(await mayRateEmployee(session, goal.employeeId))) {
+    return fail("You can only remove goals for people who report to you.");
+  }
   await recordDeleted(
-    actor,
+    actorOf(session),
     "pm_goal",
-    await db.delete(pmGoal).where(eq(pmGoal.id, num(form.get("id")))).returning(),
+    await db.delete(pmGoal).where(eq(pmGoal.id, id)).returning(),
   );
   revalidatePerformance();
   return OK;
@@ -268,7 +285,7 @@ export async function saveSelfRating(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireSession();
+  const session = await requirePermission("self.appraisal");
   const actor = actorOf(session);
   const id = num(form.get("id"));
 
@@ -311,11 +328,8 @@ export async function saveManagerRating(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireSession();
+  const session = await requireAnyPermission("performance.rate_any", "performance.rate_team");
   const actor = actorOf(session);
-  if (!hasRole(session, "HR_ADMIN", "MANAGER")) {
-    return fail("Only a manager or HR can record a manager rating.");
-  }
 
   const id = num(form.get("id"));
   const appraisal = await db.query.pmAppraisal.findFirst({
@@ -323,8 +337,8 @@ export async function saveManagerRating(
   });
   if (!appraisal) return fail("That appraisal no longer exists.");
 
-  // A manager may only rate their own reports; HR may rate anyone.
-  if (!hasRole(session, "HR_ADMIN")) {
+  // Someone who rates their team may only rate their own reports.
+  if (!can(session, "performance.rate_any")) {
     const reports = session.employeeId
       ? await listDirectReports(session.employeeId)
       : [];
@@ -381,7 +395,7 @@ export async function saveCalibration(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("performance.manage");
   const actor = actorOf(session);
   const appraisalId = num(form.get("appraisalId"));
 
@@ -484,7 +498,7 @@ export async function generateIncrements(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("performance.manage"));
   const cycleId = num(form.get("cycleId"));
   const effectiveDate = str(form.get("effectiveDate"));
 
@@ -595,7 +609,7 @@ export async function updateIncrement(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("performance.manage"));
   const id = num(form.get("id"));
   const percent = Number(str(form.get("incrementPercent")));
 
@@ -639,7 +653,7 @@ export async function approveIncrement(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("performance.manage");
   const actor = actorOf(session);
   const id = num(form.get("id"));
 
@@ -680,7 +694,7 @@ export async function pushIncrementsToPayroll(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const session = await requireRole("HR_ADMIN");
+  const session = await requirePermission("performance.manage");
   const actor = actorOf(session);
   const cycleId = num(form.get("cycleId"));
 
@@ -763,7 +777,7 @@ export async function setIncrementSalary(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requireRole("HR_ADMIN"));
+  const actor = actorOf(await requirePermission("performance.manage"));
   const id = num(form.get("id"));
   const amount = Number(str(form.get("newSalary")));
   if (!Number.isFinite(amount) || amount <= 0) return fail("Enter a salary above zero.");

@@ -24,7 +24,7 @@ type PositionOption = Option & { orgUnitCode: string };
 const INITIAL: ActionState = {};
 
 /**
- * §9 Tasks and steps — each step numbered with a 24px ink circle, and a live
+ * §8.9 Tasks and steps — each step numbered with a 24px ink circle, and a live
  * summary panel on the right that stays in view while scrolling.
  */
 function Step({
@@ -274,7 +274,7 @@ export function HireForm({
           {state.error ? <FormError>{state.error}</FormError> : null}
         </div>
 
-        {/* Live summary — stays in view while scrolling (§9). */}
+        {/* Live summary — stays in view while scrolling (§8.9). */}
         <div className="lg:sticky lg:top-8 lg:self-start">
           <Card>
             <div className="px-6 pt-5 pb-4">

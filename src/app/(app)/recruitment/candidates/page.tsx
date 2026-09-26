@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { count, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { rcCandidate, rcApplication, rcRequisition } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveCandidate, deleteCandidate } from "@/app/actions/recruitment";
 import { TwoLine } from "@/components/ui";
@@ -25,8 +24,7 @@ const SOURCES = ["Referral", "Job portal", "Campus", "Agency", "LinkedIn"];
 export default async function CandidatesPage(props: {
   searchParams: Promise<{ page?: string }>;
 }) {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["recruitment.manage"], "/");
   const { page, limit, offset } = pageFrom((await props.searchParams).page);
 
   const [rows, [{ n: total }], openRequisitions] = await Promise.all([

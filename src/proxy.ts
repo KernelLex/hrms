@@ -6,8 +6,9 @@ import type { NextRequest } from "next/server";
  *
  * Next.js 16 renamed Middleware to Proxy. Per the docs, this is not a session
  * management or authorization solution — it just keeps signed-out visitors off
- * app routes cheaply. Real verification happens in `getSession()` on the server
- * and in `requireRole()` inside every Server Function.
+ * app routes cheaply. Real verification happens on the server: `getSession()`
+ * reads the cookie, and `requirePermission()` checks what the person may do
+ * inside every Server Function, route and page.
  */
 export function proxy(request: NextRequest) {
   const hasSession = request.cookies.has("hrms_session");

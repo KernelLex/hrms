@@ -32,7 +32,7 @@ import type { ActionState } from "@/app/actions/org";
  *
  * The reference mockups put a form and a grid on one page with four equal
  * buttons (Save / New / Edit selected / Delete selected), which needs the
- * reader to hold a selection in their head and breaks §9's "at most one
+ * reader to hold a selection in their head and breaks §8.9's "at most one
  * primary button per screen". A list with a dialog says the same thing with
  * less to remember.
  */
@@ -331,7 +331,7 @@ export function MasterScreen({
         </form>
       </Dialog>
 
-      {/* §9 — destructive confirmations name the thing being removed. */}
+      {/* §8.9 — destructive confirmations name the thing being removed. */}
       <Dialog
         open={removing !== null}
         onClose={() => setRemoving(null)}

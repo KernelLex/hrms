@@ -69,7 +69,7 @@ describe("leave notifications", () => {
     expect(inbox).toHaveLength(1);
     expect(inbox[0].kind).toBe("leave.submitted");
     expect(String(inbox[0].title)).toContain("asked for leave");
-    expect(inbox[0].link).toBe("/time/approvals");
+    expect(inbox[0].link).toBe("/approvals?process=leave");
     expect(await outboxFor(manager.email)).toHaveLength(1);
   });
 
@@ -173,7 +173,7 @@ describe("deciding leave", () => {
 
     actAs(outsider.session);
     const refused = await decideLeaveRequest({}, form({ id: requestId, decision: "Approved" }));
-    expect(refused.error).toMatch(/people who report to you/);
+    expect(refused.error).toBe("This request is not waiting for you.");
 
     actAs(manager.session);
     expect(await decideLeaveRequest({}, form({ id: requestId, decision: "Approved" }))).toEqual({ ok: true });

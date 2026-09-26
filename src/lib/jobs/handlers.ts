@@ -5,6 +5,7 @@ import { processRunBatch } from "@/lib/engines/payroll";
 import { notify, usersForEmployees, type NotificationItem } from "@/lib/notifications";
 import { formatMonth, todayInIndia } from "@/lib/dates";
 import { enqueueJob, requeueJob } from "./queue";
+import { escalateOverdue } from "@/lib/workflow/engine";
 
 /**
  * What each kind of job does. A handler returns `{ again: true }` to be put
@@ -124,11 +125,14 @@ export const HANDLERS: Record<string, JobHandler> = {
   },
 
   /**
-   * Once a day: weekly self-review reminders, any payroll run left without
-   * a job, and housekeeping.
+   * Once a day: weekly self-review reminders, overdue approvals escalated,
+   * any payroll run left without a job, and housekeeping.
    */
   async "daily"() {
     await notifySelfReviews(null);
+
+    // Approval steps that have waited longer than their flow allows.
+    await escalateOverdue();
 
     // A run whose job failed or vanished is picked up again; one still
     // being worked is left alone.

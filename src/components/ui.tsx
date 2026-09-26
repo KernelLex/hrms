@@ -1,5 +1,5 @@
 /**
- * Primitives built to DESIGN_LANGUAGE.md §9-§11.
+ * Primitives built to HANDOVER.md §8.9-§8.11.
  *
  * Rules these encode so screens cannot break them:
  *  - one colour (ink) plus red for problems only
@@ -186,7 +186,7 @@ export function PageHeader({
 /* ------------------------------------------------------------------ status */
 
 /**
- * §9 Status. Every tone is distinct in greyscale, and always paired with a word.
+ * §8.9 Status. Every tone is distinct in greyscale, and always paired with a word.
  *  done      — finished, active, confirmed
  *  action    — needs action from us
  *  waiting   — in progress, or waiting on someone else
@@ -507,7 +507,7 @@ export function EmptyState({
 
 /* -------------------------------------------------------------- list row */
 
-/** A row inside a card that opens something. §9 Cards, §7 Arrows. */
+/** A row inside a card that opens something. §8.9 Cards, §8.7 Arrows. */
 export function RowLink({
   href,
   children,

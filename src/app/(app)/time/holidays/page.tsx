@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptHoliday } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveHoliday, deleteHoliday } from "@/app/actions/time";
 import { TimeTabs } from "../tabs";
@@ -34,8 +33,7 @@ const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 
 /** TM-05 — the public holiday calendar that working-day maths reads from. */
 export default async function HolidaysPage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/time/my-leave");
+  await requirePage(["time.manage"], "/time/my-leave");
 
   const rows = await db.select().from(ptHoliday).orderBy(asc(ptHoliday.date));
 

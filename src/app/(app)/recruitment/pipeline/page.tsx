@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -8,7 +8,6 @@ import {
   omPosition,
   PIPELINE_STAGES,
 } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { formatINR } from "@/lib/money";
 import {
   Card,
@@ -30,8 +29,7 @@ import { formatDate } from "@/lib/dates";
 
 /** RC-03 — the application pipeline. */
 export default async function PipelinePage() {
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/");
+  await requirePage(["recruitment.manage"], "/");
 
   const [rows, candidates, requisitions, positions] = await Promise.all([
     db

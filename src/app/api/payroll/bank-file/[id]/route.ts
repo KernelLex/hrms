@@ -1,5 +1,5 @@
 import { rawClient } from "@/lib/db";
-import { getSession, hasRole } from "@/lib/auth";
+import { can, getAccess } from "@/lib/access";
 import { logAccess } from "@/lib/access-log";
 import { csvCell } from "@/lib/csv";
 
@@ -11,9 +11,9 @@ import { csvCell } from "@/lib/csv";
  * agree with them or be wrong.
  */
 export async function GET(_req: Request, ctx: RouteContext<"/api/payroll/bank-file/[id]">) {
-  const session = await getSession();
+  const session = await getAccess();
   if (!session) return new Response("Sign in first.", { status: 401 });
-  if (!hasRole(session, "HR_ADMIN")) return new Response("Not allowed.", { status: 403 });
+  if (!can(session, "payroll.post") || !can(session, "bank.view")) return new Response("Not allowed.", { status: 403 });
 
   const { id } = await ctx.params;
   const fileId = Number(id);

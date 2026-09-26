@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { asc, desc, eq, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptAbsence, ptAbsenceType } from "@/db/schema";
-import { getSession, hasRole } from "@/lib/auth";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveAbsence, deleteAbsence } from "@/app/actions/time";
@@ -23,8 +22,7 @@ const COLUMNS: Column[] = [
 /** TM-01 — absence records (IT2001). */
 export default async function AbsencesPage(props: { searchParams: Promise<{ page?: string }> }) {
   const { page, limit, offset } = pageFrom((await props.searchParams).page);
-  const session = await getSession();
-  if (!hasRole(session, "HR_ADMIN")) redirect("/time/my-leave");
+  await requirePage(["time.manage"], "/time/my-leave");
 
   const [{ n: total }] = await db.select({ n: count() }).from(ptAbsence);
   const [rows, types, employees] = await Promise.all([

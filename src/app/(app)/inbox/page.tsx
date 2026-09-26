@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { Bell, CheckCheck } from "lucide-react";
-import { getSession } from "@/lib/auth";
 import { listNotifications } from "@/lib/notifications";
 import { formatTimestamp } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -13,8 +12,7 @@ import { Pagination, pageFrom } from "@/components/pagination";
  * Opening one marks it read and takes you to the thing it is about.
  */
 export default async function InboxPage(props: { searchParams: Promise<{ page?: string }> }) {
-  const session = await getSession();
-  if (!session) redirect("/sign-in");
+  const session = await requirePage();
 
   const { page, limit, offset } = pageFrom((await props.searchParams).page);
   const { rows, total } = await listNotifications(session.userId, limit, offset);

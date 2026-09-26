@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
-  Design tokens — DESIGN_LANGUAGE.md §2, §5, §6, §8.
+  Design tokens — HANDOVER.md §8.2, §8.5, §8.6, §8.8.
   Near-black ink on white, separated by hairlines. Red only for problems.
   This is a light-only system by design; there is no dark theme.
 */
@@ -62,7 +62,7 @@
 }
 
 /*
-  Tailwind's default radius scale already matches §5:
+  Tailwind's default radius scale already matches §8.5:
   rounded-lg 8px, rounded-xl 12px, rounded-2xl 16px, rounded-3xl 24px.
   No override needed.
 */
@@ -70,7 +70,7 @@
 /*
   Base rules live in the base layer so utilities can override them. Unlayered
   CSS outranks every @layer regardless of specificity, which once meant the
-  focus outline below could not be removed from text inputs, contrary to §13:
+  focus outline below could not be removed from text inputs, contrary to §8.13:
   inputs show the ink border and soft ring instead.
 */
 @layer base {
@@ -100,7 +100,7 @@
 }
 
 /*
-  §10 availability grid — hatched cells. "On hold" is white with 1px ink lines
+  §8.10 availability grid — hatched cells. "On hold" is white with 1px ink lines
   every 5px at 135°; "maintenance" is control grey with white lines at 45°.
 */
 .hatch-ink {
@@ -111,12 +111,12 @@
   background-image: repeating-linear-gradient(45deg, #fff 0 1px, transparent 1px 5px);
 }
 
-/* §3 — every amount, count and date that sits in a column or changes */
+/* §8.3 — every amount, count and date that sits in a column or changes */
 .tabular {
   font-variant-numeric: tabular-nums;
 }
 
-/* §8 — dialog entrance */
+/* §8.8 — dialog entrance */
 @keyframes dialog-in {
   from {
     opacity: 0;
@@ -128,7 +128,7 @@
   }
 }
 
-/* §8 — the loading line appears only if a screen is slow */
+/* §8.8 — the loading line appears only if a screen is slow */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -156,12 +156,12 @@ dialog[open]::backdrop {
   animation: scrim-in 180ms var(--ease-enter);
 }
 
-/* §6 — the command menu floats on a lighter scrim than a dialog */
+/* §8.6 — the command menu floats on a lighter scrim than a dialog */
 dialog[data-command-menu][open]::backdrop {
   background: rgb(0 0 0 / 0.25);
 }
 
-/* §8 — when the user has asked for less motion, keep only the fade */
+/* §8.8 — when the user has asked for less motion, keep only the fade */
 @media (prefers-reduced-motion: reduce) {
   @keyframes dialog-in {
     from {
@@ -181,7 +181,7 @@ dialog[data-command-menu][open]::backdrop {
   }
 }
 
-/* §11 — printed documents: ink only, sized for A4 */
+/* §8.11 — printed documents: ink only, sized for A4 */
 @page {
   size: A4;
   margin: 14mm 14mm 16mm;

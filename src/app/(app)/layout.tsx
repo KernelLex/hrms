@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
-import { navForRoles, roleLabel } from "@/lib/nav";
+import { getAccess, canAny, roleLabel } from "@/lib/access";
+import { navFor } from "@/lib/nav";
 import { Shell } from "@/components/shell";
 import { ToastProvider } from "@/components/toast";
 import { CommandMenuProvider } from "@/components/command-menu";
@@ -13,10 +13,10 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSession();
+  const session = await getAccess();
   if (!session) redirect("/sign-in");
 
-  const { actions, pages } = commandsFor(session.roles);
+  const { actions, pages } = commandsFor(session.permissions);
   const unread = await unreadCount(session.userId);
 
   return (
@@ -24,12 +24,12 @@ export default async function AppLayout({
       <CommandMenuProvider
         actions={actions}
         pages={pages}
-        canSearchPeople={session.roles.includes("HR_ADMIN") || session.roles.includes("MANAGER")}
+        canSearchPeople={canAny(session, "employee.view_all", "employee.view_team")}
       >
         <Shell
-          groups={navForRoles(session.roles)}
+          groups={navFor(session.permissions)}
           name={session.displayName}
-          role={roleLabel(session.roles)}
+          role={roleLabel(session)}
           unread={unread}
           signOutAction={signOutAction}
         >
