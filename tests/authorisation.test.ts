@@ -6,6 +6,7 @@ import * as approvals from "@/app/actions/approvals";
 import * as auth from "@/app/actions/auth";
 import * as careers from "@/app/actions/careers";
 import * as coreHr from "@/app/actions/core-hr";
+import * as corrections from "@/app/actions/corrections";
 import * as documents from "@/app/actions/documents";
 import * as integrations from "@/app/actions/integrations";
 import * as notifications from "@/app/actions/notifications";
@@ -43,6 +44,7 @@ const MODULES = {
   auth,
   careers,
   "core-hr": coreHr,
+  corrections,
   documents,
   integrations,
   notifications,
@@ -78,6 +80,8 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     massUpdate: ["employee.edit"],
     setEmploymentStatus: ["employee.edit"],
   },
+  // Only about the person themselves; HR decides in the approvals inbox.
+  corrections: { requestChange: ["self.profile"], cancelChange: ["self.profile"] },
   documents: { uploadEmployeeDocument: ["employee.documents"], removeEmployeeDocument: ["employee.documents"] },
   integrations: {
     createIntegrationClient: ["integrations.manage"],
@@ -99,6 +103,8 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   ]),
   payroll: {
     setPeriodStatus: ["payroll.post"],
+    setPeriodEmail: ["payroll.post"],
+    resendPayslip: ["payroll.post"],
     createPeriod: ["payroll.post"],
     saveWageType: ["payroll.setup"],
     deleteWageType: ["payroll.setup"],

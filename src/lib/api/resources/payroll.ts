@@ -7,6 +7,8 @@ import { addOneOffPayment, addRecurringPayment, recordRemittancePayment } from "
 import { ackStates, acknowledge, confirmPayments, ownerOf } from "@/lib/services/integration";
 import { DEFAULT_LIMIT, IsoDate, Money, PageQuery, decodeCursor, money, page, pageSchema, pickFields, toPaiseExact, until } from "../format";
 import { ApiError, invalid, notFound } from "../problem";
+import { getPayslip, ytdForRun } from "@/lib/repositories/payslips";
+import { payslipFileName, renderPayslipPdf } from "@/lib/documents/payslip-pdf";
 import { logApiAccess, type ApiContext, type Endpoint } from "../router";
 
 /**
@@ -73,6 +75,16 @@ const Result = z
     gross: Money,
     net: Money,
     lines: z.array(z.object({ wage_type: z.string(), name: z.string(), kind: z.string(), amount: Money })),
+    published_at: z.string().nullable().meta({ description: "When the employee could first see it; null until its month is posted." }),
+    year_to_date: z
+      .object({
+        financial_year: z.string().meta({ description: "Such as 2026-27." }),
+        gross: Money,
+        deductions: Money,
+        net: Money,
+        lines: z.array(z.object({ wage_type: z.string(), amount: Money })),
+      })
+      .meta({ description: "The financial year so far, up to and including this payslip, summed from the stored lines." }),
   })
   .meta({ id: "PayrollResult" });
 const GlPosting = z
@@ -307,7 +319,7 @@ export const payrollEndpoints: Endpoint[] = [
     path: "/payroll/runs/{id}/results",
     tag: "Payroll",
     summary: "The results of a run",
-    description: "Each person's gross, net and every line — what their payslip shows. Needs pay:read.",
+    description: "Each person's gross, net and every line — what their payslip shows — with the year to date. Needs pay:read. Each payslip's PDF is at /payroll/results/{id}/payslip.",
     scopes: ["payroll:read", "pay:read"],
     params: { id: "The run's id." },
     query: z.object(PageQuery),
@@ -321,6 +333,7 @@ export const payrollEndpoints: Endpoint[] = [
       if (!run) throw notFound();
       return idPage(ctx, "SELECT * FROM py_payroll_result WHERE run_id = ?", [Number(run.id)], async (rs) => {
         const ids = rs.map((r) => Number(r.id));
+        const ytd = await ytdForRun(Number(run.id), ids);
         const lines = ids.length
           ? await rows(`SELECT * FROM py_payroll_result_line WHERE result_id IN (${ids.map(() => "?").join(", ")}) ORDER BY sort_order`, ids)
           : [];
@@ -335,8 +348,40 @@ export const payrollEndpoints: Endpoint[] = [
           lines: lines
             .filter((l) => Number(l.result_id) === Number(r.id))
             .map((l) => ({ wage_type: String(l.wage_type_code), name: String(l.wage_type_name), kind: String(l.kind), amount: m(l.amount_paise) })),
+          published_at: s(r.published_at),
+          year_to_date: (() => {
+            const y = ytd.byResult.get(Number(r.id));
+            return {
+              financial_year: ytd.financialYear,
+              gross: m(y?.grossPaise ?? 0),
+              deductions: m(y?.deductionsPaise ?? 0),
+              net: m(y?.netPaise ?? 0),
+              lines: [...(y?.lines ?? new Map<string, number>()).entries()].map(([wage_type, amount]) => ({ wage_type, amount: m(amount) })),
+            };
+          })(),
         }));
       });
+    },
+  },
+  {
+    method: "GET",
+    path: "/payroll/results/{id}/payslip",
+    tag: "Payroll",
+    summary: "A payslip as a PDF",
+    description:
+      "One person's payslip as the PDF they would download, with the year to date — for the ERP's own portal to show. Not password-protected: show it only to that person. Needs pay:read.",
+    scopes: ["payroll:read", "pay:read"],
+    params: { id: "The payroll result's id, from the run's results." },
+    produces: "application/pdf",
+    response: z.string().meta({ description: "The PDF." }),
+    handler: async (ctx) => {
+      const r = runClause(ctx, "run_id");
+      const [row] = await rows(`SELECT id, employee_id FROM py_payroll_result WHERE id = ? AND ${r.sql}`, [Number(ctx.params.id), ...r.args]);
+      if (!row) throw notFound();
+      const p = await getPayslip(Number(row.id));
+      if (!p) throw notFound();
+      await logApiAccess(ctx, { subjectEmployeeId: p.employeeId, resource: "Payslip PDF through the API", resourceId: p.resultId });
+      return { file: { bytes: await renderPayslipPdf(p), contentType: "application/pdf", fileName: payslipFileName(p) } };
     },
   },
   {

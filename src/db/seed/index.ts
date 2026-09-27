@@ -18,6 +18,7 @@ import * as s from "../schema";
 import { seedPersonnel } from "./personnel";
 import { seedTime } from "./time";
 import { seedPayroll } from "./payroll";
+import { seedCorrections } from "./corrections";
 import { seedRecruitment } from "./recruitment";
 import { seedPerformance } from "./performance";
 
@@ -203,6 +204,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   // Pending leave goes onto the approval engine, as migration 0008 does for
   // requests that existed before it.
   for (const sql of ADOPT_PENDING_LEAVE) await client.execute(sql);
+  const correctionNotes = await seedCorrections(client);
 
   // Integration sandbox: known API credentials, only where asked for.
   const sandboxSecret = process.env.SANDBOX_CLIENT_SECRET?.trim();
@@ -217,6 +219,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     ...payrollNotes,
     ...recruitmentNotes,
     ...performanceNotes,
+    ...correctionNotes,
     ...sandboxNotes,
   ];
 }

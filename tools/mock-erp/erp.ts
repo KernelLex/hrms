@@ -81,6 +81,13 @@ export class ApiSession {
   get<T = unknown>(path: string) {
     return this.request<T>("GET", path);
   }
+
+  /** A file rather than JSON, such as a payslip PDF. */
+  async download(path: string): Promise<{ status: number; contentType: string | null; bytes: Uint8Array }> {
+    if (!this.token || Date.now() >= this.expiresAt) await this.takeToken();
+    const res = await this.fetcher(`${this.baseUrl}${path}`, { method: "GET", headers: { authorization: `Bearer ${this.token}` } });
+    return { status: res.status, contentType: res.headers.get("content-type"), bytes: new Uint8Array(await res.arrayBuffer()) };
+  }
 }
 
 /* -------------------------------------------------------- webhooks */

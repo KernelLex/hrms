@@ -4,6 +4,7 @@ import { createRouter, type Endpoint } from "./router";
 import { buildOpenApi } from "./openapi";
 import { integrationEndpoints } from "./resources/integration";
 import { employeeEndpoints } from "./resources/employees";
+import { correctionEndpoints } from "./resources/corrections";
 import { orgEndpoints } from "./resources/org";
 import { timeEndpoints } from "./resources/time";
 import { payrollEndpoints } from "./resources/payroll";
@@ -18,6 +19,7 @@ import { otherEndpoints } from "./resources/other";
 const RESOURCES: Endpoint[] = [
   ...integrationEndpoints,
   ...employeeEndpoints,
+  ...correctionEndpoints,
   ...orgEndpoints,
   ...timeEndpoints,
   ...payrollEndpoints,

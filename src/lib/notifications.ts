@@ -31,7 +31,7 @@ export const NOTIFICATION_KINDS = {
   },
   "payslip.ready": {
     label: "Payslips",
-    description: "When a month is posted and your payslip is ready.",
+    description: "When a month is posted and your payslip is ready. By email, it comes as a protected PDF where the company emails payslips.",
   },
   "self_review.due": {
     label: "Self review reminders",
@@ -40,6 +40,10 @@ export const NOTIFICATION_KINDS = {
   "rating.finalised": {
     label: "My final rating",
     description: "When calibration finalises your appraisal rating.",
+  },
+  "change_request.decided": {
+    label: "Decisions on my change requests",
+    description: "When HR approves or rejects a change you asked for to your record.",
   },
   "interview.assigned": {
     label: "Interviews I am asked to take",
@@ -61,6 +65,8 @@ export type NotificationItem = {
   link?: string | null;
   /** The event, per person: "leave.decided:42:7". */
   dedupeKey: string;
+  /** False when the person is emailed another way — a payslip with its PDF. */
+  email?: boolean;
 };
 
 type Prefs = { inApp: boolean; email: boolean };
@@ -125,7 +131,7 @@ export async function notificationStatements(items: NotificationItem[]): Promise
       });
     }
     const to = emails.get(item.userId);
-    if (pref.email && to) {
+    if (pref.email && to && item.email !== false) {
       const message = renderEmail({ title: item.title, body: item.body, link: item.link });
       statements.push(
         queueEmailStatement(`${item.dedupeKey}:email`, { to, ...message }, {

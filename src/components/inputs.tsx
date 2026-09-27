@@ -154,9 +154,12 @@ export function FormGrid({
   );
 }
 
-/** Spans every column of a FormGrid. */
+/**
+ * Spans every column of a FormGrid, however many it has. (`col-span-3` in a
+ * two-column grid would add a third column rather than span two.)
+ */
 export function FormFull({ children }: { children: React.ReactNode }) {
-  return <div className="sm:col-span-2 lg:col-span-3">{children}</div>;
+  return <div className="col-span-full">{children}</div>;
 }
 
 /** Optional fields stay folded away until asked for (§8.9). */

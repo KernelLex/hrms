@@ -149,6 +149,8 @@ export async function resolveApprovers(
   step: StepDef,
   request: { subjectEmployeeId: number | null; requesterUserId: number | null },
   executor: Executor = rawClient(),
+  /** People who may not take this step: those who approved an earlier one, where the process needs two people. */
+  exclude: number[] = [],
 ): Promise<number[]> {
   let users: number[] = [];
   const subject = request.subjectEmployeeId;
@@ -166,9 +168,10 @@ export async function resolveApprovers(
     });
     users = r.rows.map((u) => Number(u.id));
   }
-  users = [...new Set(users)].filter((u) => u !== request.requesterUserId);
+  const allowed = (u: number) => u !== request.requesterUserId && !exclude.includes(u);
+  users = [...new Set(users)].filter(allowed);
   if (users.length === 0) {
-    users = (await usersWithRole("HR_ADMIN", executor)).filter((u) => u !== request.requesterUserId);
+    users = (await usersWithRole("HR_ADMIN", executor)).filter(allowed);
   }
   return users;
 }
@@ -314,6 +317,15 @@ export async function getRequest(id: number): Promise<RequestRow | null> {
   return row ? toRequest(row as unknown as Record<string, unknown>) : null;
 }
 
+/** Everyone who has approved a step of this request so far. */
+async function approversSoFar(requestId: number, executor: Executor = rawClient()): Promise<number[]> {
+  const r = await executor.execute({
+    sql: "SELECT DISTINCT actor_user_id FROM wf_action WHERE request_id = ? AND decision = 'Approved' AND actor_user_id IS NOT NULL",
+    args: [requestId],
+  });
+  return r.rows.map((a) => Number(a.actor_user_id));
+}
+
 async function assigneesOf(requestId: number, step: number, executor: Executor = rawClient()): Promise<number[]> {
   const r = await executor.execute({
     sql: "SELECT user_id FROM wf_assignee WHERE request_id = ? AND step_order = ?",
@@ -344,6 +356,9 @@ export async function authority(
   }
   if (actor.employeeId !== null && request.subjectEmployeeId === actor.employeeId) {
     return { ok: false, reason: "You cannot decide a request about yourself." };
+  }
+  if (PROCESSES[request.process].distinctApprovers && (await approversSoFar(request.id)).includes(actor.userId)) {
+    return { ok: false, reason: "You approved an earlier step. Someone else has to approve this one." };
   }
   const assignees = await assigneesOf(request.id, request.currentStep);
   if (assignees.includes(actor.userId)) return { ok: true, onBehalfOf: null };
@@ -376,7 +391,16 @@ export async function decide(input: {
   const at = nowIso();
 
   // Everything to read is read before the transaction; inside it, only writes.
-  const nextAssignees = moveOn ? await resolveApprovers(next, request) : [];
+  const exclude = PROCESSES[request.process].distinctApprovers
+    ? [...(await approversSoFar(request.id)), input.actor.userId]
+    : [];
+  const nextAssignees = moveOn ? await resolveApprovers(next, request, rawClient(), exclude) : [];
+  if (moveOn && nextAssignees.length === 0) {
+    return {
+      error:
+        "This needs a second approver after you, and nobody else can give it. Give someone else a role that approves these requests, then approve again.",
+    };
+  }
   const nextNotices = moveOn
     ? await notificationStatements(
         (await recipientsFor(request.process, nextAssignees)).map((userId) => ({

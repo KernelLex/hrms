@@ -90,14 +90,18 @@ ${url ? `<tr><td style="padding:20px 24px 24px"><a href="${escape(url)}" style="
 }
 
 /** The outbox row for one email, to write in the same batch as its cause. */
+/** A file to attach, described rather than stored: rendered when sent or opened. */
+export type AttachmentSpec = { type: "payslip"; resultId: number; fileName: string; protected: boolean };
+
 export function queueEmailStatement(
   dedupeKey: string,
   message: EmailMessage,
   payload: unknown = null,
+  attachments: AttachmentSpec[] = [],
 ): InStatement {
   return {
-    sql: `INSERT INTO app_outbox (channel, dedupe_key, recipient, subject, body_text, body_html, payload, status, attempts, created_at)
-          VALUES ('email', ?, ?, ?, ?, ?, ?, 'queued', 0, ?)
+    sql: `INSERT INTO app_outbox (channel, dedupe_key, recipient, subject, body_text, body_html, payload, attachments, status, attempts, created_at)
+          VALUES ('email', ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?)
           ON CONFLICT (dedupe_key) DO NOTHING`,
     args: [
       dedupeKey,
@@ -106,6 +110,7 @@ export function queueEmailStatement(
       message.text,
       message.html,
       payload === null ? null : JSON.stringify(payload),
+      attachments.length ? JSON.stringify(attachments) : null,
       new Date().toISOString(),
     ],
   };
@@ -222,7 +227,7 @@ export async function listOutbox(
 
 export async function getOutboxMessage(
   id: number,
-): Promise<(OutboxRow & { bodyText: string; bodyHtml: string | null }) | null> {
+): Promise<(OutboxRow & { bodyText: string; bodyHtml: string | null; attachments: AttachmentSpec[] }) | null> {
   const r = await rawClient().execute({ sql: "SELECT * FROM app_outbox WHERE id = ? AND channel = 'email'", args: [id] });
   const row = r.rows[0] as unknown as Record<string, unknown> | undefined;
   if (!row) return null;
@@ -230,5 +235,6 @@ export async function getOutboxMessage(
     ...outboxRow(row),
     bodyText: String(row.body_text ?? ""),
     bodyHtml: row.body_html === null ? null : String(row.body_html),
+    attachments: row.attachments ? (JSON.parse(String(row.attachments)) as AttachmentSpec[]) : [],
   };
 }

@@ -52,24 +52,51 @@ function dayAfter(date: string): string {
 
 type Row = Record<string, InValue>;
 
+/** Tables whose records repeat by a type — an address per address type, a contact per kind. */
+export const TYPED_TABLES = {
+  address: { table: "pa_it0006_address", typeColumn: "address_type" },
+  communication: { table: "pa_it0105_communication", typeColumn: "comm_type" },
+} as const;
+
+type Executor = { execute: (s: InStatement) => Promise<{ rows: unknown[] }> };
+
+export type SliceInput = {
+  table: SlicedTable | (typeof TYPED_TABLES)[keyof typeof TYPED_TABLES]["table"];
+  employeeId: number;
+  validFrom: string;
+  validTo?: string;
+  seq?: number;
+  /** For a typed table: only records of this type are delimited, such as one address type. */
+  match?: { column: string; value: string };
+  data: Record<string, InValue>;
+  createdBy: string;
+  /** Who is making the change; defaults to `createdBy` as a system actor. */
+  actor?: Actor;
+  reason?: string | null;
+};
+
 /**
  * Writes a slice, delimiting whatever it supersedes, in one transaction.
  *
  * `data` holds only the infotype's own columns — the validity window,
  * employee, sequence and audit columns are added here.
  */
-export async function saveTimeSlice(opts: {
-  table: SlicedTable;
-  employeeId: number;
-  validFrom: string;
-  validTo?: string;
-  seq?: number;
-  data: Record<string, InValue>;
-  createdBy: string;
-  /** Who is making the change; defaults to `createdBy` as a system actor. */
-  actor?: Actor;
-  reason?: string | null;
-}): Promise<void> {
+export async function saveTimeSlice(opts: SliceInput): Promise<void> {
+  const tx = await rawClient().transaction("write");
+  try {
+    await writeTimeSlice(tx, opts);
+    await tx.commit();
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  }
+}
+
+/**
+ * The same write inside a transaction the caller owns — an approval's, say —
+ * so the slice commits or rolls back with everything else.
+ */
+export async function writeTimeSlice(tx: Executor, opts: SliceInput): Promise<void> {
   const {
     table,
     employeeId,
@@ -78,9 +105,10 @@ export async function saveTimeSlice(opts: {
     seq = 1,
     data,
     createdBy,
+    match,
   } = opts;
   const actor = opts.actor ?? systemActor(createdBy);
-  const log = async (tx: { execute: (s: InStatement) => Promise<unknown> }, change: Change) => {
+  const log = async (change: Change) => {
     const stmt = changeStatement(actor, { ...change, subjectEmployeeId: employeeId, reason: opts.reason });
     if (stmt) await tx.execute(stmt);
   };
@@ -88,117 +116,106 @@ export async function saveTimeSlice(opts: {
   if (validTo < validFrom) {
     throw new Error("Valid to cannot fall before valid from.");
   }
+  if (match && !/^[a-z_]+$/.test(match.column)) throw new Error("Not a column.");
 
-  const client = rawClient();
-  const tx = await client.transaction("write");
+  // Everything that overlaps the incoming window, for this employee and seq.
+  const overlapping = await tx.execute({
+    sql: `SELECT * FROM ${table}
+          WHERE employee_id = ? AND seq = ?
+            AND valid_to >= ? AND valid_from <= ?${match ? ` AND ${match.column} = ?` : ""}`,
+    args: [employeeId, seq, validFrom, validTo, ...(match ? [match.value] : [])],
+  });
+  const rows = overlapping.rows as unknown as Row[];
 
-  try {
-    // Everything that overlaps the incoming window, for this employee and seq.
-    const overlapping = await tx.execute({
-      sql: `SELECT * FROM ${table}
-            WHERE employee_id = ? AND seq = ?
-              AND valid_to >= ? AND valid_from <= ?`,
-      args: [employeeId, seq, validFrom, validTo],
-    });
+  // The slice in force the day before, if any: what this change replaces.
+  const predecessor = rows.find((r) => String(r.valid_from) < validFrom);
 
-    // The slice in force the day before, if any: what this change replaces.
-    const predecessor = overlapping.rows.find(
-      (r) => String((r as unknown as Row).valid_from) < validFrom,
-    ) as unknown as Row | undefined;
+  for (const row of rows) {
+    const id = row.id as number;
+    const from = row.valid_from as string;
+    const to = row.valid_to as string;
 
-    for (const raw of overlapping.rows) {
-      const row = raw as unknown as Row;
-      const id = row.id as number;
-      const from = row.valid_from as string;
-      const to = row.valid_to as string;
+    const startsBefore = from < validFrom;
+    const endsAfter = to > validTo;
 
-      const startsBefore = from < validFrom;
-      const endsAfter = to > validTo;
+    if (startsBefore && endsAfter) {
+      // Case 4 — the new slice sits inside an existing one. Keep both ends.
+      await tx.execute({
+        sql: `UPDATE ${table} SET valid_to = ? WHERE id = ?`,
+        args: [dayBefore(validFrom), id],
+      });
+      await log({ entity: table, entityId: id, action: "update", before: row, after: { ...row, valid_to: dayBefore(validFrom) } });
 
-      if (startsBefore && endsAfter) {
-        // Case 4 — the new slice sits inside an existing one. Keep both ends.
-        await tx.execute({
-          sql: `UPDATE ${table} SET valid_to = ? WHERE id = ?`,
-          args: [dayBefore(validFrom), id],
-        });
-        await log(tx, { entity: table, entityId: id, action: "update", before: row, after: { ...row, valid_to: dayBefore(validFrom) } });
-
-        const columns = Object.keys(row).filter((c) => c !== "id");
-        const values = columns.map((c) =>
-          c === "valid_from" ? dayAfter(validTo) : row[c],
-        );
-        const tail = await tx.execute({
-          sql: `INSERT INTO ${table} (${columns.join(", ")})
-                VALUES (${columns.map(() => "?").join(", ")}) RETURNING id`,
-          args: values,
-        });
-        await log(tx, {
-          entity: table,
-          entityId: Number(tail.rows[0].id),
-          action: "create",
-          after: Object.fromEntries(columns.map((c, i) => [c, values[i]])),
-        });
-      } else if (startsBefore) {
-        // Case 1 — truncate the tail.
-        await tx.execute({
-          sql: `UPDATE ${table} SET valid_to = ? WHERE id = ?`,
-          args: [dayBefore(validFrom), id],
-        });
-        await log(tx, { entity: table, entityId: id, action: "update", before: row, after: { ...row, valid_to: dayBefore(validFrom) } });
-      } else if (endsAfter) {
-        // Case 3 — truncate the head.
-        await tx.execute({
-          sql: `UPDATE ${table} SET valid_from = ? WHERE id = ?`,
-          args: [dayAfter(validTo), id],
-        });
-        await log(tx, { entity: table, entityId: id, action: "update", before: row, after: { ...row, valid_from: dayAfter(validTo) } });
-      } else {
-        // Case 2 — entirely superseded.
-        await tx.execute({
-          sql: `DELETE FROM ${table} WHERE id = ?`,
-          args: [id],
-        });
-        await log(tx, { entity: table, entityId: id, action: "delete", before: row });
-      }
+      const columns = Object.keys(row).filter((c) => c !== "id");
+      const values = columns.map((c) =>
+        c === "valid_from" ? dayAfter(validTo) : row[c],
+      );
+      const tail = await tx.execute({
+        sql: `INSERT INTO ${table} (${columns.join(", ")})
+              VALUES (${columns.map(() => "?").join(", ")}) RETURNING id`,
+        args: values,
+      });
+      await log({
+        entity: table,
+        entityId: Number((tail.rows[0] as Row).id),
+        action: "create",
+        after: Object.fromEntries(columns.map((c, i) => [c, values[i]])),
+      });
+    } else if (startsBefore) {
+      // Case 1 — truncate the tail.
+      await tx.execute({
+        sql: `UPDATE ${table} SET valid_to = ? WHERE id = ?`,
+        args: [dayBefore(validFrom), id],
+      });
+      await log({ entity: table, entityId: id, action: "update", before: row, after: { ...row, valid_to: dayBefore(validFrom) } });
+    } else if (endsAfter) {
+      // Case 3 — truncate the head.
+      await tx.execute({
+        sql: `UPDATE ${table} SET valid_from = ? WHERE id = ?`,
+        args: [dayAfter(validTo), id],
+      });
+      await log({ entity: table, entityId: id, action: "update", before: row, after: { ...row, valid_from: dayAfter(validTo) } });
+    } else {
+      // Case 2 — entirely superseded.
+      await tx.execute({
+        sql: `DELETE FROM ${table} WHERE id = ?`,
+        args: [id],
+      });
+      await log({ entity: table, entityId: id, action: "delete", before: row });
     }
-
-    const cols = [
-      "employee_id",
-      "valid_from",
-      "valid_to",
-      "seq",
-      "created_by",
-      "created_at",
-      ...Object.keys(data),
-    ];
-    const vals: InValue[] = [
-      employeeId,
-      validFrom,
-      validTo,
-      seq,
-      createdBy,
-      new Date().toISOString(),
-      ...Object.values(data),
-    ];
-
-    const inserted = await tx.execute({
-      sql: `INSERT INTO ${table} (${cols.join(", ")})
-            VALUES (${cols.map(() => "?").join(", ")}) RETURNING id`,
-      args: vals,
-    });
-    await log(tx, {
-      entity: table,
-      entityId: Number(inserted.rows[0].id),
-      action: "create",
-      before: predecessor ?? null,
-      after: Object.fromEntries(cols.map((c, i) => [c, vals[i]])),
-    });
-
-    await tx.commit();
-  } catch (err) {
-    await tx.rollback();
-    throw err;
   }
+
+  const cols = [
+    "employee_id",
+    "valid_from",
+    "valid_to",
+    "seq",
+    "created_by",
+    "created_at",
+    ...Object.keys(data),
+  ];
+  const vals: InValue[] = [
+    employeeId,
+    validFrom,
+    validTo,
+    seq,
+    createdBy,
+    new Date().toISOString(),
+    ...Object.values(data),
+  ];
+
+  const inserted = await tx.execute({
+    sql: `INSERT INTO ${table} (${cols.join(", ")})
+          VALUES (${cols.map(() => "?").join(", ")}) RETURNING id`,
+    args: vals,
+  });
+  await log({
+    entity: table,
+    entityId: Number((inserted.rows[0] as Row).id),
+    action: "create",
+    before: predecessor ?? null,
+    after: Object.fromEntries(cols.map((c, i) => [c, vals[i]])),
+  });
 }
 
 /**

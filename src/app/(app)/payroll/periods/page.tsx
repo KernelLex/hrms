@@ -17,7 +17,7 @@ import {
 } from "@/components/ui";
 import { CalendarRange } from "lucide-react";
 import { PayrollTabs } from "../tabs";
-import { PeriodActions, NewPeriodForm } from "./actions";
+import { PeriodActions, NewPeriodForm, PeriodEmailToggle } from "./actions";
 import { formatDate } from "@/lib/dates";
 
 const MONTHS = [
@@ -75,6 +75,7 @@ export default async function PeriodsPage() {
                   <Th>Status</Th>
                   <Th>Pay date</Th>
                   <Th numeric>Net total</Th>
+                  <Th>Email payslips</Th>
                   <Th>
                     <span className="sr-only">Actions</span>
                   </Th>
@@ -118,6 +119,9 @@ export default async function PeriodsPage() {
                       </Td>
                       <Td numeric>
                         {run ? formatINR(run.netTotalPaise) : <span className="text-decor">&mdash;</span>}
+                      </Td>
+                      <Td>
+                        <PeriodEmailToggle id={p.id} on={p.emailPayslips} posted={p.status === "Posted"} />
                       </Td>
                       <Td className="text-right whitespace-nowrap">
                         <PeriodActions id={p.id} status={p.status} hasRun={Boolean(run)} />

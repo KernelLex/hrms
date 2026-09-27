@@ -78,7 +78,7 @@ describe("the mock ERP", () => {
     // Every step did its work: none found nothing to do.
     const idle = steps.filter((s) => /^(no |skipped)/.test(s.detail)).map((s) => `${s.name}: ${s.detail}`);
     expect(idle).toEqual([]);
-    expect(steps.length).toBeGreaterThanOrEqual(17);
+    expect(steps.length).toBeGreaterThanOrEqual(19);
   });
 });
 

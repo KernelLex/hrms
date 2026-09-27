@@ -66,6 +66,8 @@ const ROUTES = [
   // Public: the page each API error links to. (/developers itself is the
   // third-party Scalar reference, loaded from a CDN, and is not ours to audit.)
   "/developers/errors",
+  // The approvals inbox's other tab, and the page the installed app shows offline.
+  "/approvals?process=correction", "/offline.html",
 ];
 
 /** List page, and the pattern of the detail links to follow from it. */
@@ -170,7 +172,8 @@ async function main() {
       for (const size of WIDTHS) {
         await page.setViewportSize({ width: size.width, height: size.height });
         const res = await page.goto(`${BASE}${route}`, { waitUntil: "networkidle" });
-        const landed = new URL(page.url()).pathname;
+        const at = new URL(page.url());
+        const landed = route.includes("?") ? at.pathname + at.search : at.pathname;
 
         // A role without access is redirected away; that is correct, not a finding.
         if (landed !== route) break;
@@ -205,7 +208,7 @@ async function main() {
         }
 
         if (shotsDir) {
-          const file = `${role.key}${route.replace(/\//g, "_") || "_home"}.${size.name}.png`;
+          const file = `${role.key}${route.replace(/[^a-zA-Z0-9.-]/g, "_") || "_home"}.${size.name}.png`;
           await page.screenshot({ path: path.join(shotsDir, file), fullPage: true });
         }
       }

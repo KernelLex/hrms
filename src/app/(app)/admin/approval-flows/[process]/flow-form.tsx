@@ -7,7 +7,7 @@ import { Loader2, Plus, X } from "lucide-react";
 import { saveFlow, type ActionState } from "@/app/actions/access";
 import { APPROVER_TYPES } from "@/lib/workflow/processes";
 import { Button, Card, CardHeader } from "@/components/ui";
-import { Field, FormError, FormGrid, Input, Select } from "@/components/inputs";
+import { Checkbox, Field, FormError, FormGrid, Input, Select } from "@/components/inputs";
 import { useToast } from "@/components/toast";
 
 type Step = {
@@ -28,12 +28,15 @@ const blank: Step = { approverType: "reporting_manager", approverRole: "", appro
 export function FlowForm({
   process,
   factLabel,
+  flagFact = false,
   initial,
   roles,
   users,
 }: {
   process: string;
   factLabel: string | null;
+  /** The fact is yes or no: the condition is a box, "only for …". */
+  flagFact?: boolean;
   initial: Step[];
   roles: { code: string; name: string }[];
   users: { id: number; label: string }[];
@@ -128,7 +131,16 @@ export function FlowForm({
               ) : (
                 <div />
               )}
-              {i > 0 && factLabel ? (
+              {i > 0 && factLabel && flagFact ? (
+                <div className="flex items-end pb-2.5">
+                  <Checkbox
+                    id={`min-${i}`}
+                    label={`Only for ${factLabel}`}
+                    checked={s.conditionMin !== ""}
+                    onChange={(e) => set(i, { conditionMin: e.target.checked ? "0" : "" })}
+                  />
+                </div>
+              ) : i > 0 && factLabel ? (
                 <Field label={`Only when more than this many ${factLabel}`} htmlFor={`min-${i}`} hint="Empty means every request.">
                   <Input
                     id={`min-${i}`}

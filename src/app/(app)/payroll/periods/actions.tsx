@@ -3,9 +3,9 @@
 import * as React from "react";
 import { useActionState } from "react";
 import { Loader2, Plus } from "lucide-react";
-import { setPeriodStatus, createPeriod, type ActionState } from "@/app/actions/payroll";
+import { setPeriodStatus, setPeriodEmail, createPeriod, type ActionState } from "@/app/actions/payroll";
 import { Button, Card, CardHeader } from "@/components/ui";
-import { Field, Select, Input, DateInput, FormGrid, FormError } from "@/components/inputs";
+import { Checkbox, Field, Select, Input, DateInput, FormGrid, FormError } from "@/components/inputs";
 import { useToast } from "@/components/toast";
 
 const MONTHS = [
@@ -129,6 +129,9 @@ export function NewPeriodForm({ areas }: { areas: { value: string; label: string
             <DateInput id="payDate" name="payDate" />
           </Field>
         </FormGrid>
+        <div className="mt-4">
+          <Checkbox id="emailPayslips" name="emailPayslips" defaultChecked label="Email payslips as protected PDFs when the period is posted" />
+        </div>
 
         {state.error ? (
           <div className="mt-4">
@@ -147,5 +150,39 @@ export function NewPeriodForm({ areas }: { areas: { value: string; label: string
         </div>
       </form>
     </Card>
+  );
+}
+
+/**
+ * "Email payslips when posted", per period, until it is posted. A disabled
+ * checkbox would not be submitted, so the value travels in a hidden field.
+ */
+export function PeriodEmailToggle({ id, on, posted }: { id: number; on: boolean; posted: boolean }) {
+  const toast = useToast();
+  const [state, action, pending] = useActionState(async (prev: ActionState, form: FormData) => {
+    const r = await setPeriodEmail(prev, form);
+    if (r.ok) toast(form.get("emailPayslips") === "1" ? "Payslips will be emailed" : "Payslips will not be emailed");
+    return r;
+  }, {} as ActionState);
+  if (posted) return <span className="text-[13px] text-muted">{on ? "Emailed" : "Not emailed"}</span>;
+  return (
+    <form action={action} className="flex flex-col gap-0.5">
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="emailPayslips" value={on ? "0" : "1"} />
+      <button
+        type="submit"
+        role="switch"
+        aria-checked={on}
+        aria-label="Email payslips when posted"
+        disabled={pending}
+        className="inline-flex items-center gap-2 text-[13px] text-secondary transition-colors duration-150 hover:text-ink disabled:opacity-40"
+      >
+        <span className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-150 ${on ? "bg-ink" : "bg-control"}`}>
+          <span className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform duration-150 ${on ? "translate-x-4" : "translate-x-0.5"}`} />
+        </span>
+        {on ? "On" : "Off"}
+      </button>
+      {state.error ? <span className="text-[13px] text-danger">{state.error}</span> : null}
+    </form>
   );
 }

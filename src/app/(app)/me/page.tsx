@@ -16,20 +16,31 @@ import {
   PageHeader,
   Badge,
   RowLink,
+  Status,
 } from "@/components/ui";
 import { DocumentList } from "@/components/documents";
 import { delegationsOf } from "@/lib/workflow/engine";
 import { listUsers } from "@/lib/repositories/access";
 import { AwayCard } from "./away";
+import { CancelRequestButton, ChangeRequestButton, type CurrentRecord } from "./change-request";
+import { describeChange, isSection } from "@/lib/corrections-values";
 
 /**
  * Employee self-service: what the company holds about you, as it stands
  * today, your documents, and who has looked at your records.
  *
- * Read-only. Corrections go through HR, who own the dated history; an
- * employee editing their own bank account unchecked is how payroll fraud
- * starts.
+ * Nothing here is edited directly. A correction is a request HR approves
+ * (a bank change needs a second person too), written from the date it
+ * applies so the history stays whole; an employee editing their own bank
+ * account unchecked is how payroll fraud starts.
  */
+
+const REQUEST_TONE: Record<string, "waiting" | "done" | "problem" | "neutral"> = {
+  Pending: "waiting",
+  Approved: "done",
+  Rejected: "problem",
+  Cancelled: "neutral",
+};
 
 function yearsOfService(hireDate: string, today: string): string {
   const [hy, hm, hd] = hireDate.split("-").map(Number);
@@ -82,6 +93,27 @@ export default async function MyProfilePage() {
 
   const e = profile.employee;
   const status = e.employment_status;
+  const p = profile.personal;
+  const current: CurrentRecord = {
+    personal: {
+      first_name: e.first_name ?? "",
+      last_name: e.last_name ?? "",
+      date_of_birth: p?.dateOfBirth ?? "",
+      gender: p?.gender ?? "",
+      marital_status: p?.maritalStatus ?? "",
+      nationality: p?.nationality ?? "",
+    },
+    addresses: Object.fromEntries(
+      profile.addresses.map((a) => [
+        a.type,
+        { line: a.line, city: a.city ?? "", state: a.state ?? "", postal_code: a.postalCode ?? "", country: a.country ?? "" },
+      ]),
+    ),
+    contacts: Object.fromEntries(profile.contacts.map((c) => [c.type, c.value])),
+    bank: profile.bank
+      ? { bank_name: profile.bank.bankName, ifsc: profile.bank.ifsc ?? "", holder_name: profile.bank.holderName ?? "" }
+      : null,
+  };
 
   return (
     <>
@@ -96,8 +128,9 @@ export default async function MyProfilePage() {
       />
 
       <Notice>
-        To correct anything here, ask HR. Records are dated, so a change is added from the day it
-        applies and the history stays intact.
+        To correct your personal details, addresses, contacts or bank account, request a change: HR
+        checks it, and it applies from the day you choose while your record keeps what it said before.
+        Your job and pay are changed by HR.
       </Notice>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -123,7 +156,7 @@ export default async function MyProfilePage() {
           </Card>
 
           <Card>
-            <CardHeader title="Personal details" />
+            <CardHeader title="Personal details" actions={<ChangeRequestButton current={current} today={today} />} />
             <div className="px-6 pb-4">
               <KeyValue>
                 <KeyValueRow label="Date of birth">
@@ -154,7 +187,10 @@ export default async function MyProfilePage() {
 
         <div className="flex flex-col gap-6">
           <Card>
-            <CardHeader title="Pay" />
+            <CardHeader
+              title="Pay"
+              actions={<ChangeRequestButton current={current} today={today} preset="bank" label="Change bank account" />}
+            />
             <div className="px-6 pb-4">
               <KeyValue>
                 <KeyValueRow label="Monthly basic pay">
@@ -169,6 +205,33 @@ export default async function MyProfilePage() {
               </KeyValue>
             </div>
           </Card>
+
+          {profile.requests.length > 0 ? (
+            <Card>
+              <CardHeader title="Your change requests" description="The last ten, newest first." />
+              <ul className="px-6 pb-3">
+                {profile.requests.map((q) => (
+                  <li key={q.id} className="flex items-start justify-between gap-3 border-b border-soft py-3 last:border-0">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-ink">
+                        {isSection(q.section) ? describeChange(q.section, q.subtype) : q.section}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted">
+                        From {formatDate(q.effectiveDate)}, asked {formatDate(q.requestedAt.slice(0, 10))}
+                        {q.decisionNote ? `. ${q.decisionNote}` : ""}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Status tone={REQUEST_TONE[q.status] ?? "neutral"}>
+                        {q.status === "Pending" ? "Waiting" : q.status === "Cancelled" ? "Withdrawn" : q.status}
+                      </Status>
+                      {q.status === "Pending" ? <CancelRequestButton id={q.id} /> : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
 
           {away}
 

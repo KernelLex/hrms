@@ -21,7 +21,8 @@ import {
 import { startRun, readRunProgress, type RunProgress } from "@/lib/engines/payroll";
 import { toPaise } from "@/lib/money";
 import { rawClient } from "@/lib/db";
-import { actorOf, audited, recordCreate, recordCreated, recordDelete } from "@/lib/change-log";
+import { actorOf, audited, changeStatement, recordCreate, recordCreated, recordDelete } from "@/lib/change-log";
+import { payslipEmailStatements } from "@/lib/payslip-mail";
 import { enqueueJob, requeueJob } from "@/lib/jobs/queue";
 import { kickJobs } from "@/lib/jobs/runner";
 import { addOneOffPayment, addRecurringPayment, recordRemittancePayment } from "@/lib/services/records";
@@ -115,6 +116,65 @@ export async function setPeriodStatus(
   return OK;
 }
 
+/** Whether posting this period emails each person their payslip. */
+export async function setPeriodEmail(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("payroll.post");
+  const id = num(form.get("id"));
+  const on = bool(form.get("emailPayslips"));
+  const period = await db.query.pyPayrollPeriod.findFirst({ where: eq(pyPayrollPeriod.id, id) });
+  if (!period) return fail("That period no longer exists.");
+  if (period.status === "Posted") return fail("That period is posted; its payslips have been published.");
+  await audited(
+    actorOf(session),
+    { entity: "py_payroll_period", entityId: id },
+    () => db.query.pyPayrollPeriod.findFirst({ where: eq(pyPayrollPeriod.id, id) }),
+    () => db.update(pyPayrollPeriod).set({ emailPayslips: on }).where(eq(pyPayrollPeriod.id, id)),
+  );
+  revalidatePayroll();
+  return OK;
+}
+
+/**
+ * Emails one person's payslip again, deliberately: whatever their
+ * preference, and as a new message, so the first one stays on record.
+ */
+export async function resendPayslip(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("payroll.post");
+  const resultId = num(form.get("resultId"));
+  const published = await rawClient().execute({
+    sql: `SELECT r.id FROM py_payroll_result r JOIN py_payroll_run run ON run.id = r.run_id AND run.status = 'Completed'
+          JOIN py_payroll_period p ON p.id = run.period_id
+          WHERE r.id = ? AND r.status = 'Calculated' AND (p.status = 'Posted' OR run.run_type = 'Off-cycle')`,
+    args: [resultId],
+  });
+  if (!published.rows[0]) return fail("That payslip has not been published yet.");
+  const mail = await payslipEmailStatements([resultId], { resend: true });
+  if (mail.withoutEmail.length > 0) return fail("There is no email address on their record. Add one first.");
+  const logged = await recordStatement(actorOf(session), resultId);
+  await rawClient().batch([...mail.statements, ...(logged ? [logged] : [])], "write");
+  await kickJobs();
+  revalidatePath("/outbox");
+  return OK;
+}
+
+async function recordStatement(actor: ReturnType<typeof actorOf>, resultId: number) {
+  const r = await rawClient().execute({ sql: "SELECT employee_id FROM py_payroll_result WHERE id = ?", args: [resultId] });
+  return changeStatement(actor, {
+    entity: "py_payroll_result",
+    entityId: resultId,
+    subjectEmployeeId: Number(r.rows[0]?.employee_id ?? 0) || null,
+    action: "update",
+    after: { emailed_again: new Date().toISOString() },
+    reason: "Payslip emailed again",
+  });
+}
+
 export async function createPeriod(
   _prev: ActionState,
   form: FormData,
@@ -145,6 +205,7 @@ export async function createPeriod(
       month,
       payDate: opt(form.get("payDate")),
       status: "Open",
+      emailPayslips: form.has("emailPayslips") ? bool(form.get("emailPayslips")) : true,
     })
     .returning();
   await recordCreate(actorOf(session), "py_payroll_period", created.id, created);

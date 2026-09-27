@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { requirePage } from "@/lib/access";
+import { FileText } from "lucide-react";
+import { can, requirePage } from "@/lib/access";
 import { getOutboxMessage } from "@/lib/email";
 import { formatTimestamp } from "@/lib/dates";
 import { Card, CardHeader, KeyValue, KeyValueRow, PageHeader } from "@/components/ui";
@@ -18,7 +19,7 @@ const STATUS: Record<string, string> = {
  * browser; the plain-text version sits beside it.
  */
 export default async function OutboxMessagePage(props: { params: Promise<{ id: string }> }) {
-  await requirePage(["audit.view"], "/");
+  const session = await requirePage(["audit.view"], "/");
 
   const id = Number((await props.params).id);
   if (!Number.isInteger(id)) notFound();
@@ -64,6 +65,35 @@ export default async function OutboxMessagePage(props: { params: Promise<{ id: s
               </KeyValue>
             </div>
           </Card>
+          {message.attachments.length > 0 ? (
+            <Card>
+              <CardHeader
+                title="Attachments"
+                description="Made when the message is sent, never stored. A payslip opens with its employee's password."
+              />
+              <ul className="px-6 pb-4">
+                {message.attachments.map((a, i) => (
+                  <li key={i} className="border-b border-soft py-2.5 text-[13px] last:border-0">
+                    {can(session, "payroll.view") ? (
+                      <a href={`/api/outbox/${message.id}/attachments/${i}`} className="inline-flex items-center gap-1.5 font-medium text-ink hover:underline">
+                        <FileText className="size-4" />
+                        {a.fileName}
+                      </a>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-ink">
+                        <FileText className="size-4" />
+                        {a.fileName}
+                      </span>
+                    )}
+                    <div className="mt-0.5 text-xs text-muted">
+                      {a.protected ? "Password-protected PDF" : "PDF"}
+                      {can(session, "payroll.view") ? "" : "; opening it needs the right to see payroll"}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader title="Plain text" description="For mail apps that do not show HTML." />
             <pre className="px-6 pb-5 font-sans text-[13px] whitespace-pre-wrap text-secondary">

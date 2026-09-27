@@ -22,6 +22,7 @@ export default async function FlowPage(props: { params: Promise<{ process: strin
     <FlowForm
       process={process}
       factLabel={facts[0] ?? null}
+      flagFact={Boolean(PROCESSES[process].flagFacts)}
       initial={steps.map((s) => ({
         approverType: s.approverType,
         approverRole: s.approverRole ?? "",

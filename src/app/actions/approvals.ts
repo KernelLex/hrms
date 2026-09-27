@@ -26,6 +26,7 @@ function revalidateApprovals() {
   revalidatePath("/approvals");
   revalidatePath("/time", "layout");
   revalidatePath("/me");
+  revalidatePath("/core-hr", "layout");
   revalidatePath("/");
 }
 

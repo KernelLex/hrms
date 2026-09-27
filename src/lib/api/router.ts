@@ -38,6 +38,8 @@ export type ApiResult = {
   status?: number;
   body?: unknown;
   headers?: Record<string, string>;
+  /** A file instead of JSON, such as a payslip PDF. */
+  file?: { bytes: Uint8Array; contentType: string; fileName: string };
 };
 
 export type Endpoint = {
@@ -64,6 +66,8 @@ export type Endpoint = {
   idempotent?: boolean;
   /** Returns an ETag; PUT and PATCH honour If-Match. */
   etag?: boolean;
+  /** Answers with a file of this type rather than JSON. */
+  produces?: "application/pdf";
   /** For the documentation: a request and its response. */
   example?: {
     path?: string;
@@ -313,6 +317,19 @@ export function createRouter(endpoints: Endpoint[]) {
       const result = await endpoint.handler(ctx);
       const status = result.status ?? endpoint.status ?? 200;
       if (client && method !== "GET") await kickJobs(url.origin);
+      if (result.file) {
+        return finish(
+          new Response(Buffer.from(result.file.bytes), {
+            status,
+            headers: {
+              "Content-Type": result.file.contentType,
+              "Content-Disposition": `inline; filename="${result.file.fileName}"`,
+              "Cache-Control": "no-store",
+              ...result.headers,
+            },
+          }),
+        );
+      }
       return finish(json(status, status === 204 ? undefined : result.body, result.headers));
     } catch (err) {
       const apiError =

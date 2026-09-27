@@ -275,3 +275,42 @@ export const ptWorkScheduleRule = sqliteTable("pt_work_schedule_rule", {
   workingDays: text("working_days"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
 });
+
+/* ------------------------------------------------ correction requests */
+
+/**
+ * An employee asking for their record to change: what, to what, from when,
+ * and the approval request that decides it. Approved, it is written through
+ * the time-slice engine from its effective date, so the history stays whole.
+ */
+export const paChangeRequest = sqliteTable(
+  "pa_change_request",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    /** "personal", "address", "contact" or "bank". */
+    section: text("section").notNull(),
+    /** The address or contact type, where the section has several. */
+    subtype: text("subtype"),
+    /** The values asked for, as JSON. */
+    proposed: text("proposed").notNull(),
+    /** The values in force when it was asked, as JSON, for the side-by-side view. */
+    current: text("current"),
+    effectiveDate: text("effective_date").notNull(),
+    note: text("note"),
+    /** Proof, filed as one of the employee's documents: needed for bank changes. */
+    evidenceDocumentId: integer("evidence_document_id"),
+    /** "Pending", "Approved", "Rejected" or "Cancelled". */
+    status: text("status").notNull().default("Pending"),
+    /** "self" from My profile, or "api" from a connected system. */
+    channel: text("channel").notNull().default("self"),
+    requestedByUserId: integer("requested_by_user_id"),
+    requestedByName: text("requested_by_name").notNull(),
+    requestedAt: text("requested_at").notNull(),
+    decidedAt: text("decided_at"),
+    decisionNote: text("decision_note"),
+  },
+  (t) => [index("ix_change_request_employee").on(t.employeeId, t.status)],
+);

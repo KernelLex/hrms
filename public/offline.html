@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>You are offline — HRMS</title>
+    <style>
+      :root { --bg: #fafafa; --card: #ffffff; --ink: #171717; --muted: #525252; --line: #ebebeb; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      main { width: 100%; max-width: 380px; }
+      .mark { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; border-radius: 8px; background: var(--ink); color: var(--bg); font-weight: 600; font-size: 13px; }
+      h1 { font-size: 28px; line-height: 1.2; letter-spacing: -0.02em; margin: 28px 0 6px; }
+      p { color: var(--muted); margin: 0 0 20px; }
+      button { font: inherit; font-size: 14px; font-weight: 500; border: 0; border-radius: 999px; padding: 9px 18px; background: var(--ink); color: var(--bg); cursor: pointer; }
+      button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="mark" aria-hidden="true">H</span>
+      <h1>You are offline</h1>
+      <p>HRMS needs a connection to show your records. Nothing about you is kept on this device, so there is nothing to show until you are back online.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

@@ -7,7 +7,7 @@ import type { Scope } from "@/lib/api/scopes";
  * the one router, with a real client, secret and token.
  */
 
-export type Call = { status: number; body: unknown; headers: Headers };
+export type Call = { status: number; body: unknown; headers: Headers; bytes?: Uint8Array };
 
 export async function call(
   method: string,
@@ -28,6 +28,9 @@ export async function call(
     }
   }
   const res = await dispatch(new Request(url, { method, headers, body }), new URL(url).pathname.replace(/^\/api\/v1/, ""));
+  if (!/json/.test(res.headers.get("content-type") ?? "json")) {
+    return { status: res.status, body: null, headers: res.headers, bytes: new Uint8Array(await res.arrayBuffer()) };
+  }
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : null, headers: res.headers };
 }

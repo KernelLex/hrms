@@ -1,6 +1,6 @@
 # HRMS — handover
 
-**Last updated:** 27 Sept 2026 · **Current phase:** 12 of 25 done (the integration API and the two-way link with the client's ERP), with the recruitment workflow reworked alongside it. Next is phase 13, self-service and payslips.
+**Last updated:** 27 Sept 2026 · **Current phase:** 13 of 25 done (self-service and payslips: corrections, year to date, PDF payslips by email, the installable app). Next is phase 14, joining, moving and letters.
 
 **Live:** https://hrms-amogh24.vercel.app · **Repository:** `github.com/KernelLex/hrms` (branch `main`) · **Continuous integration:** GitHub Actions on every push
 
@@ -26,7 +26,8 @@ This is the one document for this project. It says what the software is, how it 
 
 ## 1. How to use this document
 
-- **It replaces every other document** the project had: the product README, the status report, the build plan, the roadmap, the production-readiness list, the design language and the plan for phases 10 to 25. Their content is all here. `README.md` in the repository only points here, and `AGENTS.md` / `CLAUDE.md` are instructions for coding assistants, not project documentation.
+- **It replaces every other document** the project had: the product README, the status report, the build plan, the roadmap, the production-readiness list, the design language and the plan for phases 10 to 25. Their content is all here. `AGENTS.md` / `CLAUDE.md` are instructions for coding assistants, not project documentation.
+- **`README.md` is for the client**, not developers: the software's features in plain language, how to try it, a short "Coming next" list, and what it does not cover yet. Update it in the same commit whenever a phase adds or changes a feature, moving shipped items out of "Coming next". No dates or phase numbers in it.
 - **`API.md` is the one other document**, and it has a different reader: the developers of a system that connects to the HRMS, starting with the client's ERP. It is the guide to the API; its reference section is generated from the code, and a test fails when it falls behind (§7.1).
 - **Section references** in code comments point here. `HANDOVER.md §8.9` means section 8.9, the design language's components. The original blueprint and HTML mockups in `HR MODULE/` are kept as reference for features, not for appearance (see §6.3).
 - **Keep it current as part of the work, not after it.** At the end of every phase, in the same commit:
@@ -34,6 +35,7 @@ This is the one document for this project. It says what the software is, how it 
   - move the finished phase from §9 into §11 (history), noting where the build differed from the plan;
   - update §4 to §8 wherever the phase changed setup, architecture, screens, conventions or design;
   - update §10 — close what the phase closed, add what it revealed.
+  - update `README.md` with any feature the phase added or changed, in the client's language.
 - **Collaborating.** Propose a change to the plan by editing §9 in a pull request; record a decision in §7.3 with the reason; record anything that needs someone outside the team in phase 25 (§9.6). No timelines or effort estimates: this document says what and why, not how long.
 - **Commits** are made as `tfthushaar`, and carry no co-author or tool attribution lines.
 
@@ -60,11 +62,11 @@ Each role opens to its own home screen, showing only what that person has to dec
 
 **Org management.** Companies, personnel areas and sub-areas, jobs, departments and positions, each with validity dates, so the structure has a history. Positions carry reporting lines, so the org chart is derived from data, not drawn.
 
-**Core HR.** Every fact about a person is a dated record (an *infotype*, in SAP's word), not a field that gets overwritten. Change someone's salary and the old figure is closed off, not destroyed, so you can ask what anyone's pay, position or address was on any past date. Hiring is a guided action: the records are created together or not at all. HR files each person's documents on their record. Every read of pay, bank, tax and documents is logged, and every change is logged with its value before and after.
+**Core HR.** Every fact about a person is a dated record (an *infotype*, in SAP's word), not a field that gets overwritten. Employees ask for corrections to their own record, which HR approves — a bank change with proof and a second approver — and the change is written from the day it applies. Change someone's salary and the old figure is closed off, not destroyed, so you can ask what anyone's pay, position or address was on any past date. Hiring is a guided action: the records are created together or not at all. HR files each person's documents on their record. Every read of pay, bank, tax and documents is logged, and every change is logged with its value before and after.
 
 **Time and absence.** Leave types, annual entitlements, and requests that go through a configurable approval flow — by default the employee's reporting manager; longer leave can add HR. The balance moves on approval, and unpaid leave reaches payroll as a deduction. Attendance, overtime, work schedules, public holidays and a team calendar sit alongside.
 
-**Payroll.** A period opens, locks for processing and is posted. The run works gross to net — basic pay for the days each person was employed, allowances, recurring and one-off payments, unpaid-leave proration, arrears, provident fund and tax — and produces a payslip that itemises every line. It handles joiners, leavers and mid-month raises by the day; pays arrears once when a paid month's inputs change; spreads tax across the year; runs off-cycle payments; and flags everyone new or whose pay moved 10% before posting. Runs are background jobs, so they finish with the screen closed. Downstream: the bank transfer file, the ledger journal by cost centre, and the statutory remittances.
+**Payroll.** A period opens, locks for processing and is posted. The run works gross to net — basic pay for the days each person was employed, allowances, recurring and one-off payments, unpaid-leave proration, arrears, provident fund and tax — and produces a payslip that itemises every line with the year to date, on screen and as a PDF, emailed to each person password-protected when the month is posted. It handles joiners, leavers and mid-month raises by the day; pays arrears once when a paid month's inputs change; spreads tax across the year; runs off-cycle payments; and flags everyone new or whose pay moved 10% before posting. Runs are background jobs, so they finish with the screen closed. Downstream: the bank transfer file, the ledger journal by cost centre, and the statutory remittances.
 
 **Recruitment.** A requisition opens hiring for a vacant position and describes the role — title, description, qualifications, skills, experience, type, place, a budget HR alone sees, and the hiring manager. Published, it appears on a public **careers site** where candidates apply with their resume, no account needed. Each application is **screened** — the profile rejected, or taken to interview — then goes through as many **interview rounds** as it needs, each with its own interviewer, date, time, place and notes, until the candidate is **approved or rejected**. An approved candidate is made an offer and converted into an employee through the same hiring action Core HR uses. Interviewers are told when they are asked, see their rounds under My interviews, and record their own notes.
 
@@ -73,6 +75,8 @@ Each role opens to its own home screen, showing only what that person has to dec
 **Tax and Form 16.** Declarations under both regimes, the quarterly register of tax deducted and deposited, and both parts of Form 16, which reconcile against each other. Section 87A includes the new regime's marginal relief.
 
 **Reports.** Headcount, payroll cost and leave by department, attrition, and CSV exports.
+
+**On phones.** Every screen works at phone width, and the app installs to a phone's home screen; it keeps only its own code on the device, never anyone's data.
 
 **Platform.** Notifications in an inbox and by email (recorded in an outbox until a provider is connected), background jobs, a change log of every write, permissions and roles HR edits, and an approval engine with delegation and escalation.
 
@@ -97,14 +101,14 @@ The value is in the seams:
 
 | | |
 |---|---|
-| Phases complete | 0 to 9 (the original build), 10, 11 and 12 of the extended plan. Part A runs to 24; Part B is 25. |
-| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site |
-| Database tables | 91, in 11 migrations (0000 to 0010) |
+| Phases complete | 0 to 9 (the original build), 10 to 13 of the extended plan. Part A runs to 24; Part B is 25. |
+| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page |
+| Database tables | 92, in 12 migrations (0000 to 0011) |
 | Engines | Time-slice, quota, payroll, tax, time evaluation; plus the job runner and the approval engine |
 | Permissions | 31, in ten groups; 3 built-in roles and a Recruiter role as the example |
-| Integration API | 47 endpoints under `/api/v1`, 19 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
-| Automated tests | **239 passing** in 25 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
-| UI audit | **260 of 260** role, screen and width combinations clean (`npm run audit:ui`), as four people at 1280 and 375 pixels |
+| Integration API | 50 endpoints under `/api/v1`, 21 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
+| Automated tests | **253 passing** in 28 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
+| UI audit | **276 of 276** role, screen and width combinations clean (`npm run audit:ui`), as four people at 1280 and 375 pixels |
 | CI | Typecheck, lint, tests, production build, UI audit and the mock ERP over HTTP on every push |
 | Pending on others | Cloudflare R2 (not enabled on the account), email delivery (no provider chosen), and the rest of phase 25 |
 
@@ -125,8 +129,9 @@ The value is in the seams:
 | 10 | Notifications, background jobs, the change log and CI | done |
 | 11 | Permissions and approvals | done |
 | 12 | Integration API and the two-way ERP link, with the recruitment workflow reworked | done |
-| 13 | Self-service and payslips | **next** |
-| 14–24 | Joining and moving, org tools, leave policies, attendance, statutory payroll, loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
+| 13 | Self-service and payslips | done |
+| 14 | Joining, moving and letters | **next** |
+| 15–24 | Org tools, leave policies, attendance, statutory payroll, loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
 | 25 | Outside input: the ERP go-live, email, R2, e-signature and the rest | waits on you and the client (§9.6) |
 
 ### 3.3 Infrastructure
@@ -134,7 +139,7 @@ The value is in the seams:
 | Service | Status | Detail |
 |---|---|---|
 | GitHub | working | `KernelLex/hrms`; Actions runs CI on every push and pull request |
-| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0010 and seeded. One database: production and the demo are the same (§10). |
+| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0011 and seeded. One database: production and the demo are the same (§10). |
 | Vercel | working | Project `amogh24/hrms`; deploys `main` on push; Vercel Cron calls `/api/cron/tick` daily |
 | Email | recording only | No provider connected: every email is written to the outbox and readable on the Outbox screen, not sent |
 | Cloudflare R2 | pending | Not enabled on the Cloudflare account (API error 10042). Documents are stored in the database until it is (§5.8). |
@@ -147,7 +152,7 @@ The sign-in page lists four accounts; **one click signs straight in**. The passw
 |---|---|---|
 | Priya Sharma, `hr.admin` | HR administrator | The whole back office, reports, exports, roles and approval flows |
 | Ravi Kumar, `ravi.kumar` | Manager and employee | Their team's approvals, ratings and calendar, their own records, and the interviews they are asked to take |
-| Arjun Mehta, `arjun.mehta` | Employee | Their own profile, leave, payslips, declaration, Form 16 and appraisal, and a culture round to take under My interviews |
+| Arjun Mehta, `arjun.mehta` | Employee | Their own profile, leave, payslips, declaration, Form 16 and appraisal, a culture round to take under My interviews, and an address change waiting for HR |
 | Neha Iyer, `neha.iyer` | Recruiter (a role HR created) | Requisitions, applications, interviews and candidates — and no pay anywhere |
 
 The careers site, `/careers`, needs no account: the demo's HR executive role is published there. The API reference at `/developers` is public too.
@@ -156,10 +161,10 @@ The careers site, `/careers`, needs no account: the demo's HR executive role is 
 
 | Check | Result |
 |---|---|
-| `npm test` | 239 passing: time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
+| `npm test` | 253 passing: corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
 | Mutation checks | Six deliberate bugs in the payroll and tax engines each fail a test; the outbox regression test fails on the old per-minute delivery key; the authorisation matrix fails when one Server Function's check is loosened |
-| `npm run audit:ui` | 260 of 260 clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
-| `npm run sandbox` | The mock ERP's 18 steps against a running app over HTTP, receiving real signed webhooks: 18 of 18 |
+| `npm run audit:ui` | 276 of 276 clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
+| `npm run sandbox` | The mock ERP's 19 steps against a running app over HTTP, receiving real signed webhooks: 19 of 19 |
 | `API.md` | Its reference is generated from the endpoint definitions; a test fails when it is stale |
 | `npx tsc --noEmit`, `npm run lint`, `next build` | clean |
 | CI | all of the above on GitHub Actions, on every push |
@@ -176,6 +181,8 @@ Honest about what the software does not do yet. What production needs is in §10
 - **The service layer holds what the API writes** — hiring, employee fields, absences, one-off and recurring payments, remittance payments, cost centres, accounts, acknowledgements and payment confirmations. Other Server Functions keep their logic until their module is next worked on.
 - **Ownership is enforced in the API, not yet on HR's screens.** A field HR hands to the ERP is refused to the HRMS through the API's rules, but HR's own forms do not yet show it read-only as "Managed in the ERP".
 - **Webhook retries wait for work.** A delivery that failed is retried when the next request runs the queue, or at the daily tick; on a plan with a frequent tick it is on the minute (§10).
+- **Payslip emails wait in the outbox** like every email until a provider is connected; the Outbox screen opens each one's PDF as it would be sent. The PDF's password is the first four letters of the first name and the day and month of birth, because PANs are not held (phase 21).
+- **Only payslips are PDFs.** Form 16 and letters still print from the browser (phases 14 and 21).
 - **Recruitment sends no invitations yet.** Interviewers are told in the app (and by email once a provider is connected), and candidates get an acknowledgement in the outbox; calendar invitations, offer letters and structured scorecards are phase 22. The careers site is protected by a hidden field and a daily limit per address until Turnstile (phase 25).
 - **Only leave uses the approval engine.** Salary changes, payroll release and the bank file do not yet need a second person (§10).
 - **Email is recorded, not sent,** until a provider is connected (phase 25).
@@ -274,6 +281,7 @@ The project was built on Windows 11 with Git Bash as the shell for scripts.
 | Database | Turso (libSQL, which is SQLite) through `@libsql/client` | HTTP transport, so serverless functions need no connection pool |
 | Queries | Drizzle ORM and drizzle-kit | Typed queries; migrations are plain SQL files, committed and reviewed |
 | Documents | Cloudflare R2 through `aws4fetch`, or the database until R2 is enabled | Presigned downloads, no egress fees, no SDK weight |
+| PDFs | `@cantoo/pdf-lib`, drawn directly | Pure JavaScript, fast in a serverless job, and it encrypts (AES-256) for password-protected payslips (§7.3) |
 | Auth | A `jose`-signed session cookie; permissions read from the database per request | One credentials provider and seeded users do not need Auth.js |
 | Validation | zod | The same schemas validate API requests, shape responses and generate the OpenAPI document |
 | API reference | Scalar, loaded from jsDelivr on `/developers` | Renders the generated OpenAPI 3.1 document; no account |
@@ -287,7 +295,7 @@ The project was built on Windows 11 with Git Bash as the shell for scripts.
 hrms/
   HANDOVER.md                this document
   API.md                     the guide for developers of connected systems; its reference is generated
-  README.md                  points here
+  README.md                  for the client: every feature in plain language
   AGENTS.md, CLAUDE.md       instructions for coding assistants
   HR MODULE/                 the original blueprint and HTML mockups (features only, §6.3)
   .github/workflows/ci.yml   the full check on every push
@@ -298,6 +306,7 @@ hrms/
     ui-audit.ts              npm run audit:ui
     api-docs.ts              npm run api:docs
     dev-session.ts           a signed session cookie for scripted checks
+  public/sw.js, offline.html the installed app's service worker and offline page
   tools/mock-erp/            the mock ERP: erp.ts (a client written from API.md), scenario.ts, run.ts
   tests/                     npm test; support/ holds global setup (migrate + seed), mocks and fixtures
   src/
@@ -311,6 +320,7 @@ hrms/
     app/
       sign-in/               outside the shell; one-click demo accounts
       careers/               outside the shell, public: open roles and applying
+      manifest.ts, icon.tsx, apple-icon.tsx   what makes the app installable
       developers/            public: the API reference (Scalar) and /developers/errors
       (app)/                 everything behind the shell, one folder per area:
         page.tsx             the role-aware home
@@ -331,12 +341,16 @@ hrms/
       api/                   the integration API: router.ts, clients.ts (tokens), events.ts (events and
                              webhooks), openapi.ts, reference.ts (API.md), format.ts, problem.ts,
                              scopes.ts, sandbox.ts, resources/ (the endpoint definitions)
-      services/              business rules the screens and the API share: people, records, integration
+      services/              business rules the screens and the API share: people, records, integration,
+                             corrections
+      documents/             payslip-pdf.ts: the payslip drawn as a PDF
+      payslip-mail.ts, payslip-password.ts, email-attachments.ts   payslips by email
+      corrections-values.ts  what an employee may ask to change, and its names
       recruitment.ts, recruitment-values.ts   recruitment's shared rules, and its fixed lists
       workflow/              engine.ts, processes.ts, leave.ts, completions.ts, adopt.ts
       engines/               timeslice.ts, quota.ts, payroll.ts, tax.ts, time-evaluation.ts
       repositories/          hand-written SQL reads: employees, home, profile, calendar, reports,
-                             variance, change-log, access, integrations, recruitment
+                             variance, change-log, access, integrations, recruitment, payslips
 ```
 
 ### 5.3 SQLite rules
@@ -353,12 +367,12 @@ Turso is SQLite. Getting any of these wrong produces wrong numbers or a schema t
 
 ### 5.4 Data model
 
-91 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
+92 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
 
 | Prefix | Tables |
 |---|---|
 | `om_` | company, personnel_area, personnel_sub_area, job, org_unit, position, reporting_line, cost_centre (sent by the ERP) |
-| `pa_` | employee; infotypes it0000_action, it0001_org_assignment, it0002_personal_data, it0006_address, it0007_planned_working_time, it0008_basic_pay, it0009_bank_details, it0021_family_member, it0105_communication |
+| `pa_` | employee; change_request (a correction an employee asked for, and its approval); infotypes it0000_action, it0001_org_assignment, it0002_personal_data, it0006_address, it0007_planned_working_time, it0008_basic_pay, it0009_bank_details, it0021_family_member, it0105_communication |
 | `pt_` | absence_type, attendance_type, quota_type, it2001_absence, it2002_attendance, it2006_absence_quota, leave_request, work_schedule_rule, holiday, time_evaluation_result |
 | `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line (with the ERP's payment confirmation), gl_posting, gl_posting_line, statutory_remittance, gl_account (sent by the ERP) |
 | `rc_` | requisition (the role as candidates read it, and whether it is published), candidate, application (channel, screening, the decision and the offer), application_stage_history, interview (each round: interviewer, time, place, status, rating, recommendation, notes), hire_conversion |
@@ -377,7 +391,7 @@ Two tables the mockups lack but the features need: `py_payroll_result_line` (the
 
 The line between a prototype and a clickable mockup; everything else is forms over tables.
 
-1. **Time slices** (`engines/timeslice.ts`). Writing an infotype closes, trims, splits or replaces whatever it overlaps, in one transaction, and logs each step to the change log in the same transaction. `readAsOf(table, employee, date)` answers "what was true then"; the as-of screen and every salary lookup use it. A new slice records the values it replaced, so the change log reads "₹65,000 → ₹72,000".
+1. **Time slices** (`engines/timeslice.ts`). Writing an infotype closes, trims, splits or replaces whatever it overlaps, in one transaction (`saveTimeSlice`, or `writeTimeSlice` inside a transaction the caller owns, such as an approval's), and logs each step to the change log in the same transaction. `readAsOf(table, employee, date)` answers "what was true then"; the as-of screen and every salary lookup use it. Addresses and contacts are sliced per type, so a new permanent address closes only the old permanent one. A new slice records the values it replaced, so the change log reads "₹65,000 → ₹72,000".
 2. **Quotas** (`engines/quota.ts`). Generates entitlements, counts working days against the schedule and holidays, and moves balances in half-day units with single conditional updates, so two approvals at once cannot overdraw.
 3. **Payroll** (`engines/payroll.ts`). Basic pay per working day employed, slice by slice, less unpaid days; percentage allowances; recurring and one-off payments; arrears for posted months whose inputs changed after they were paid; PF and TDS; net. `startRun` fixes who is in a run; `processRunBatch` calculates twenty at a time, each person's reads in one batch and writes in one atomic batch. Regular and off-cycle runs; each one-off paid exactly once. TDS projects the year from what has been paid, subtracts what was deducted, spreads the rest, and takes tax on a one-off in the month it is paid. Missing bank details produce the error row PY-03 shows.
 4. **Tax** (`engines/tax.ts`). Slabs by regime and year, standard deduction, 87A rebate with the new regime's marginal relief, 4% cess. Feeds monthly TDS and Form 16 Part B, so Part B reconciles with Part A.
@@ -413,13 +427,15 @@ Deciding leave is not a permission: it follows the approval flow.
 
 **The approval engine** (`workflow/`). A **flow** is a process's approval route (leave today; corrections, claims and exits later), **versioned** — saving makes a new version and requests keep the one they started on. A **step** says who approves (the reporting manager, their manager, anyone holding a role, or a named person), when it applies (only above so many working days — the first step always applies), and after how many days HR is added (escalation). `planRequest` resolves the first step before the caller's transaction and `writeRequest` writes it inside, so a request and its place on the flow commit together. `decide` checks authority — an assignee, a delegate standing in for one today (the action records **on whose behalf**), or someone with the process's override permission (`leave.decide_any`) — and nobody decides their own request. Deciding is one transaction: a conditional claim on the request, the action, then the next step's assignees and notification, or the process's completion (for leave: the leave request, the quota, the absence, the change-log entries and the employee's notification). A step that resolves to nobody goes to HR. `escalateOverdue` runs daily. **Delegation** ("While I am away" on My profile) hands someone's approvals to another person between two dates. Leave that was pending before the engine existed was adopted onto it by migration 0008.
 
-**Background jobs** (`jobs/`). A queue in the database, needing no outside service. Enqueueing is an insert that can join the caller's transaction; a dedupe key makes the same work a no-op; claiming is one conditional update, so two workers never run one job; a job whose worker died is taken over after five minutes; failures retry after 30 seconds, then 1, 2, 4 minutes and so on up to an hour, then stop as failed. Jobs run in `after()` once the response has gone, eight seconds at a time, and the runner hands off to a fresh invocation of itself with a signed, short-lived request (`/api/jobs/kick`) while work remains. The daily tick (`/api/cron/tick`) queues the scheduled work — weekly self-review reminders, escalation, stranded payroll runs and emails, housekeeping. Handlers: `outbox.deliver`, `webhooks.deliver`, `payroll.run`, `payslips.notify`, `self_review.notify`, `daily`. Each pass of the runner first turns new change-log entries into events. The daily job also drops API call logs after 30 days and idempotency keys after 7.
+**Corrections** are the engine's second process. By default HR approves every one, and a bank change adds the employee's reporting manager as a second step — a yes-or-no condition ("only for bank account changes"). The process requires **different people at each step**: whoever approved one step cannot approve the next, and if nobody else could, the first approval is refused with the reason rather than left stuck. The completion writes the change through the time-slice engine from its effective date, inside the deciding transaction, with "Requested by …; approved by … and …" in the change log, and tells the employee.
+
+**Background jobs** (`jobs/`). A queue in the database, needing no outside service. Enqueueing is an insert that can join the caller's transaction; a dedupe key makes the same work a no-op; claiming is one conditional update, so two workers never run one job; a job whose worker died is taken over after five minutes; failures retry after 30 seconds, then 1, 2, 4 minutes and so on up to an hour, then stop as failed. Jobs run in `after()` once the response has gone, eight seconds at a time, and the runner hands off to a fresh invocation of itself with a signed, short-lived request (`/api/jobs/kick`) while work remains. The daily tick (`/api/cron/tick`) queues the scheduled work — weekly self-review reminders, escalation, stranded payroll runs and emails, housekeeping. Handlers: `outbox.deliver`, `webhooks.deliver`, `payroll.run`, `payslips.notify` (publishes a run's payslips: marks and logs each, tells each person in the app, and — where the period emails payslips — queues their protected PDF instead of the plain notice email), `self_review.notify`, `daily`. Each pass of the runner first turns new change-log entries into events. The daily job also drops API call logs after 30 days and idempotency keys after 7.
 
 **The change log** (`change-log.ts`, `change-format.ts`). Every write records who made it (a person, the system, or an API client), the entity, the employee it is about, and only the fields that changed, before and after; nothing for a save that changes nothing; account numbers masked. Inside a transaction use `changeStatement`; around a plain write use `audited()` (reads before and after), `recordCreated()` or `recordDeleted()` (log the rows an insert or delete returned). `describeChange` renders entries as sentences: "Basic pay from 1 Apr 2025 — Amount ₹65,000 → ₹72,000".
 
-**Notifications and email** (`notifications.ts`, `email.ts`). A notification and its email are written with the change that caused them, keyed by event and person, so a retried event tells nobody twice. Each person chooses per kind: inbox, email, both or neither. Kinds today: leave asked for, leave decided, approval waiting (a later step, an escalation, or a delegation), payslip ready, self review due, rating final, an interview to take, and a careers-page application (for whoever runs recruitment). Email is built once in the design language with a plain-text version, queued in `app_outbox`, and delivered by the `outbox.deliver` job through a pluggable transport that records messages until phase 25 connects a provider. The Outbox screen shows every message as it would arrive, in a sandboxed frame.
+**Notifications and email** (`notifications.ts`, `email.ts`). A notification and its email are written with the change that caused them, keyed by event and person, so a retried event tells nobody twice. Each person chooses per kind: inbox, email, both or neither. Kinds today: leave asked for, leave decided, approval waiting (a later step, an escalation, or a delegation), payslip ready, self review due, rating final, a change request decided, an interview to take, and a careers-page application (for whoever runs recruitment). An email can carry attachments described in `app_outbox.attachments` — what to make, not the bytes — rendered when sent or opened on the Outbox screen, so the outbox never holds anyone's pay. Email is built once in the design language with a plain-text version, queued in `app_outbox`, and delivered by the `outbox.deliver` job through a pluggable transport that records messages until phase 25 connects a provider. The Outbox screen shows every message as it would arrive, in a sandboxed frame.
 
-**Documents** (`storage.ts`). One module stores files in R2 when configured and in the database otherwise, recognises them by content rather than name, and serves downloads through a route that checks permission and logs the read. A candidate's files open for whoever runs recruitment and for the people asked to interview that candidate. Payslips and Form 16 are never stored: they are rendered from their records each time.
+**Documents** (`storage.ts`). One module stores files in R2 when configured and in the database otherwise, recognises them by content rather than name, and serves downloads through a route that checks permission and logs the read. A candidate's files open for whoever runs recruitment and for the people asked to interview that candidate. Payslips and Form 16 are never stored: they are rendered from their records each time. A payslip's PDF (`documents/payslip-pdf.ts`) is drawn from the same `getPayslip` read as the page, so the two cannot disagree.
 
 **The access log** (`access-log.ts`). Reads of pay, bank, tax, documents and exports are logged; HR sees them per employee, and employees see who opened their records. Reads through the API are logged against the client.
 
@@ -452,13 +468,13 @@ The blueprint defines 38 screens (with 18 nested tabs, 51 form surfaces). What e
 | Area | Screens | Opened by |
 |---|---|---|
 | Home | Role-aware: needs attention, four figures, coming up | signed in |
-| My profile | Own record, masked bank account, documents, who has viewed it, notifications link, "While I am away" | `self.profile` |
+| My profile | Own record, masked bank account, documents, who has viewed it, notifications link, "While I am away"; "Request a change" for personal details, addresses and contacts, "Change bank account", and their change requests with withdraw | `self.profile` |
 | Notifications | Inbox, preferences | signed in |
-| Approvals | One inbox across processes, a tab per process with counts, recently decided | signed in (shows what is waiting for them) |
+| Approvals | One inbox across processes, a tab per process with counts, recently decided; corrections side by side — on record and asked for, changed fields first — with the proof | signed in (shows what is waiting for them) |
 | Org structure | Companies, personnel areas, sub-areas, jobs, departments, positions, reporting lines, org chart (OM-01…08) | `org.view` to see, `org.edit` to change |
 | Employees | Search and list (CH-04); hire (CH-01); record with a tab per infotype (CH-02), as-of view (CH-03), documents, change log, access log; mass update (CH-05) | `employee.view_all` (a manager's team list: `employee.view_team`); pay and bank tabs need `pay.view` / `bank.view`; logs need `audit.view` |
 | Time | Absences, attendance, quotas, time evaluation, schedules, holidays (TM-01…05); team calendar; my leave | `time.manage`; `time.team_calendar`; `self.leave` |
-| Payroll | Periods, wage types, recurring and one-off payments, run (with variance check and off-cycle), payslip, bank file, ledger and remittances (PY-01…05); my payslips | `payroll.view`, `payroll.setup`, `payroll.run`, `payroll.post`; `self.pay` |
+| Payroll | Periods (with "email payslips" per period), wage types, recurring and one-off payments, run (with variance check and off-cycle), payslip with year to date, Download PDF and Email again, bank file, ledger and remittances (PY-01…05); my payslips | `payroll.view`, `payroll.setup`, `payroll.run`, `payroll.post`; `self.pay` |
 | Tax | Sections and slabs, declarations, register, Form 16 (TDS-01…05) | `tax.manage`; own declaration and Form 16 with `self.tax` |
 | Recruitment | Requisitions (list, open, detail with its applications and the role as candidates read it, edit, publish); applications by stage; each application's page — screening, interview rounds, the decision, the offer, history; interviews upcoming and past; candidates with resumes; conversion (RC-01…05) | `recruitment.manage`; conversion `recruitment.hire` |
 | My interviews | The rounds someone is asked to take; each round's page, with the candidate, the role and the notes form | `recruitment.interview` |
@@ -474,7 +490,9 @@ Also: the sign-in page, a loading line that appears only if a screen is slow, an
 
 ### 6.2 Print
 
-The shell and screen headers stay off paper; A4 margins; ink kept. The payslip prints on one page, Form 16 Part B on its own; "Print or save as PDF" is the PDF path until phase 13 renders PDFs.
+The shell and screen headers stay off paper; A4 margins; ink kept. The payslip prints on one page and downloads as a one-page PDF; Form 16 Part B prints on its own page.
+
+**Installed on a phone**, the app opens full screen from the home screen (the manifest, icons and `public/sw.js`). The service worker keeps only the app's code; offline, it shows `/offline.html`.
 
 ### 6.3 The mockups versus the design language
 
@@ -521,6 +539,7 @@ The hire wizard uses numbered steps with a live summary panel; balance cards are
 - **Unlayered CSS beats every Tailwind utility**; base rules go in `@layer base`.
 - **An `sr-only` label can widen the page** inside a table wrapper that is not `position: relative`; `TableScroll` is relative.
 - **A grid with no column template grows to its content**: use `grid-cols-1` and `minmax(0,1fr)`.
+- **Spanning more columns than a grid has adds columns.** `col-span-3` in a two-column grid makes a third; `FormFull` uses `col-span-full`. The audit cannot see this: nothing overflows, the form is just wrong.
 - **A "use server" file may only export async functions**, and every one is a public endpoint: never export a helper from it (two unguarded ones were found and removed in phase 11). Shared constants go in plain modules.
 - **`after()` needs a request.** Tests replace it with an immediate call and replace `kickJobs` with nothing; a test works the queue itself with `processJobs()`, so no job races it for SQLite's one writer.
 - **The test session** is HR unless a test calls `actAs(session)` (`tests/support/people.ts`); permissions come from the test database, so create people with real roles.
@@ -533,6 +552,8 @@ The hire wizard uses numbered steps with a live summary panel; balance cards are
 - **A page that reads the database without cookies or headers is prerendered at build time** — against a database CI has not created yet. The public careers pages say `export const dynamic = "force-dynamic"`.
 - **Schema files are loaded by drizzle-kit and the seed outside Next.js:** import with relative paths, not `@/`.
 - **The careers action is public by design** — the one Server Function anyone may call — so it trusts nothing: content-checked resume, a hidden field for bots, a daily limit per address hash.
+- **Icons come from `icon.tsx`** (`/icon/192`, `/icon/512`, `/icon/maskable`) and `apple-icon.tsx`; the manifest names those paths. The proxy lets them, the manifest, `sw.js` and `offline.html` through without a session, or a signed-out phone could not install the app.
+- **The service worker must never store a page or an API answer**: they hold pay and bank details. A test checks it stores only `/_next/static` files and icons.
 - **A Server Function's check belongs in the function.** A page that only hides a button protects nothing: an employee could once read everyone's salary on a list page with no check, and a manager could decide or set goals for people outside their team by calling the function directly.
 
 ### 7.3 Decisions worth remembering
@@ -553,6 +574,10 @@ The hire wizard uses numbered steps with a live summary panel; balance cards are
 - **One list of endpoint definitions** drives the router, the OpenAPI document, the contract tests and `API.md`'s reference.
 - **Events come from the change log**, read by a cursor, rather than each module emitting its own: every logged write becomes an event, and the client that caused it is known, so no system hears its own change back.
 - **Recruitment's stages are Applied, Interviewing, Selected, Offered and Hired.** Screened and Interviewed became one stage, Interviewing, because the rounds now say what happened; a rejection keeps the stage it reached. Approving needs at least one round with notes and none still scheduled.
+- **PDFs are drawn with pdf-lib, not printed by a headless browser** (§9.4's first choice, decided without the planned spike): a browser is too heavy to start in a serverless job making one PDF per employee, and password protection needs a PDF library anyway. The standard PDF fonts cannot draw ₹, so PDF amounts are plain numbers "in Indian rupees".
+- **Emailed payslips are protected with AES-256**; the password is the first four letters of the first name and the day and month of birth (ARJU2108), or the employee number without a date of birth. Downloads while signed in are not protected.
+- **Year to date comes from stored lines**, never recalculated: the payslips of the financial year the employee could see (a posted month, or an off-cycle payment) up to this one, plus this one.
+- **A correction needs different people at each step**, and a bank change two steps by default.
 - **Interview notes are private to the HRMS**, and an interviewer's page shows only their own round, so each judges independently; recruiters see every round on the application.
 
 ---
@@ -1259,7 +1284,7 @@ Tailwind radius names map as follows:
 
 ### 9.1 The shape of the remaining work
 
-The plan continues the phase numbering: phases 0 to 12 are done (§11), and the rest is in two parts.
+The plan continues the phase numbering: phases 0 to 13 are done (§11), and the rest is in two parts.
 
 - **Part A — phases 12 to 24.** Everything that can be built without anyone's input: no accounts, keys, contracts or decisions needed from you or the client. Where a feature eventually needs an outside service, Part A builds all of it and leaves only the switch.
 - **Part B — phase 25.** What needs input from you or the client, gathered in one place. Each item says what will already be built, so finishing it is configuration and testing.
@@ -1420,7 +1445,7 @@ Technical choices that need nobody's input, taken here so Part A can proceed wit
 | Background jobs | A job table in the database, processed right after the request that queued it and by a scheduled tick | No external service or account; works on any host. A queue service can replace it later without changing any caller. |
 | Email | Every email is built and written to the outbox through a pluggable transport, which records instead of sending until phase 25 | Everything that sends mail can be built, previewed and tested now. |
 | Document storage | The database, as today, until R2 in phase 25 | It exists, and the switch is already written. |
-| PDF rendering | Headless Chromium printing the existing HTML, proven by a spike at the start of phase 13; `@react-pdf/renderer` if the spike fails | The payslip and Form 16 already print to one A4 page from HTML, so screen, print and PDF stay one layout. |
+| PDF rendering | Built in phase 13: drawn directly with `@cantoo/pdf-lib`, which also encrypts. The first choice was headless Chromium printing the existing HTML; a browser was judged too heavy to start in serverless jobs, and protection needed a PDF library anyway. | One small dependency, fast, and the same data as the page, so the two cannot disagree. |
 | Careers-page protection until keys exist | Rate limits and a honeypot field | Works without an account; Turnstile adds to it in phase 25. |
 | Attendance devices until a vendor is chosen | CSV upload and a generic punch endpoint | Every device can export CSV, and any middleware can call an endpoint. |
 | Continuous integration | GitHub Actions running typecheck, lint, tests, build, the UI audit and the mock ERP against a local database | Needs no secrets, because tests never touch Turso. |
@@ -1429,7 +1454,6 @@ Technical choices that need nobody's input, taken here so Part A can proceed wit
 
 | # | Phase | Roadmap features | Depends on |
 |---|---|---|---|
-| 13 | Self-service and payslips | Request a correction, year-to-date on the payslip, payslips by email (all but delivery), installable phone app | 11, 12 |
 | 14 | Joining, moving and letters | Onboarding checklists, probation and confirmation, transfers and promotions as actions, letters from templates | 13 |
 | 15 | Org and data tools | Headcount requests, bulk import, a drawn org chart | 11, 12 |
 | 16 | Leave policies | Policies by grade, regional holiday calendars, accrual with carry-forward and lapse, leave balance forecast, compensatory off, leave encashment | 11, 12 |
@@ -1470,29 +1494,6 @@ flowchart LR
   P23 --> P25
   P15 --> P25
 ```
-
-#### Phase 13 — Self-service and payslips
-
-**Goal.** Employees fix their records through HR, get payslips as PDFs, and carry the app on their phone.
-
-**Features.** Request a correction · Year-to-date on the payslip · Payslips by email (everything but delivery, which is phase 25) · Installable phone app · plus document generation.
-
-**Build**
-
-| Part | What |
-|---|---|
-| Data | `pa_change_request` (employee, infotype, proposed values, effective date, evidence document, approval request) |
-| Logic | A correction is an approval request (phase 11); on approval it is written through the time-slice engine from its effective date, and the change log records "requested by the employee, approved by HR". **Bank changes need evidence and two approvers**, because a changed bank account is how payroll fraud starts. Year-to-date sums the stored result lines of the financial year by wage type up to the period — no recalculation. PDFs are rendered from the existing payslip HTML (decided above), protected with the employee's PAN and date of birth. Posting a period queues one payslip email per person in the outbox, with a deliberate "Resend". |
-| Phone app | Web app manifest, icons, and a service worker caching the **application shell only**. No pay data is cached on the device. |
-| Screens | "Request a change" on each section of My profile · a current-versus-proposed view in the Approvals inbox · a year-to-date column on the payslip · "Download PDF" on each payslip · "Email payslips when posted" on the period, with resend per person |
-| API and events | `POST /v1/employees/{id}/change-requests` · year-to-date on payroll results · `GET /v1/payroll/results/{id}/payslip` as PDF, so the ERP's own portal can show payslips · `change_request.decided`, `payslip.published` |
-
-**Done when**
-- An address change, approved by HR, shows on the profile from its effective date with the history intact.
-- A bank change needs two approvers.
-- Posting a period queues exactly one payslip email per person, each with a protected PDF, and the outbox shows it.
-- Year-to-date equals the sum of that year's payslips (test).
-- The app installs on Android and iOS home screens, and the UI audit still passes.
 
 #### Phase 14 — Joining, moving and letters
 
@@ -1808,10 +1809,10 @@ Kept to what belongs in the HR module of an ERP for an Indian company. Features 
 | Configurable approvals | Who approves what, set by HR rather than code. | 11 | built |
 | Delegate approvals | A manager on leave hands their queue to someone for the dates they are away. | 11 | built |
 | Two-way integration with the client's ERP | This HRMS is a module of the ERP the client is building. The two must exchange data in both directions through an API: the HRMS sends people, organisation, time and payroll changes and the payroll journal as they happen; the ERP sends back what it owns — accounts and cost centres, payment confirmations, earnings and deductions that start on its side — and acknowledges what it received. A documented contract their developers build against, with a sandbox to test in. | 12, go-live in 25 | built, go-live in 25 |
-| Request a correction | Employees can see their record but must ask HR to change it. A request that HR approves keeps the dated history intact. | 13 | planned |
-| Year-to-date on the payslip | Gross, tax and PF so far this year, which employees need for their own filing. | 13 | planned |
-| Payslips by email | Posted payslips delivered as a PDF, password-protected. | 13, delivery in 25 | planned |
-| Installable phone app | The phone layouts already exist; a web app manifest and offline payslips make it feel native. | 13 | planned |
+| Request a correction | Employees can see their record but must ask HR to change it. A request that HR approves keeps the dated history intact. | 13 | built |
+| Year-to-date on the payslip | Gross, tax and PF so far this year, which employees need for their own filing. | 13 | built |
+| Payslips by email | Posted payslips delivered as a PDF, password-protected. | 13, delivery in 25 | built, delivery in 25 |
+| Installable phone app | The phone layouts already exist; a web app manifest and a service worker make it installable. Payslips are not kept offline: nothing personal stays on the phone. | 13 | built |
 | Onboarding checklists | Laptop, accounts, documents, induction — tasks assigned from the hire action and tracked to done. | 14 | planned |
 | Probation and confirmation | A due date from the hire date, a manager's recommendation, and a confirmation action. | 14 | planned |
 | Transfers and promotions as actions | Guided actions like hiring, writing org assignment and pay together, effective from a date. | 14 | planned |
@@ -1897,7 +1898,7 @@ Each item says why it matters, because the reason decides how much effort it des
 | What | Why | What to do |
 |---|---|---|
 | The real roles | Every screen and Server Function now checks a permission, and HR builds roles from them on the Roles and permissions screen; a Recruiter role ships as the example. Nobody has yet decided which roles the client actually needs. | Agree the roles with the client — HR generalist, payroll administrator, recruiter, auditor (read-only) are the usual set — and create them. |
-| Maker and checker | One person can today change a salary, run payroll, post it and generate the bank file. The approval engine exists (phase 11) but only leave uses it. | Route salary changes above a threshold, payroll release, posting and the bank file through the approval engine, with a second approver. |
+| Maker and checker | One person can today change a salary, run payroll, post it and generate the bank file. The approval engine exists (phase 11) and enforces two different people for bank changes an employee asks for (phase 13), but HR's own edits, payroll release, posting and the bank file are single-person. | Route salary changes above a threshold, payroll release, posting and the bank file through the approval engine, with a second approver. |
 | Scope beyond the employee record | A role can be limited to companies or personnel areas, and that limit holds on the employee list, the record, people search, documents and the employee export; API clients are limited to their companies on every resource. Payroll, time, tax and performance screens are still organisation-wide for anyone holding their permission. | Apply the same scope to those screens, through the service layer as their modules move onto it. |
 | Connected systems | The ERP's client id and secret open everything its scopes allow. | Issue production credentials over a secure channel, grant only the scopes it uses, set its address allowlist, and rotate its secret on a schedule. |
 
@@ -1919,7 +1920,7 @@ Each item says why it matters, because the reason decides how much effort it des
 |---|---|---|
 | Privacy notice | Employees must be told what is held, why, and for how long. | A notice at first sign-in, recorded as seen. |
 | Retention schedule | Payroll records must be kept for years under tax and labour law; other data should not be kept forever. | A schedule per record type, agreed with legal counsel, and a job that applies it. |
-| Correction requests | "Ask HR" is the only route today. | A request on the profile that HR approves, feeding the dated history like any other change. |
+| Correction requests | Built (phase 13): employees request changes on My profile and HR approves them into the dated history. | Agree with legal counsel how quickly requests must be answered, and set the flow's escalation to match. |
 | Breach response | The law sets deadlines for notifying the Board and the people affected. | A written runbook, and contacts at Turso, Vercel and Cloudflare. |
 | Processor agreements | Turso, Vercel and Cloudflare process employee data. | Data processing agreements with each. |
 | Candidates' data | Applicants agree on the careers site to their details being kept to consider them; nothing removes them afterwards. | Delete or anonymise unsuccessful candidates after a period agreed with legal counsel. |
@@ -2026,6 +2027,19 @@ The engine handles provident fund (the employee's share) and income tax. A real 
 ## 11. History
 
 What each phase delivered, newest first, and where the build differed from its plan. When a phase in §9 is finished, it moves here.
+
+### Phase 13 — Self-service and payslips
+
+- **Request a correction**: on My profile, an employee asks for a change to their personal details, an address, a contact or their bank account, from a date, with a note and proof (required for bank). It is an approval request — a new **Corrections** process — decided in the approvals inbox with the record and the request side by side. Approved, it is written through the time-slice engine from its effective date, keeping the history, and the change log says who asked and who approved. They see their requests, and can withdraw one still waiting.
+- **Two approvers for a bank change**: HR, then the employee's manager by default; the engine now refuses anyone who approved an earlier step, and flows can have yes-or-no conditions ("only for bank account changes").
+- **Year to date** on every payslip, line by line and in total, from the stored lines of the financial year.
+- **PDF payslips**: Download PDF on each payslip; one A4 page drawn from the same data as the screen.
+- **Payslips by email**: posting a month (or finishing an off-cycle run) publishes each payslip, tells the person, and — with "email payslips" on for the period, the default — queues one email each with the payslip as an AES-256 protected PDF; "Email again" sends one deliberately. The Outbox shows the attachment and opens it as sent.
+- **Installable app**: manifest, icons, a service worker that caches only the app's code, and an offline page; checked in a real browser, and by a test that the worker stores nothing personal.
+- **API**: `POST /employees/{id}/change-requests` and `GET /change-requests`; year to date and `published_at` on run results; `GET /payroll/results/{id}/payslip` as a PDF; events `change_request.decided` and `payslip.published`. The mock ERP now downloads a payslip.
+- **For the client**: `README.md` became a plain-language feature list with a "Coming next" section.
+- **Fixed on the way:** an employee could open their own payslip by its address before the month was posted; full-width form fields spanned three columns even in two-column forms, which quietly added a third column to every such form and dialog (now `col-span-full`).
+- **Where it differs from the plan:** PDFs are drawn with pdf-lib rather than printed by a headless browser, decided on paper rather than by a spike (§7.3); the password uses name and date of birth because PANs are not held; the service worker keeps no payslips offline, since nothing personal should stay on a phone.
 
 ### Phase 12 — The integration API, the two-way ERP link, and the recruitment workflow
 

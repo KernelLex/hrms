@@ -106,7 +106,9 @@ export function buildOpenApi(endpoints: Endpoint[], serverUrl = "https://hrms-am
             : {
                 description: "Success.",
                 ...(e.etag ? { headers: { ETag: { description: "The record's version, for If-Match.", schema: { type: "string" } } } } : {}),
-                content: { "application/json": { schema: hoist(toSchema(e.response, "output"), components), ...(e.example?.response ? { example: e.example.response } : {}) } },
+                content: e.produces
+                  ? { [e.produces]: { schema: { type: "string", format: "binary" } } }
+                  : { "application/json": { schema: hoist(toSchema(e.response, "output"), components), ...(e.example?.response ? { example: e.example.response } : {}) } },
               },
         ...errorResponses(e),
       },

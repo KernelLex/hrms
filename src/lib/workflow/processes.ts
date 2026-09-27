@@ -2,22 +2,45 @@ import type { Permission } from "@/lib/permissions";
 
 /**
  * The processes that go through approval, and what a flow for each may say.
- * Leave is the first; corrections, headcount requests, claims and exits join
- * in later phases by adding an entry here and a completion handler.
+ * Leave and corrections so far; headcount requests, claims and exits join in
+ * later phases by adding an entry here and a completion handler.
  *
  * Plain module: the flows screen, the inbox and the engine all read it.
  */
 
-export const PROCESSES = {
+export type ProcessDef = {
+  label: string;
+  /** Can decide any request in this process, whoever it is waiting for. */
+  overridePermission: Permission;
+  /** Facts a step's condition can test, and how the flows screen names them. */
+  facts: Record<string, string>;
+  /**
+   * The facts are yes-or-no (1 or 0): a step's condition reads "only for
+   * bank account changes" rather than "more than this many".
+   */
+  flagFacts?: boolean;
+  /** Every step must be decided by someone who did not decide an earlier one. */
+  distinctApprovers?: boolean;
+  link: string;
+};
+
+export const PROCESSES: { leave: ProcessDef; correction: ProcessDef } = {
   leave: {
     label: "Leave",
-    /** Can decide any request in this process, whoever it is waiting for. */
-    overridePermission: "leave.decide_any" as Permission,
-    /** Facts a step's condition can test, and how the flows screen names them. */
-    facts: { days: "working days" } as Record<string, string>,
+    overridePermission: "leave.decide_any",
+    facts: { days: "working days" },
     link: "/approvals?process=leave",
   },
-} as const;
+  correction: {
+    label: "Corrections",
+    overridePermission: "employee.edit",
+    facts: { bank: "bank account changes" },
+    flagFacts: true,
+    // A changed bank account is how payroll fraud starts: two people, always.
+    distinctApprovers: true,
+    link: "/approvals?process=correction",
+  },
+};
 
 export type ProcessCode = keyof typeof PROCESSES;
 
@@ -69,9 +92,12 @@ export function describeStep(
       : step.approverType === "person"
         ? (names.person ?? "a named person")
         : APPROVER_TYPES[step.approverType].toLowerCase();
+  const fact = step.conditionField ? (PROCESSES[process].facts[step.conditionField] ?? step.conditionField) : "";
   const when =
     step.conditionField && step.conditionMin !== null
-      ? `, when more than ${step.conditionMin} ${PROCESSES[process].facts[step.conditionField] ?? step.conditionField}`
+      ? PROCESSES[process].flagFacts
+        ? `, only for ${fact}`
+        : `, when more than ${step.conditionMin} ${fact}`
       : "";
   const escalate = step.escalateAfterDays ? `; HR is added after ${step.escalateAfterDays} days` : "";
   return `${who.charAt(0).toUpperCase()}${who.slice(1)}${when}${escalate}`;

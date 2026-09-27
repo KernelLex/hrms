@@ -1,13 +1,15 @@
 import "server-only";
+import type { InStatement } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { deliverOutbox } from "@/lib/email";
 import { processRunBatch } from "@/lib/engines/payroll";
-import { notify, usersForEmployees, type NotificationItem } from "@/lib/notifications";
+import { notificationStatements, notify, usersForEmployees, type NotificationItem } from "@/lib/notifications";
 import { formatMonth, todayInIndia } from "@/lib/dates";
 import { enqueueJob, requeueJob } from "./queue";
 import { escalateOverdue } from "@/lib/workflow/engine";
 import { deliverWebhooks, nextWebhookRetry, wakeDeliveryStatement } from "@/lib/api/events";
-import { recordChanges, systemActor } from "@/lib/change-log";
+import { changeStatement, recordChanges, systemActor } from "@/lib/change-log";
+import { payslipEmailStatements } from "@/lib/payslip-mail";
 
 /**
  * What each kind of job does. A handler returns `{ again: true }` to be put
@@ -107,35 +109,67 @@ export const HANDLERS: Record<string, JobHandler> = {
     return { again: true };
   },
 
-  /** Tells everyone paid in a run that their payslip is ready. */
+  /**
+   * Publishes a run's payslips: each is marked published and logged (the
+   * ERP hears payslip.published), the employee is told in the app, and —
+   * where the period emails payslips — sent it as a protected PDF, in place
+   * of the plain notification email. Safe to run twice: nothing is
+   * published, told or emailed a second time.
+   */
   async "payslips.notify"(payload) {
     const { runId } = payload as { runId: number };
     const r = await rawClient().execute({
-      sql: `SELECT r.id, r.employee_id, p.year, p.month, run.run_type, run.reason
+      sql: `SELECT r.id, r.employee_id, r.published_at, p.year, p.month, p.email_payslips, run.run_type, run.reason
             FROM py_payroll_result r
             JOIN py_payroll_run run ON run.id = r.run_id AND run.status = 'Completed'
             JOIN py_payroll_period p ON p.id = run.period_id
             WHERE r.run_id = ? AND r.status = 'Calculated'`,
       args: [runId],
     });
-    const users = await usersForEmployees(r.rows.map((x) => Number(x.employee_id)));
-    const items: NotificationItem[] = [];
-    for (const x of r.rows) {
-      const userId = users.get(Number(x.employee_id));
-      if (!userId) continue;
-      const month = formatMonth(Number(x.year), Number(x.month));
-      const offCycle = x.run_type === "Off-cycle";
-      items.push({
-        userId,
-        kind: "payslip.ready",
-        title: offCycle ? `Your off-cycle payslip for ${month} is ready` : `Your payslip for ${month} is ready`,
-        body: offCycle && x.reason ? `For ${x.reason}.` : "Open it to see each line of your pay.",
-        link: `/payroll/payslip/${x.id}`,
-        dedupeKey: `payslip.ready:${x.id}`,
-      });
-    }
+    const at = new Date().toISOString();
+    const actor = systemActor("payroll");
+
     // In chunks, so a large organisation is not one enormous batch.
-    for (let i = 0; i < items.length; i += 200) await notify(items.slice(i, i + 200));
+    for (let i = 0; i < r.rows.length; i += 200) {
+      const rows = r.rows.slice(i, i + 200);
+      const fresh = rows.filter((x) => x.published_at === null);
+      const publish: InStatement[] = [];
+      for (const x of fresh) {
+        publish.push({ sql: "UPDATE py_payroll_result SET published_at = ? WHERE id = ? AND published_at IS NULL", args: [at, Number(x.id)] });
+        const logged = changeStatement(actor, {
+          entity: "py_payroll_result",
+          entityId: Number(x.id),
+          subjectEmployeeId: Number(x.employee_id),
+          action: "update",
+          before: { published_at: null },
+          after: { published_at: at },
+        });
+        if (logged) publish.push(logged);
+      }
+
+      const emailing = rows.length > 0 && Number(rows[0].email_payslips) === 1;
+      const mail = emailing ? await payslipEmailStatements(rows.map((x) => Number(x.id))) : null;
+      const users = await usersForEmployees(rows.map((x) => Number(x.employee_id)));
+      const items: NotificationItem[] = [];
+      for (const x of rows) {
+        const userId = users.get(Number(x.employee_id));
+        if (!userId) continue;
+        const month = formatMonth(Number(x.year), Number(x.month));
+        const offCycle = x.run_type === "Off-cycle";
+        items.push({
+          userId,
+          kind: "payslip.ready",
+          title: offCycle ? `Your off-cycle payslip for ${month} is ready` : `Your payslip for ${month} is ready`,
+          body: offCycle && x.reason ? `For ${x.reason}.` : "Open it to see each line of your pay.",
+          link: `/payroll/payslip/${x.id}`,
+          dedupeKey: `payslip.ready:${x.id}`,
+          // Emailed with the PDF instead.
+          email: mail?.emailed.has(Number(x.employee_id)) ? false : undefined,
+        });
+      }
+      const statements = [...publish, ...(mail?.statements ?? []), ...(await notificationStatements(items))];
+      if (statements.length > 0) await rawClient().batch(statements, "write");
+    }
   },
 
   /** When a cycle opens: everyone with a self review to write. */

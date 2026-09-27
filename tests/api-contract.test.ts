@@ -29,6 +29,7 @@ const SAMPLE_PATHS: Record<string, () => string> = {
   "/employees/{id}": () => `/employees/${ids.employee}`,
   "/employees/{id}/history": () => `/employees/${ids.employee}/history?record=org_assignment`,
   "/payroll/runs/{id}/results": () => `/payroll/runs/${ids.run}/results`,
+  "/payroll/results/{id}/payslip": () => `/payroll/results/${ids.result}/payslip`,
 };
 
 const concrete = (e: Endpoint) => e.path.replace(/\{\w+\}/g, "1");
@@ -50,6 +51,8 @@ beforeAll(async () => {
   await postToLedger({}, form({ runId, postingDate: "2026-07-31" }));
   await generateBankFile({}, form({ runId, paymentDate: "2026-07-31" }));
   ids.run = String(runId);
+  const result = await rawClient().execute({ sql: "SELECT id FROM py_payroll_result WHERE run_id = ? LIMIT 1", args: [runId] });
+  ids.result = String(result.rows[0].id);
 
   all = await apiClient(ALL_SCOPES);
   none = await apiClient([]);
@@ -70,6 +73,11 @@ describe("every endpoint", () => {
     it(`GET ${e.path} answers what its schema says`, async () => {
       const res = await call("GET", sampleGet(e), { token: all.token });
       expect(res.status, JSON.stringify(res.body)).toBe(e.status ?? 200);
+      if (e.produces) {
+        expect(res.headers.get("content-type")).toBe(e.produces);
+        expect(Buffer.from(res.bytes!.slice(0, 5)).toString()).toBe("%PDF-");
+        return;
+      }
       const parsed = e.response.safeParse(res.body);
       expect(parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues.slice(0, 5))).toBe(true);
     });

@@ -275,6 +275,7 @@ export async function saveFlow(_prev: ActionState, form: FormData): Promise<Acti
     const min = s.conditionMin === null || s.conditionMin === undefined || String(s.conditionMin) === "" ? null : Number(s.conditionMin);
     if (min !== null && (!Number.isFinite(min) || min < 0)) return fail(`Step ${n}: the condition must be a number.`);
     if (n === 1 && min !== null) return fail("The first step always applies; add conditions to later steps.");
+    if (PROCESSES[process].flagFacts && min !== null && min !== 0) return fail(`Step ${n}: the condition is yes or no.`);
     const esc =
       s.escalateAfterDays === null || s.escalateAfterDays === undefined || String(s.escalateAfterDays) === ""
         ? null

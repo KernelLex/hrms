@@ -170,6 +170,12 @@ export const appOutbox = sqliteTable(
     bodyHtml: text("body_html"),
     /** The notification or event it came from, as JSON. */
     payload: text("payload"),
+    /**
+     * Files to attach, as JSON: what each is and how to make it, not the
+     * bytes — a payslip PDF is rendered when the message is sent or opened,
+     * so the outbox never holds a copy of anyone's pay.
+     */
+    attachments: text("attachments"),
     /** "queued", "sent", "recorded" (delivery not configured) or "failed". */
     status: text("status").notNull().default("queued"),
     attempts: integer("attempts").notNull().default(0),

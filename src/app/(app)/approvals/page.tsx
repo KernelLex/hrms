@@ -20,6 +20,7 @@ import {
   TwoLine,
 } from "@/components/ui";
 import { DecisionButtons } from "@/app/(app)/time/approvals/decision";
+import { CorrectionList } from "./corrections";
 
 /**
  * One inbox for everything waiting on this person, across processes, with a
@@ -126,6 +127,13 @@ export default async function ApprovalsPage(props: { searchParams: Promise<{ pro
           <EmptyState icon={<Inbox />} title="Nothing waiting">
             Requests appear here as soon as they reach you.
           </EmptyState>
+        ) : process === "correction" ? (
+          <CorrectionList
+            rows={rows}
+            steps={steps}
+            seeBank={can(session, "bank.view")}
+            seeDocuments={can(session, "employee.view_all")}
+          />
         ) : (
           <Table>
             <thead>

@@ -64,6 +64,8 @@ export const pyPayrollPeriod = sqliteTable(
     releasedBy: text("released_by"),
     releasedAt: text("released_at"),
     postedAt: text("posted_at"),
+    /** On posting, email each person their payslip as a protected PDF. */
+    emailPayslips: integer("email_payslips", { mode: "boolean" }).notNull().default(true),
   },
   (t) => [uniqueIndex("ux_period").on(t.areaCode, t.year, t.month)],
 );
@@ -184,6 +186,8 @@ export const pyPayrollResult = sqliteTable(
     employedDays: integer("employed_days").notNull().default(0),
     status: text("status").notNull().default("Calculated"),
     errorMessage: text("error_message"),
+    /** When the employee could first see it: the period's posting, or an off-cycle run's. */
+    publishedAt: text("published_at"),
   },
   (t) => [uniqueIndex("ux_result_run_employee").on(t.runId, t.employeeId)],
 );

@@ -299,6 +299,23 @@ export async function runScenario(o: ScenarioOptions): Promise<Step[]> {
       }),
 
     async () =>
+      step("Downloads a payslip as a PDF for its own portal", async () => {
+        const runs = await s.get<{ data: { id: number; status: string }[] }>("/payroll/runs?limit=200");
+        check(runs.status === 200, `Answered ${runs.status}.`);
+        const run = runs.body.data.find((r) => r.status === "Completed");
+        if (!run) return "no payslip to download";
+        type Results = { data: { id: number; year_to_date: { financial_year: string; net: Money } }[] };
+        const results = await s.get<Results>(`/payroll/runs/${run.id}/results?limit=1`);
+        const first = results.body.data[0];
+        if (!first) return "no payslip to download";
+        check(first.year_to_date?.financial_year, "The result has no year to date.");
+        const pdf = await s.download(`/payroll/results/${first.id}/payslip`);
+        check(pdf.status === 200 && pdf.contentType === "application/pdf", `Answered ${pdf.status} ${pdf.contentType}.`);
+        check(Buffer.from(pdf.bytes.slice(0, 5)).toString() === "%PDF-", "That is not a PDF.");
+        return `result ${first.id}: ${pdf.bytes.length} bytes, year to date ${first.year_to_date.net.amount} net in ${first.year_to_date.financial_year}`;
+      }),
+
+    async () =>
       step("Is told its rate limit", async () => {
         const r = await s.get("/companies");
         const limit = r.headers.get("ratelimit-limit");

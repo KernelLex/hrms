@@ -262,6 +262,15 @@ Every write goes through the same checks as HR's screens and is recorded in the 
 
 **Absences.** `POST /absences` (scope `time:write`) records an absence — only when HR has made the ERP the owner of absences.
 
+**Corrections an employee asks for.** If the ERP has its own employee portal, `POST /employees/{id}/change-requests` (scope `employees:write`) files a correction to that person's personal details, an address, a contact, or their bank account, on their behalf. It is not applied at once: it goes through the same approval as a request made in the HRMS — HR checks it, and a bank change needs a second approver and proof (a cancelled cheque or passbook page, sent base64 in `evidence`; bank changes also need `bank:read`). Approved, it is written from its effective date, keeping the history, and arrives as `employee.updated`; either way the outcome arrives as `change_request.decided`. `GET /change-requests` lists them. Each section's fields:
+
+| Section | Subtype | Fields in `values` |
+| --- | --- | --- |
+| `personal` | — | `first_name`, `last_name`, `date_of_birth`, `gender` (Female, Male, Other), `marital_status` (Single, Married, Divorced, Widowed), `nationality` |
+| `address` | `Permanent` or `Temporary` | `line`, `city`, `state`, `postal_code` (six digits), `country` |
+| `contact` | `Mobile phone` or `Email (personal)` | `value` |
+| `bank` | — | `bank_name`, `account_number` (9 to 18 digits), `ifsc`, `holder_name` |
+
 **Payments to add to payroll.** `POST /one-off-payments` and `POST /recurring-payments` (scope `payroll:write`) add a payment for someone, for the next payroll run to pay.
 
 <a id="external-ids"></a>**Your ids.** Every record the ERP cares about carries `external_ids`, a map from system key to id. Record yours with `PUT /employees/{id}/external-ids` or in the hire request (`"external_ids": {"erp": "EMP-0107"}`), then find the employee by it: `GET /employees?external_id=EMP-0107`. You never need to store the HRMS's ids if you would rather not.
@@ -299,6 +308,8 @@ POST /payment-batches/7/confirmations
 ```
 
 Each item comes back `applied`, `unchanged` (already confirmed) or `not_in_batch`. An item for someone not in the batch is not applied: it becomes a **sync issue** for HR to look at, and you can follow it with `GET /sync-issues`. `GET /payment-batches?state=pending` lists batches with anything unconfirmed.
+
+**Payslips** (`payslip.published`, `GET /payroll/runs/{id}/results`). Each result carries its lines and the **year to date** for the financial year (April to March), summed from the payslips the employee has had so far — the same figures their payslip shows. `payslip.published` says when a payslip became visible to its employee: its month posted, or an off-cycle payment made. For the ERP's own portal, `GET /payroll/results/{id}/payslip` returns the payslip as a PDF (`Content-Type: application/pdf`), exactly as the employee would download it; it is not password-protected, so show it only to that person. Both need `pay:read`.
 
 **Statutory remittances** (`remittance.due`, `GET /remittances`). Provident fund and TDS owed from each run, with due dates. Record the payment with `POST /remittances/{id}/payment`.
 
@@ -426,7 +437,9 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `payroll.period.posted` | `payroll:read` | A payroll month was posted: payslips are final. `data` is the period. |
 | `gl.posting.created` | `gl:read` | A payroll journal was posted, ready to book. `data` is the journal with its lines. Acknowledge it. |
 | `payment_batch.created` | `payroll:read` | Salaries of a run are ready to pay. `data` is the batch; amounts with pay:read, accounts with bank:read. Confirm it. |
+| `payslip.published` | `payroll:read` | A payslip became visible to its employee: its month was posted, or its off-cycle payment made. `data` names it; the PDF is at /payroll/results/{id}/payslip. Net pay with pay:read. |
 | `remittance.due` | `payroll:read` | A statutory remittance fell due. `data` is the remittance. |
+| `change_request.decided` | `employees:read` | HR decided a correction an employee asked for to their record. `data` says what, from when, and the outcome; an approved change also arrives as employee.updated. |
 | `candidate.hired` | `recruitment:read` | An offered candidate became an employee. `data` has the application and the new employee's id. |
 | `appraisal.finalised` | `performance:read` | Calibration made a rating final. `data` is the appraisal. |
 
@@ -469,6 +482,8 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | POST | [`/employees`](#post-employees) | `employees:hire` | Hire someone |
 | PATCH | [`/employees/{id}`](#patch-employees-id) | `employees:write` | Change fields the ERP owns |
 | PUT | [`/employees/{id}/external-ids`](#put-employees-id-external-ids) | `employees:write` | Record your id for an employee |
+| POST | [`/employees/{id}/change-requests`](#post-employees-id-change-requests) | `employees:write` | Ask for a correction |
+| GET | [`/change-requests`](#get-change-requests) | `employees:read` | List correction requests |
 | GET | [`/companies`](#get-companies) | `org:read` | List companies |
 | GET | [`/personnel-areas`](#get-personnel-areas) | `org:read` | List personnel areas |
 | GET | [`/departments`](#get-departments) | `org:read` | List departments |
@@ -487,6 +502,7 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | GET | [`/payroll/periods`](#get-payroll-periods) | `payroll:read` | List payroll periods |
 | GET | [`/payroll/runs`](#get-payroll-runs) | `payroll:read` | List payroll runs |
 | GET | [`/payroll/runs/{id}/results`](#get-payroll-runs-id-results) | `payroll:read` + `pay:read` | The results of a run |
+| GET | [`/payroll/results/{id}/payslip`](#get-payroll-results-id-payslip) | `payroll:read` + `pay:read` | A payslip as a PDF |
 | GET | [`/gl-postings`](#get-gl-postings) | `gl:read` | List payroll journals |
 | POST | [`/gl-postings/{id}/acknowledgement`](#post-gl-postings-id-acknowledgement) | `gl:write` | Acknowledge or reject a journal |
 | GET | [`/payment-batches`](#get-payment-batches) | `payroll:read` | List payment batches |
@@ -896,6 +912,58 @@ Content-Type: application/json
 }
 ```
 
+#### POST /employees/{id}/change-requests
+
+<a id="post-employees-id-change-requests"></a>**Ask for a correction.** Files a correction to an employee's personal details, an address, a contact, or their bank account, on their behalf — from the ERP's own employee portal, say. It goes through the same approval as one made on My profile: HR checks it, and a bank change needs a second approver. Approved, it is written from its effective date and arrives as `employee.updated`; the outcome arrives as `change_request.decided`. A bank change needs bank:read.
+
+Needs `employees:write`. More fields with `bank:read`. Send an `Idempotency-Key`. Answers 201.
+
+| Path parameter | Meaning |
+| --- | --- |
+| `id` | The employee's id. |
+
+| Body field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `section` | `personal` \\| `address` \\| `contact` \\| `bank` | yes |  |
+| `subtype` | string, or null |  | For an address: Permanent or Temporary. For a contact: Mobile phone or Email (personal). |
+| `values` | object | yes | The section's fields, as the section lists them (see the ChangeRequest reference in API.md). |
+| `effective_date` | string | yes | The day it applies from. A bank change: today or later. |
+| `note` | string, or null |  |  |
+| `evidence` | object, or null |  | Proof: a PDF, JPEG or PNG up to 4 MB. Required for a bank change. |
+
+```http
+POST /api/v1/employees/3/change-requests
+Content-Type: application/json
+
+{
+  "section": "address",
+  "subtype": "Permanent",
+  "values": {
+    "line": "22 New Street, Indiranagar",
+    "city": "Bengaluru",
+    "state": "Karnataka",
+    "postal_code": "560038",
+    "country": "India"
+  },
+  "effective_date": "2026-10-01",
+  "note": "Moved house"
+}
+```
+
+#### GET /change-requests
+
+<a id="get-change-requests"></a>**List correction requests.** Correction requests, oldest first, whoever filed them. Filter with `status` and `employee_id`.
+
+Needs `employees:read`. More fields with `bank:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` |  |  |
+| `employee_id` | integer |  |  |
+
 ### Organisation endpoints
 
 #### GET /companies
@@ -1205,7 +1273,7 @@ Needs `payroll:read`. More fields with `pay:read`. Answers 200.
 
 #### GET /payroll/runs/{id}/results
 
-<a id="get-payroll-runs-id-results"></a>**The results of a run.** Each person's gross, net and every line — what their payslip shows. Needs pay:read.
+<a id="get-payroll-runs-id-results"></a>**The results of a run.** Each person's gross, net and every line — what their payslip shows — with the year to date. Needs pay:read. Each payslip's PDF is at /payroll/results/{id}/payslip.
 
 Needs `payroll:read` and `pay:read`. Answers 200.
 
@@ -1218,6 +1286,16 @@ Needs `payroll:read` and `pay:read`. Answers 200.
 | `limit` | integer |  | Up to 200; 50 by default. |
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+
+#### GET /payroll/results/{id}/payslip
+
+<a id="get-payroll-results-id-payslip"></a>**A payslip as a PDF.** One person's payslip as the PDF they would download, with the year to date — for the ERP's own portal to show. Not password-protected: show it only to that person. Needs pay:read.
+
+Needs `payroll:read` and `pay:read`. Answers 200.
+
+| Path parameter | Meaning |
+| --- | --- |
+| `id` | The payroll result's id, from the run's results. |
 
 ### Payments endpoints
 

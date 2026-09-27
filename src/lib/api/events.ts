@@ -36,7 +36,15 @@ export const EVENT_TYPES = {
   "payroll.period.posted": { scope: "payroll:read", description: "A payroll month was posted: payslips are final. `data` is the period." },
   "gl.posting.created": { scope: "gl:read", description: "A payroll journal was posted, ready to book. `data` is the journal with its lines. Acknowledge it." },
   "payment_batch.created": { scope: "payroll:read", description: "Salaries of a run are ready to pay. `data` is the batch; amounts with pay:read, accounts with bank:read. Confirm it." },
+  "payslip.published": {
+    scope: "payroll:read",
+    description: "A payslip became visible to its employee: its month was posted, or its off-cycle payment made. `data` names it; the PDF is at /payroll/results/{id}/payslip. Net pay with pay:read.",
+  },
   "remittance.due": { scope: "payroll:read", description: "A statutory remittance fell due. `data` is the remittance." },
+  "change_request.decided": {
+    scope: "employees:read",
+    description: "HR decided a correction an employee asked for to their record. `data` says what, from when, and the outcome; an approved change also arrives as employee.updated.",
+  },
   "candidate.hired": { scope: "recruitment:read", description: "An offered candidate became an employee. `data` has the application and the new employee's id." },
   "appraisal.finalised": { scope: "performance:read", description: "Calibration made a rating final. `data` is the appraisal." },
 } as const satisfies Record<string, { scope: Scope; description: string }>;
@@ -118,6 +126,12 @@ export function eventFor(c: ChangeRow): Derived | null {
     return { type: "payment_batch.created", subject: `payment-batches/${c.entity_id}`, key: `batch:${c.entity_id}` };
   }
   if (c.entity === "py_statutory_remittance" && c.action === "create") return { type: "remittance.due", subject: `remittances/${c.entity_id}`, key: `rem:${c.entity_id}` };
+  if (c.entity === "py_payroll_result" && after.published_at) {
+    return { type: "payslip.published", subject: `payslips/${c.entity_id}`, key: `payslip:${c.entity_id}` };
+  }
+  if (c.entity === "pa_change_request" && (after.status === "Approved" || after.status === "Rejected")) {
+    return { type: "change_request.decided", subject: `change-requests/${c.entity_id}`, key: `cr:${c.entity_id}` };
+  }
   if (c.entity === "rc_application" && after.stage === "Hired") return { type: "candidate.hired", subject: `applications/${c.entity_id}`, key: `hired:${c.entity_id}` };
   if (c.entity === "pm_calibration" && after.status === "Finalised") {
     return { type: "appraisal.finalised", subject: `appraisals/${c.entity_id}`, key: `final:${c.entity_id}` };
@@ -207,6 +221,40 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
       const r = await one("SELECT * FROM py_statutory_remittance WHERE id = ?", [Number(id)]);
       return r ? payroll.remittanceOf(r) : null;
     }
+    case "payslip.published": {
+      const r = await one(
+        `SELECT r.id, r.employee_id, r.run_id, r.net_paise, r.published_at, p.year, p.month, run.run_type
+         FROM py_payroll_result r JOIN py_payroll_run run ON run.id = r.run_id JOIN py_payroll_period p ON p.id = run.period_id
+         WHERE r.id = ?`,
+        [Number(id)],
+      );
+      if (!r) return null;
+      const { money } = await import("./format");
+      return {
+        result_id: Number(r.id),
+        employee_id: Number(r.employee_id),
+        run_id: Number(r.run_id),
+        run_type: String(r.run_type),
+        year: Number(r.year),
+        month: Number(r.month),
+        net_pay: money(Number(r.net_paise)),
+        published_at: r.published_at ?? null,
+      };
+    }
+    case "change_request.decided": {
+      const r = await one("SELECT * FROM pa_change_request WHERE id = ?", [Number(id)]);
+      return r
+        ? {
+            id: Number(r.id),
+            employee_id: Number(r.employee_id),
+            section: String(r.section),
+            subtype: r.subtype ?? null,
+            effective_date: String(r.effective_date),
+            status: String(r.status),
+            decided_at: r.decided_at ?? null,
+          }
+        : null;
+    }
     case "candidate.hired": {
       const r = await one("SELECT * FROM rc_hire_conversion WHERE application_id = ?", [Number(id)]);
       return { application_id: Number(id), employee_id: r ? Number(r.employee_id) : null, hire_date: r?.hire_date ?? null };
@@ -229,6 +277,7 @@ export function shapeFor(type: EventType, data: Record<string, unknown>, scopes:
     if (!has("pay:read")) delete out.basic_pay;
     if (!has("bank:read")) delete out.bank_account;
   }
+  if (type === "payslip.published" && !has("pay:read")) delete out.net_pay;
   if (type === "payroll.run.completed" && !has("pay:read")) {
     delete out.gross_total;
     delete out.net_total;

@@ -169,7 +169,7 @@ async function employeeVisible(ctx: ApiContext, id: number): Promise<boolean> {
   return r.length > 0;
 }
 
-async function resolveEmployee(ctx: ApiContext, raw: string): Promise<number> {
+export async function resolveEmployee(ctx: ApiContext, raw: string): Promise<number> {
   const id = Number(raw);
   if (!Number.isInteger(id) || id <= 0 || !(await employeeVisible(ctx, id))) throw notFound("There is no employee with that id that this client may see.");
   return id;

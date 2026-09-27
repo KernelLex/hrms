@@ -1,80 +1,31 @@
+import { Download } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { can, requirePage } from "@/lib/access";
-import { asc, eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import {
-  pyPayrollResult,
-  pyPayrollResultLine,
-  pyPayrollRun,
-  pyPayrollPeriod,
-  paEmployee,
-  omCompany,
-} from "@/db/schema";
-import { getEmployee, fullName } from "@/lib/repositories/employees";
+import { getPayslip } from "@/lib/repositories/payslips";
 import { logAccess } from "@/lib/access-log";
-import { formatMonth } from "@/lib/dates";
-import { periodEnd, periodStart } from "@/lib/engines/payroll";
-import { Card, PageHeader } from "@/components/ui";
+import { ButtonAnchor, Card, PageHeader } from "@/components/ui";
 import { Payslip } from "@/components/payslip";
 import { PrintButton } from "@/components/print-button";
+import { ResendPayslip } from "./resend";
 
-/** PY-04 — the remuneration statement, rendered from the stored result lines. */
-export default async function PayslipPage(props: {
-  params: Promise<{ id: string }>;
-}) {
+/**
+ * PY-04 — the remuneration statement, rendered from the stored result lines,
+ * with the year to date, and the same payslip as a PDF.
+ */
+export default async function PayslipPage(props: { params: Promise<{ id: string }> }) {
   const session = await requirePage(["self.pay", "payroll.view"]);
 
-  const { id } = await props.params;
-  const resultId = Number(id);
+  const resultId = Number((await props.params).id);
   if (!Number.isInteger(resultId)) notFound();
+  const p = await getPayslip(resultId);
+  if (!p) notFound();
 
-  const result = await db.query.pyPayrollResult.findFirst({
-    where: eq(pyPayrollResult.id, resultId),
-  });
-  if (!result) notFound();
-
-  // Without the right to see payroll, only your own payslip.
-  if (!can(session, "payroll.view") && session.employeeId !== result.employeeId) {
+  // Without the right to see payroll: only your own, and only once it is published.
+  if (!can(session, "payroll.view") && (session.employeeId !== p.employeeId || !p.published)) {
     redirect("/payroll/my-payslips");
   }
 
-  logAccess(session, {
-    subjectEmployeeId: result.employeeId,
-    resource: "payslip",
-    resourceId: result.id,
-  });
-
-  const [lines, run, employee, companies, person] = await Promise.all([
-    db
-      .select()
-      .from(pyPayrollResultLine)
-      .where(eq(pyPayrollResultLine.resultId, resultId))
-      .orderBy(asc(pyPayrollResultLine.sortOrder)),
-    db.query.pyPayrollRun.findFirst({ where: eq(pyPayrollRun.id, result.runId) }),
-    getEmployee(result.employeeId),
-    db.select().from(omCompany),
-    db.query.paEmployee.findFirst({ where: eq(paEmployee.id, result.employeeId) }),
-  ]);
-
-  const period = run
-    ? await db.query.pyPayrollPeriod.findFirst({
-        where: eq(pyPayrollPeriod.id, run.periodId),
-      })
-    : undefined;
-
-  const company =
-    companies.find((c) => c.code === employee?.company_code) ?? companies[0];
-
-  const periodLabel = period ? formatMonth(period.year, period.month) : "Payroll period";
-  const from = period ? periodStart(period.year, period.month) : "";
-  const to = period ? periodEnd(period.year, period.month) : "";
-  const joinedOn =
-    person && person.hireDate >= from && person.hireDate <= to ? person.hireDate : null;
-  const leftOn =
-    person?.terminationDate && person.terminationDate >= from && person.terminationDate <= to
-      ? person.terminationDate
-      : null;
-  const offCycleReason = run?.runType === "Off-cycle" ? (run.reason ?? "Off-cycle payment") : null;
+  logAccess(session, { subjectEmployeeId: p.employeeId, resource: "payslip", resourceId: p.resultId });
 
   return (
     <>
@@ -84,34 +35,23 @@ export default async function PayslipPage(props: {
             ? { href: "/payroll/run", label: "Run payroll" }
             : { href: "/payroll/my-payslips", label: "My payslips" }
         }
-        title={offCycleReason ? "Off-cycle payslip" : "Payslip"}
-        subtitle={`${employee ? fullName(employee) : "Employee"}, ${periodLabel}.`}
-        actions={<PrintButton label="Print or save as PDF" />}
+        title={p.offCycleReason ? "Off-cycle payslip" : "Payslip"}
+        subtitle={`${p.employeeName}, ${p.periodLabel}.`}
+        actions={
+          <>
+            {can(session, "payroll.post") && p.published ? <ResendPayslip resultId={p.resultId} /> : null}
+            <ButtonAnchor href={`/api/payroll/payslip/${p.resultId}/pdf`} download>
+              <Download />
+              Download PDF
+            </ButtonAnchor>
+            <PrintButton label="Print" />
+          </>
+        }
         screenOnly
       />
 
       <Card className="overflow-hidden print:rounded-none print:border-0">
-        <Payslip
-          employer={company?.name ?? "Company"}
-          employerAddress={
-            company ? [company.address, company.city].filter(Boolean).join(" · ") : undefined
-          }
-          employeeName={employee ? fullName(employee) : "Employee"}
-          employeeNumber={employee?.employee_number ?? "—"}
-          position={employee?.position_title ?? undefined}
-          period={periodLabel}
-          payDate={run?.payDate ?? period?.payDate}
-          lines={lines}
-          grossPaise={result.grossPaise}
-          deductionsPaise={result.deductionsPaise}
-          netPaise={result.netPaise}
-          unpaidDays={result.unpaidDays}
-          workingDays={result.workingDays}
-          employedDays={result.employedDays}
-          joinedOn={joinedOn}
-          leftOn={leftOn}
-          offCycleReason={offCycleReason}
-        />
+        <Payslip p={p} />
       </Card>
     </>
   );

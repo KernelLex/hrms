@@ -15,12 +15,22 @@ export type Profile = {
     maritalStatus: string | null;
     nationality: string | null;
   } | null;
-  addresses: { type: string; line: string; city: string | null; state: string | null; postalCode: string | null }[];
+  addresses: { type: string; line: string; city: string | null; state: string | null; postalCode: string | null; country: string | null }[];
   contacts: { type: string; value: string }[];
-  bank: { bankName: string; accountEnding: string; ifsc: string | null } | null;
+  bank: { bankName: string; accountEnding: string; ifsc: string | null; holderName: string | null } | null;
   schedule: { name: string; weeklyHours: number; percent: number } | null;
   managerName: string | null;
   viewedBy: { at: string; name: string; resource: string }[];
+  /** The employee's own correction requests, newest first. */
+  requests: {
+    id: number;
+    section: string;
+    subtype: string | null;
+    effectiveDate: string;
+    status: string;
+    requestedAt: string;
+    decisionNote: string | null;
+  }[];
 };
 
 /** "••••••••4321": enough to recognise an account, not enough to use it. */
@@ -34,7 +44,7 @@ export async function getProfile(employeeId: number, today: string): Promise<Pro
   if (!employee) return null;
 
   const valid = "employee_id = ?1 AND valid_from <= ?2 AND valid_to >= ?2";
-  const [personal, addresses, contacts, bank, schedule, manager, viewed] = await rawClient().batch(
+  const [personal, addresses, contacts, bank, schedule, manager, viewed, requests] = await rawClient().batch(
     [
       {
         sql: `SELECT date_of_birth, gender, marital_status, nationality
@@ -42,7 +52,7 @@ export async function getProfile(employeeId: number, today: string): Promise<Pro
         args: [employeeId, today],
       },
       {
-        sql: `SELECT address_type, line, city, state, postal_code
+        sql: `SELECT address_type, line, city, state, postal_code, country
               FROM pa_it0006_address WHERE ${valid} ORDER BY address_type`,
         args: [employeeId, today],
       },
@@ -51,7 +61,7 @@ export async function getProfile(employeeId: number, today: string): Promise<Pro
         args: [employeeId, today],
       },
       {
-        sql: `SELECT bank_name, account_number, ifsc FROM pa_it0009_bank_details WHERE ${valid} LIMIT 1`,
+        sql: `SELECT bank_name, account_number, ifsc, holder_name FROM pa_it0009_bank_details WHERE ${valid} LIMIT 1`,
         args: [employeeId, today],
       },
       {
@@ -84,6 +94,11 @@ export async function getProfile(employeeId: number, today: string): Promise<Pro
               ORDER BY l.at DESC LIMIT 20`,
         args: [employeeId],
       },
+      {
+        sql: `SELECT id, section, subtype, effective_date, status, requested_at, decision_note
+              FROM pa_change_request WHERE employee_id = ?1 ORDER BY id DESC LIMIT 10`,
+        args: [employeeId],
+      },
     ],
     "read",
   );
@@ -109,15 +124,30 @@ export async function getProfile(employeeId: number, today: string): Promise<Pro
       city: str(a.city),
       state: str(a.state),
       postalCode: str(a.postal_code),
+      country: str(a.country),
     })),
     contacts: contacts.rows.map((c) => ({ type: String(c.comm_type), value: String(c.value) })),
     bank: b
-      ? { bankName: String(b.bank_name), accountEnding: maskAccount(String(b.account_number)), ifsc: str(b.ifsc) }
+      ? {
+          bankName: String(b.bank_name),
+          accountEnding: maskAccount(String(b.account_number)),
+          ifsc: str(b.ifsc),
+          holderName: str(b.holder_name),
+        }
       : null,
     schedule: s
       ? { name: String(s.name), weeklyHours: Number(s.weekly_hours), percent: Number(s.employment_percent) }
       : null,
     managerName: str(manager.rows[0]?.name),
     viewedBy: viewed.rows.map((v) => ({ at: String(v.at), name: String(v.name), resource: String(v.resource) })),
+    requests: requests.rows.map((q) => ({
+      id: Number(q.id),
+      section: String(q.section),
+      subtype: str(q.subtype),
+      effectiveDate: String(q.effective_date),
+      status: String(q.status),
+      requestedAt: String(q.requested_at),
+      decisionNote: str(q.decision_note),
+    })),
   };
 }

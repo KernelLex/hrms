@@ -4,6 +4,7 @@ export const EMPLOYEE_DOCUMENT_KINDS = [
   "Appointment letter",
   "Identity proof",
   "Address proof",
+  "Bank proof",
   "Education certificate",
   "Relieving letter",
   "Other",
