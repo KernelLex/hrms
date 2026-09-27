@@ -27,6 +27,8 @@ import { createArea, createPeriod, hireForPayroll, postPeriod } from "./support/
  */
 
 const BASE = "http://localhost/api/v1";
+/** Where the mock ERP receives webhooks; other test files' subscriptions go elsewhere. */
+const ERP_HOOK = "https://erp.test/hrms/webhooks";
 const inProcess: Fetcher = (url, init) => dispatch(new Request(url, init), new URL(url).pathname.replace(/^\/api\/v1/, ""));
 const pump = async () => {
   await deriveEvents();
@@ -55,7 +57,8 @@ beforeAll(async () => {
   const hrClient = await createApiClient({ name: "HR tool (test)", scopes: ["employees:hire", "employees:read", "pay:read"], companies: null, createdBy: "test" });
   erp = new MockErp(new ApiSession({ baseUrl: BASE, clientId: erpClient.clientId, secret: erpClient.secret, fetch: inProcess }));
   hr = new ApiSession({ baseUrl: BASE, clientId: hrClient.clientId, secret: hrClient.secret, fetch: inProcess });
-  setWebhookTransport(async (req) => ({ status: erp.receive({ headers: req.headers, body: req.body }) }));
+  // Like the network: a delivery reaches the mock ERP only if addressed to it.
+  setWebhookTransport(async (req) => ({ status: req.url === ERP_HOOK ? erp.receive({ headers: req.headers, body: req.body }) : 200 }));
 });
 
 afterAll(() => setWebhookTransport(null));
@@ -65,7 +68,7 @@ describe("the mock ERP", () => {
     const steps = await runScenario({
       erp,
       hr,
-      webhookUrl: "https://erp.test/hrms/webhooks",
+      webhookUrl: ERP_HOOK,
       today: todayInIndia(),
       pump,
       badSession: new ApiSession({ baseUrl: BASE, clientId: erp.session.clientId, secret: "wrong", fetch: inProcess }),
