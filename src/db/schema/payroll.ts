@@ -242,6 +242,11 @@ export const pyBankTransferLine = sqliteTable(
     accountNumber: text("account_number").notNull(),
     ifsc: text("ifsc"),
     amountPaise: integer("amount_paise").notNull(),
+    /** "pending" until the ERP confirms the payment "paid" or "failed". */
+    paymentStatus: text("payment_status").notNull().default("pending"),
+    paidAt: text("paid_at"),
+    bankReference: text("bank_reference"),
+    failureReason: text("failure_reason"),
   },
   (t) => [index("ix_bankline_file").on(t.fileId)],
 );

@@ -169,6 +169,8 @@ export type HrHome = {
   undepositedTdsPaise: number;
   undepositedQuarters: number;
   offered: number;
+  /** New applications nobody has screened yet. */
+  toScreen: number;
   draftIncrements: number;
   approvedIncrements: number;
   openCalibrations: number;
@@ -250,7 +252,11 @@ export async function hrHome(today: string): Promise<HrHome> {
        FROM tds_deduction_register
        WHERE tds_deducted_paise > 0 AND deposit_date IS NULL`,
     ),
-    one<{ offered: number }>(`SELECT COUNT(*) AS offered FROM rc_application WHERE stage = 'Offered'`),
+    one<{ offered: number | null; to_screen: number | null }>(
+      `SELECT SUM(stage = 'Offered' AND rejected_at IS NULL) AS offered,
+              SUM(stage = 'Applied' AND rejected_at IS NULL) AS to_screen
+       FROM rc_application`,
+    ),
     all<{ id: number; name: string }>(
       `SELECT e.id, ${EMPLOYEE_NAME} AS name
        FROM pa_employee e
@@ -260,12 +266,12 @@ export async function hrHome(today: string): Promise<HrHome> {
        ORDER BY e.employee_number`,
       [today],
     ),
-    all<{ date: string; time: string | null; round: string; candidate: string }>(
-      `SELECT i.scheduled_date AS date, i.scheduled_time AS time, i.round, c.full_name AS candidate
+    all<{ id: number; date: string; time: string | null; round: string; candidate: string }>(
+      `SELECT i.id, i.scheduled_date AS date, i.scheduled_time AS time, i.round, c.full_name AS candidate
        FROM rc_interview i
        JOIN rc_application a ON a.id = i.application_id
        JOIN rc_candidate c ON c.id = a.candidate_id
-       WHERE i.scheduled_date BETWEEN ? AND ?
+       WHERE i.scheduled_date BETWEEN ? AND ? AND i.status = 'Scheduled'
        ORDER BY i.scheduled_date, i.scheduled_time`,
       [today, horizon],
     ),
@@ -286,7 +292,7 @@ export async function hrHome(today: string): Promise<HrHome> {
       kind: "interview",
       title: i.candidate,
       detail: `${i.round}${i.time ? `, ${formatTime(i.time)}` : ""}`,
-      href: "/recruitment/interviews",
+      href: `/recruitment/interviews/${i.id}`,
     })),
   ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
@@ -319,7 +325,8 @@ export async function hrHome(today: string): Promise<HrHome> {
     })),
     undepositedTdsPaise: tds.amount ?? 0,
     undepositedQuarters: tds.quarters,
-    offered: pipeline.offered,
+    offered: Number(pipeline.offered ?? 0),
+    toScreen: Number(pipeline.to_screen ?? 0),
     draftIncrements: counts.draft_inc,
     approvedIncrements: counts.approved_inc,
     openCalibrations: counts.open_cal,

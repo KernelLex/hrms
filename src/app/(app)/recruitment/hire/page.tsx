@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requirePage } from "@/lib/access";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   rcApplication,
@@ -50,7 +50,7 @@ export default async function HireConversionPage() {
       .from(rcApplication)
       .innerJoin(rcCandidate, eq(rcCandidate.id, rcApplication.candidateId))
       .innerJoin(rcRequisition, eq(rcRequisition.id, rcApplication.requisitionId))
-      .where(eq(rcApplication.stage, "Offered")),
+      .where(and(eq(rcApplication.stage, "Offered"), isNull(rcApplication.rejectedAt))),
     db
       .select({
         id: rcHireConversion.id,

@@ -72,6 +72,8 @@ export const appAccessLog = sqliteTable(
     /** What was read: "payslip", "form16", "infotype 0008", "document". */
     resource: text("resource").notNull(),
     resourceId: text("resource_id"),
+    /** Set when an API client read it; `user_id` is then 0. */
+    clientPk: integer("client_pk"),
   },
   (t) => [
     index("ix_access_subject").on(t.subjectEmployeeId, t.at),

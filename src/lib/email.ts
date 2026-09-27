@@ -69,6 +69,8 @@ export function renderEmail(opts: {
   body?: string | null;
   link?: string | null;
   action?: string;
+  /** The small print; by default, where to choose which emails arrive. */
+  footer?: string;
 }): { subject: string; text: string; html: string } {
   const url = opts.link ? (opts.link.startsWith("http") ? opts.link : `${appUrl()}${opts.link}`) : null;
   const action = opts.action ?? "Open in HRMS";
@@ -82,7 +84,7 @@ export function renderEmail(opts: {
 ${opts.body ? `<tr><td style="padding:8px 24px 0;font-size:14px;line-height:1.5;color:#525252">${escape(opts.body)}</td></tr>` : ""}
 ${url ? `<tr><td style="padding:20px 24px 24px"><a href="${escape(url)}" style="display:inline-block;background:#171717;color:#fff;text-decoration:none;border-radius:999px;padding:9px 16px;font-size:14px;font-weight:500">${escape(action)}</a></td></tr>` : `<tr><td style="padding:0 0 24px"></td></tr>`}
 </table>
-<p style="font-size:12px;color:#737373;margin:16px 0 0">You can choose which emails you get in HRMS, under Notifications.</p>
+<p style="font-size:12px;color:#737373;margin:16px 0 0">${escape(opts.footer ?? "You can choose which emails you get in HRMS, under Notifications.")}</p>
 </td></tr></table></body></html>`;
   return { subject: opts.title, text, html };
 }
@@ -198,7 +200,9 @@ const outboxRow = (r: Record<string, unknown>): OutboxRow => ({
 export async function listOutbox(
   opts: { status?: string; limit?: number; offset?: number } = {},
 ): Promise<{ rows: OutboxRow[]; total: number; counts: Record<string, number> }> {
-  const filter = opts.status ? "WHERE status = ?" : "";
+  // Emails only: webhook deliveries share the table and are shown per
+  // connected system on the Integrations screens.
+  const filter = opts.status ? "WHERE channel = 'email' AND status = ?" : "WHERE channel = 'email'";
   const args = opts.status ? [opts.status] : [];
   const [page, count, byStatus] = await Promise.all([
     rawClient().execute({
@@ -207,7 +211,7 @@ export async function listOutbox(
       args: [...args, opts.limit ?? 50, opts.offset ?? 0],
     }),
     rawClient().execute({ sql: `SELECT COUNT(*) AS n FROM app_outbox ${filter}`, args }),
-    rawClient().execute("SELECT status, COUNT(*) AS n FROM app_outbox GROUP BY status"),
+    rawClient().execute("SELECT status, COUNT(*) AS n FROM app_outbox WHERE channel = 'email' GROUP BY status"),
   ]);
   return {
     rows: page.rows.map((r) => outboxRow(r as unknown as Record<string, unknown>)),
@@ -219,7 +223,7 @@ export async function listOutbox(
 export async function getOutboxMessage(
   id: number,
 ): Promise<(OutboxRow & { bodyText: string; bodyHtml: string | null }) | null> {
-  const r = await rawClient().execute({ sql: "SELECT * FROM app_outbox WHERE id = ?", args: [id] });
+  const r = await rawClient().execute({ sql: "SELECT * FROM app_outbox WHERE id = ? AND channel = 'email'", args: [id] });
   const row = r.rows[0] as unknown as Record<string, unknown> | undefined;
   if (!row) return null;
   return {

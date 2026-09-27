@@ -6,6 +6,7 @@ import { rawClient } from "@/lib/db";
 import { readEnv } from "@/lib/env";
 import { todayInIndia } from "@/lib/dates";
 import { HANDLERS, DAILY } from "./handlers";
+import { deriveEvents } from "@/lib/api/events";
 import {
   claimJob,
   completeJob,
@@ -40,6 +41,14 @@ async function scheduleDue(): Promise<void> {
 export async function processJobs(budgetMs = BUDGET_MS): Promise<{ ran: number; more: boolean }> {
   const deadline = Date.now() + budgetMs;
   await scheduleDue();
+  // Changes since the last pass become events, and their webhooks are queued.
+  try {
+    while ((await deriveEvents()) > 0 && Date.now() < deadline) {
+      // keep going while there is a backlog
+    }
+  } catch (err) {
+    console.error("Could not derive events", err);
+  }
   let ran = 0;
 
   while (Date.now() < deadline) {

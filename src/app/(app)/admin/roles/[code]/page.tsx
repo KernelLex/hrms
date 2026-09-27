@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
+import { requirePage } from "@/lib/access";
 import { getRole, listUsers, scopeOptions } from "@/lib/repositories/access";
 import { RoleForm, RoleMembers, DeleteRole } from "../role-form";
 
 /** One role: what it can do, where, and who holds it. */
 export default async function RolePage(props: { params: Promise<{ code: string }> }) {
+  await requirePage(["access.manage"], "/admin");
   const { code } = await props.params;
   const [role, users, scope] = await Promise.all([getRole(code), listUsers(), scopeOptions()]);
   if (!role) notFound();

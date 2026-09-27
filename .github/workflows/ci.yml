@@ -1,7 +1,8 @@
 # The full check, on every push and pull request: types, lint, the test
-# suite, a production build, and the accessibility and layout audit of every
-# screen against the built app on a fresh local database. Any step failing
-# fails the run.
+# suite, a production build, the accessibility and layout audit of every
+# screen, and the mock ERP's whole integration scenario over HTTP — both
+# against the built app on a fresh local database. Any step failing fails
+# the run.
 name: CI
 
 on:
@@ -24,6 +25,8 @@ jobs:
       TURSO_DATABASE_URL: file:./ci.db
       TURSO_AUTH_TOKEN: ""
       AUTH_SECRET: ci-only-secret-used-nowhere-else
+      # Seeds the sandbox API clients the mock ERP connects with.
+      SANDBOX_CLIENT_SECRET: ci-only-sandbox-secret
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@v5
@@ -67,6 +70,11 @@ jobs:
 
       - name: Audit every screen
         run: npm run audit:ui
+
+      # After the audit, which expects the seed as it was: the scenario hires
+      # someone and books a journal.
+      - name: Run the mock ERP against the app
+        run: npm run sandbox
 
       - name: Server log
         if: failure()

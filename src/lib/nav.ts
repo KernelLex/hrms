@@ -59,6 +59,7 @@ export const NAV: NavGroup[] = [
     label: "Talent",
     items: [
       { label: "Recruitment", href: "/recruitment", icon: "UserPlus", anyOf: ["recruitment.manage"] },
+      { label: "My interviews", href: "/recruitment/my-interviews", icon: "CalendarClock", anyOf: ["recruitment.interview"] },
       { label: "Performance", href: "/performance", icon: "Target", anyOf: ["performance.manage", "performance.rate_any", "performance.rate_team"] },
       { label: "My appraisal", href: "/performance/mine", icon: "ClipboardCheck", anyOf: ["self.appraisal"] },
     ],
@@ -68,6 +69,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Roles and permissions", href: "/admin/roles", icon: "ShieldCheck", anyOf: ["access.manage"] },
       { label: "Approval flows", href: "/admin/approval-flows", icon: "Workflow", anyOf: ["access.manage"] },
+      { label: "Integrations", href: "/admin/integrations", icon: "Plug", anyOf: ["integrations.manage"] },
       { label: "Change log", href: "/change-log", icon: "History", anyOf: ["audit.view"] },
       { label: "Outbox", href: "/outbox", icon: "Mail", anyOf: ["audit.view"] },
     ],

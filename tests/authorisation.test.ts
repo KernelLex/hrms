@@ -4,8 +4,10 @@ import type { Permission } from "@/lib/permissions";
 import * as accessActions from "@/app/actions/access";
 import * as approvals from "@/app/actions/approvals";
 import * as auth from "@/app/actions/auth";
+import * as careers from "@/app/actions/careers";
 import * as coreHr from "@/app/actions/core-hr";
 import * as documents from "@/app/actions/documents";
+import * as integrations from "@/app/actions/integrations";
 import * as notifications from "@/app/actions/notifications";
 import * as org from "@/app/actions/org";
 import * as payroll from "@/app/actions/payroll";
@@ -39,8 +41,10 @@ const MODULES = {
   access: accessActions,
   approvals,
   auth,
+  careers,
   "core-hr": coreHr,
   documents,
+  integrations,
   notifications,
   org,
   payroll,
@@ -63,6 +67,8 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   },
   approvals: { decideApproval: "signed-in", saveDelegation: "signed-in", endDelegation: "signed-in" },
   auth: { signInAction: "public", demoSignInAction: "public", signOutAction: "public" },
+  // The careers page: anyone, signed in or not, may apply.
+  careers: { applyForJob: "public" },
   "core-hr": {
     hireEmployee: ["employee.edit"], // and pay.view: see below
     saveInfotypeSlice: ["employee.edit"],
@@ -73,6 +79,18 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     setEmploymentStatus: ["employee.edit"],
   },
   documents: { uploadEmployeeDocument: ["employee.documents"], removeEmployeeDocument: ["employee.documents"] },
+  integrations: {
+    createIntegrationClient: ["integrations.manage"],
+    updateIntegrationClient: ["integrations.manage"],
+    rotateIntegrationSecret: ["integrations.manage"],
+    revokeIntegrationSecrets: ["integrations.manage"],
+    setWebhookActive: ["integrations.manage"],
+    replayWebhookDeliveries: ["integrations.manage"],
+    setRecordOwner: ["integrations.manage"],
+    retryIssue: ["integrations.manage"],
+    discardIssue: ["integrations.manage"],
+    resendJournal: ["payroll.post", "integrations.manage"],
+  },
   notifications: { openNotification: "signed-in", markAllRead: "signed-in", saveNotificationPrefs: "signed-in" },
   org: org_([
     "saveCompany", "deleteCompany", "saveArea", "deleteArea", "saveSubArea", "deleteSubArea", "saveJob",
@@ -113,15 +131,21 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   },
   recruitment: {
     saveRequisition: ["recruitment.manage"],
+    setRequisitionPublished: ["recruitment.manage"],
     deleteRequisition: ["recruitment.manage"],
     saveCandidate: ["recruitment.manage"],
     deleteCandidate: ["recruitment.manage"],
     uploadResume: ["recruitment.manage"],
     removeResume: ["recruitment.manage"],
     createApplication: ["recruitment.manage"],
-    advanceApplication: ["recruitment.manage"],
+    takeToInterview: ["recruitment.manage"],
     rejectApplication: ["recruitment.manage"],
-    saveInterview: ["recruitment.manage"],
+    selectCandidate: ["recruitment.manage"],
+    makeOffer: ["recruitment.manage"],
+    scheduleInterview: ["recruitment.manage"],
+    // An interviewer records their own rounds' notes; the data decides which.
+    recordInterviewFeedback: ["recruitment.manage", "recruitment.interview"],
+    setInterviewStatus: ["recruitment.manage"],
     deleteInterview: ["recruitment.manage"],
     convertToEmployee: ["recruitment.hire"],
   },

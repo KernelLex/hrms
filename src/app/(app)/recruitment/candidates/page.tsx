@@ -13,12 +13,13 @@ import { Pagination, pageFrom } from "@/components/pagination";
 const COLUMNS: Column[] = [
   { key: "code", label: "Candidate" },
   { key: "contact", label: "Contact" },
+  { key: "background", label: "Background" },
   { key: "source", label: "Source" },
   { key: "applications", label: "Applications", numeric: true },
   { key: "resume", label: "Resume" },
 ];
 
-const SOURCES = ["Referral", "Job portal", "Campus", "Agency", "LinkedIn"];
+const SOURCES = ["Careers page", "Referral", "Job portal", "Campus", "Agency", "LinkedIn"];
 
 /** RC-02 — applicant master data. */
 export default async function CandidatesPage(props: {
@@ -66,6 +67,10 @@ export default async function CandidatesPage(props: {
       required: true,
       options: SOURCES.map((s) => ({ value: s, label: s })),
     },
+    { kind: "text", name: "currentEmployer", label: "Works at", placeholder: "Infosys" },
+    { kind: "text", name: "experienceYears", label: "Experience", placeholder: "4", hint: "Whole years." },
+    { kind: "text", name: "noticePeriodDays", label: "Notice period", placeholder: "30", hint: "Days." },
+    { kind: "text", name: "profileLink", label: "Profile link", placeholder: "https://www.linkedin.com/in/…" },
     {
       kind: "text",
       name: "resumeLink",
@@ -78,7 +83,7 @@ export default async function CandidatesPage(props: {
       kind: "select",
       name: "requisitionId",
       label: "Apply to requisition",
-      options: openRequisitions.map((r) => ({ value: String(r.id), label: r.code })),
+      options: openRequisitions.map((r) => ({ value: String(r.id), label: `${r.title || r.code} (${r.code})` })),
       emptyLabel: "Do not apply yet",
       hint: "Creates the application straight away. Only on a new candidate.",
     },
@@ -91,7 +96,7 @@ export default async function CandidatesPage(props: {
         total={total}
         footer={<Pagination page={page} total={total} path="/recruitment/candidates" noun="candidates" />}
         title="Candidates"
-        subtitle="People who have applied. A candidate can apply to more than one requisition."
+        subtitle="Everyone who has applied, on the careers page or through HR. One record per person, however many roles they apply for."
         entity="candidate"
         columns={COLUMNS}
         idField="code"
@@ -106,6 +111,16 @@ export default async function CandidatesPage(props: {
           cells: {
             code: <TwoLine value={r.fullName} sub={r.code} />,
             contact: <TwoLine value={r.email} sub={r.phone ?? undefined} />,
+            background: (
+              <TwoLine
+                value={r.currentEmployer ?? <span className="text-decor">&mdash;</span>}
+                sub={
+                  [r.experienceYears !== null ? `${r.experienceYears} years` : null, r.noticePeriodDays !== null ? `${r.noticePeriodDays} days notice` : null]
+                    .filter(Boolean)
+                    .join(", ") || undefined
+                }
+              />
+            ),
             source: <span className="text-secondary">{r.source}</span>,
             applications: String(applications.get(r.id) ?? 0),
             resume: (
@@ -123,6 +138,10 @@ export default async function CandidatesPage(props: {
             phone: r.phone ?? "",
             source: r.source,
             resumeLink: r.resumeLink ?? "",
+            currentEmployer: r.currentEmployer ?? "",
+            experienceYears: r.experienceYears !== null ? String(r.experienceYears) : "",
+            noticePeriodDays: r.noticePeriodDays !== null ? String(r.noticePeriodDays) : "",
+            profileLink: r.profileLink ?? "",
             requisitionId: "",
           },
         }))}

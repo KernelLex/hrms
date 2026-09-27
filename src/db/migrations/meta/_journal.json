@@ -64,6 +64,20 @@
       "when": 1790460861074,
       "tag": "0008_permissions_and_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790501110587,
+      "tag": "0009_integration_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790504097301,
+      "tag": "0010_recruitment_workflow",
+      "breakpoints": true
     }
   ]
 }

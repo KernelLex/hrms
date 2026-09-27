@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db, rawClient } from "@/lib/db";
-import { requirePermission } from "@/lib/access";
+import { requireAnyPermission, requirePermission, can } from "@/lib/access";
 import {
   actorOf,
   audited,
@@ -18,12 +18,13 @@ import {
   rcRequisition,
   rcCandidate,
   rcApplication,
-  rcApplicationStageHistory,
   rcInterview,
   omPosition,
   paEmployee,
-  PIPELINE_STAGES,
   OPEN_ENDED,
+  EMPLOYMENT_TYPES,
+  WORK_MODES,
+  RECOMMENDATIONS,
   now,
 } from "@/db/schema";
 import { toPaise } from "@/lib/money";
@@ -36,8 +37,15 @@ import {
 } from "@/lib/storage";
 import { appDocument } from "@/db/schema";
 import { todayInIndia } from "@/lib/dates";
+import {
+  announceInterview,
+  applicationStatements,
+  employeeName,
+  interviewClash,
+  stageStatements,
+} from "@/lib/recruitment";
 
-export type ActionState = { error?: string; ok?: boolean; employeeId?: number };
+export type ActionState = { error?: string; ok?: boolean; employeeId?: number; code?: string; id?: number };
 
 const OK: ActionState = { ok: true };
 const fail = (error: string): ActionState => ({ error });
@@ -50,9 +58,15 @@ const opt = (v: FormDataEntryValue | null) => {
   return s.length > 0 ? s : null;
 };
 const num = (v: FormDataEntryValue | null) => Number(str(v));
+/** A whole number from an optional field: null when blank, NaN when not a number. */
+const optInt = (v: FormDataEntryValue | null) => {
+  const s = str(v);
+  return s ? (/^\d+$/.test(s) ? Number(s) : Number.NaN) : null;
+};
 
 function revalidateRecruitment() {
   revalidatePath("/recruitment", "layout");
+  revalidatePath("/careers", "layout");
   revalidatePath("/core-hr", "layout");
   revalidatePath("/org", "layout");
   revalidatePath("/");
@@ -60,43 +74,118 @@ function revalidateRecruitment() {
 
 /* ----------------------------------------------------- RC-01 requisitions */
 
+const RequisitionInput = z
+  .object({
+    positionCode: z.string().min(1, "Choose a position."),
+    title: z.string().min(1, "Give the role a title candidates will recognise.").max(120),
+    description: z.string().max(8000).nullable(),
+    qualifications: z.string().max(4000).nullable(),
+    skills: z.string().max(2000).nullable(),
+    experienceMinYears: z.number().int("Experience is in whole years.").min(0).max(50).nullable(),
+    experienceMaxYears: z.number().int("Experience is in whole years.").min(0).max(50).nullable(),
+    employmentType: z.enum(EMPLOYMENT_TYPES),
+    workMode: z.enum(WORK_MODES),
+    location: z.string().max(200).nullable(),
+    budgetMinPaise: z.number().int().positive("A budget is above zero.").nullable(),
+    budgetMaxPaise: z.number().int().positive("A budget is above zero.").nullable(),
+    hiringManagerEmployeeId: z.number().int().positive().nullable(),
+    openings: z.number().int("Enter at least one opening.").min(1, "Enter at least one opening.").max(500),
+    priority: z.enum(["High", "Medium", "Low"]),
+    postedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a posted date."),
+    targetCloseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    status: z.enum(["Open", "On hold", "Closed"]),
+    isPublished: z.boolean(),
+  })
+  .refine((v) => v.experienceMinYears === null || v.experienceMaxYears === null || v.experienceMinYears <= v.experienceMaxYears, {
+    message: "The least experience cannot be more than the most.",
+  })
+  .refine((v) => v.budgetMinPaise === null || v.budgetMaxPaise === null || v.budgetMinPaise <= v.budgetMaxPaise, {
+    message: "The lower budget cannot be above the higher one.",
+  })
+  .refine((v) => !v.targetCloseDate || v.targetCloseDate >= v.postedDate, {
+    message: "The target close date is before the posted date.",
+  })
+  .refine((v) => !v.isPublished || (v.description && v.description.length >= 40), {
+    message: "A published role needs a description candidates can read: a few sentences at least.",
+  })
+  .refine((v) => !v.isPublished || v.status === "Open", {
+    message: "Only an open requisition can be on the careers page.",
+  });
+
+const rupeesToPaise = (v: FormDataEntryValue | null) => {
+  const s = str(v).replace(/,/g, "");
+  if (!s) return null;
+  return /^\d+(\.\d{1,2})?$/.test(s) ? toPaise(Number(s)) : Number.NaN;
+};
+
+/**
+ * Opens or changes a requisition: the position it fills, and the role as
+ * candidates will read it on the careers page when published.
+ */
 export async function saveRequisition(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const actor = actorOf(await requirePermission("recruitment.manage"));
   const original = opt(form.get("originalCode"));
-  const positionCode = str(form.get("positionCode"));
-  const openings = num(form.get("openings"));
 
-  if (!positionCode) return fail("Choose a position.");
-  if (!Number.isInteger(openings) || openings < 1) return fail("Enter at least one opening.");
+  const parsed = RequisitionInput.safeParse({
+    positionCode: str(form.get("positionCode")),
+    title: str(form.get("title")),
+    description: opt(form.get("description")),
+    qualifications: opt(form.get("qualifications")),
+    skills: opt(form.get("skills")),
+    experienceMinYears: optInt(form.get("experienceMinYears")),
+    experienceMaxYears: optInt(form.get("experienceMaxYears")),
+    employmentType: str(form.get("employmentType")) || "Full-time",
+    workMode: str(form.get("workMode")) || "On site",
+    location: opt(form.get("location")),
+    budgetMinPaise: rupeesToPaise(form.get("budgetMin")),
+    budgetMaxPaise: rupeesToPaise(form.get("budgetMax")),
+    hiringManagerEmployeeId: optInt(form.get("hiringManagerEmployeeId")),
+    openings: num(form.get("openings")),
+    priority: str(form.get("priority")) || "Medium",
+    postedDate: str(form.get("postedDate")),
+    targetCloseDate: opt(form.get("targetCloseDate")),
+    status: str(form.get("status")) || "Open",
+    isPublished: form.get("isPublished") === "on" || form.get("isPublished") === "true",
+  });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+  const v = parsed.data;
 
   const position = await db.query.omPosition.findFirst({
-    where: eq(omPosition.code, positionCode),
+    where: eq(omPosition.code, v.positionCode),
   });
   if (!position) return fail("That position no longer exists.");
 
-  const postedDate = str(form.get("postedDate"));
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(postedDate)) return fail("Enter a posted date.");
+  const existing = original
+    ? await db.query.rcRequisition.findFirst({ where: eq(rcRequisition.code, original) })
+    : null;
+  if (original && !existing) return fail("That requisition no longer exists.");
+
+  // A new requisition, or a move to another position, needs a vacant one.
+  if ((!existing || existing.positionCode !== v.positionCode) && !position.isVacant) {
+    return fail(`${position.code} is filled. Open the requisition against a vacant position.`);
+  }
+  if (existing && existing.positionCode !== v.positionCode) {
+    const applied = await db.select({ id: rcApplication.id }).from(rcApplication).where(eq(rcApplication.requisitionId, existing.id));
+    if (applied.length > 0) return fail("People have applied to this requisition, so its position can no longer change.");
+  }
 
   const values = {
-    positionCode,
+    ...v,
     orgUnitCode: position.orgUnitCode,
     jobCode: position.jobCode,
-    openings,
-    priority: str(form.get("priority")) || "Medium",
-    postedDate,
-    targetCloseDate: opt(form.get("targetCloseDate")),
-    status: str(form.get("status")) || "Open",
+    updatedAt: now(),
   };
 
-  if (original) {
+  let code = original ?? "";
+  if (existing) {
     await audited(
       actor,
-      { entity: "rc_requisition", entityId: original, subjectEmployeeId: subjectOf },
-      () => db.query.rcRequisition.findFirst({ where: eq(rcRequisition.code, original) }),
-      () => db.update(rcRequisition).set(values).where(eq(rcRequisition.code, original)),
+      { entity: "rc_requisition", entityId: existing.code, subjectEmployeeId: subjectOf },
+      () => db.query.rcRequisition.findFirst({ where: eq(rcRequisition.id, existing.id) }),
+      () => db.update(rcRequisition).set(values).where(eq(rcRequisition.id, existing.id)),
     );
   } else {
     const [last] = await db
@@ -105,17 +194,38 @@ export async function saveRequisition(
       .orderBy(desc(rcRequisition.id))
       .limit(1);
     const next = last ? Number(last.code.replace(/\D/g, "")) + 1 : 1;
+    code = `REQ${String(next).padStart(4, "0")}`;
     await recordCreated(
       actor,
       "rc_requisition",
-      await db.insert(rcRequisition).values({
-        ...values,
-        code: `REQ${String(next).padStart(4, "0")}`,
-        createdAt: now(),
-      }).returning(),
+      await db.insert(rcRequisition).values({ ...values, code, createdAt: now() }).returning(),
     );
   }
 
+  revalidateRecruitment();
+  return { ok: true, code };
+}
+
+/** Puts an open requisition on the careers page, or takes it off. */
+export async function setRequisitionPublished(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const actor = actorOf(await requirePermission("recruitment.manage"));
+  const code = str(form.get("code"));
+  const publish = str(form.get("publish")) === "1";
+  const req = await db.query.rcRequisition.findFirst({ where: eq(rcRequisition.code, code) });
+  if (!req) return fail("That requisition no longer exists.");
+  if (publish && req.status !== "Open") return fail("Only an open requisition can be on the careers page.");
+  if (publish && (!req.description || req.description.length < 40)) {
+    return fail("Add a description candidates can read before publishing.");
+  }
+  await audited(
+    actor,
+    { entity: "rc_requisition", entityId: code, subjectEmployeeId: subjectOf },
+    () => db.query.rcRequisition.findFirst({ where: eq(rcRequisition.id, req.id) }),
+    () => db.update(rcRequisition).set({ isPublished: publish, updatedAt: now() }).where(eq(rcRequisition.id, req.id)),
+  );
   revalidateRecruitment();
   return OK;
 }
@@ -154,16 +264,23 @@ export async function deleteRequisition(
 /* -------------------------------------------------------- RC-02 candidates */
 
 const CandidateInput = z.object({
-  fullName: z.string().min(1, "Enter the candidate's name."),
+  fullName: z.string().min(1, "Enter the candidate's name.").max(120),
   email: z.email("Enter a valid email address."),
-  phone: z.string().nullable(),
+  phone: z.string().max(40).nullable(),
   source: z.string().min(1),
-  // Rendered as a link, so only web addresses: a javascript: URL would run
+  // Rendered as links, so only web addresses: a javascript: URL would run
   // in HR's browser when they clicked it.
   resumeLink: z
     .string()
     .regex(/^https?:\/\/\S+$/i, "A resume link must start with http:// or https://.")
     .nullable(),
+  profileLink: z
+    .string()
+    .regex(/^https?:\/\/\S+$/i, "A profile link must start with http:// or https://.")
+    .nullable(),
+  currentEmployer: z.string().max(120).nullable(),
+  experienceYears: z.number().int("Experience is in whole years.").min(0).max(60).nullable(),
+  noticePeriodDays: z.number().int("The notice period is in days.").min(0).max(365).nullable(),
 });
 
 export async function saveCandidate(
@@ -176,19 +293,29 @@ export async function saveCandidate(
 
   const parsed = CandidateInput.safeParse({
     fullName: str(form.get("fullName")),
-    email: str(form.get("email")),
+    email: str(form.get("email")).toLowerCase(),
     phone: opt(form.get("phone")),
     source: str(form.get("source")) || "Job portal",
     resumeLink: opt(form.get("resumeLink")),
+    profileLink: opt(form.get("profileLink")),
+    currentEmployer: opt(form.get("currentEmployer")),
+    experienceYears: optInt(form.get("experienceYears")),
+    noticePeriodDays: optInt(form.get("noticePeriodDays")),
   });
   if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  // One record per person: the same email is the same candidate.
+  const sameEmail = await db.query.rcCandidate.findFirst({ where: eq(rcCandidate.email, parsed.data.email) });
+  if (sameEmail && sameEmail.code !== original) {
+    return fail(`${sameEmail.fullName} (${sameEmail.code}) already has that email address.`);
+  }
 
   if (original) {
     await audited(
       actor,
       { entity: "rc_candidate", entityId: original, subjectEmployeeId: subjectOf },
       () => db.query.rcCandidate.findFirst({ where: eq(rcCandidate.code, original) }),
-      () => db.update(rcCandidate).set(parsed.data).where(eq(rcCandidate.code, original)),
+      () => db.update(rcCandidate).set({ ...parsed.data, updatedAt: now() }).where(eq(rcCandidate.code, original)),
     );
   } else {
     const [last] = await db
@@ -210,7 +337,7 @@ export async function saveCandidate(
     // Applying is optional, but it is the usual next step.
     const requisitionId = num(form.get("requisitionId"));
     if (requisitionId) {
-      await createApplicationFor(candidate.id, requisitionId, actor);
+      await applicationStatements(actor, { candidateId: candidate.id, requisitionId, channel: "Added by HR", today: todayInIndia() });
     }
   }
 
@@ -320,40 +447,7 @@ export async function removeResume(
 
 /* ---------------------------------------------------------- applications */
 
-async function createApplicationFor(
-  candidateId: number,
-  requisitionId: number,
-  actor: Actor,
-): Promise<void> {
-  const existing = await db.query.rcApplication.findFirst({
-    where: and(
-      eq(rcApplication.candidateId, candidateId),
-      eq(rcApplication.requisitionId, requisitionId),
-    ),
-  });
-  if (existing) return;
-
-  const today = todayInIndia();
-  const [application] = await db
-    .insert(rcApplication)
-    .values({
-      candidateId,
-      requisitionId,
-      stage: "Applied",
-      appliedDate: today,
-    })
-    .returning();
-  await recordCreated(actor, "rc_application", [application]);
-
-  await db.insert(rcApplicationStageHistory).values({
-    applicationId: application.id,
-    fromStage: null,
-    toStage: "Applied",
-    changedBy: actor.name,
-    changedAt: now(),
-  });
-}
-
+/** Applies an existing candidate to an open requisition, on their behalf. */
 export async function createApplication(
   _prev: ActionState,
   form: FormData,
@@ -364,179 +458,301 @@ export async function createApplication(
   const requisitionId = num(form.get("requisitionId"));
   if (!candidateId || !requisitionId) return fail("Choose a candidate and a requisition.");
 
-  const existing = await db.query.rcApplication.findFirst({
-    where: and(
-      eq(rcApplication.candidateId, candidateId),
-      eq(rcApplication.requisitionId, requisitionId),
-    ),
-  });
-  if (existing) return fail("That candidate has already applied to this requisition.");
+  const requisition = await db.query.rcRequisition.findFirst({ where: eq(rcRequisition.id, requisitionId) });
+  if (!requisition) return fail("That requisition no longer exists.");
+  if (requisition.status !== "Open") return fail(`${requisition.code} is ${requisition.status.toLowerCase()}, so it takes no applications.`);
 
-  await createApplicationFor(candidateId, requisitionId, actor);
+  const created = await applicationStatements(actor, { candidateId, requisitionId, channel: "Added by HR", today: todayInIndia() });
+  if (!created) return fail("That candidate has already applied to this requisition.");
   revalidateRecruitment();
+  return { ok: true, id: created.id };
+}
+
+async function applicationFor(id: number) {
+  return db.query.rcApplication.findFirst({ where: eq(rcApplication.id, id) });
+}
+
+type Application = NonNullable<Awaited<ReturnType<typeof applicationFor>>>;
+
+async function move(actor: Actor, application: Application, to: string, set: Record<string, string | number | null>, note: string | null) {
+  await rawClient().batch(stageStatements(actor, application, to, set, note), "write");
+  revalidateRecruitment();
+}
+
+/**
+ * Screening, the first decision on a new application: take it to interview.
+ * (The other is rejecting the profile, `rejectApplication`.)
+ */
+export async function takeToInterview(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const actor = actorOf(await requirePermission("recruitment.manage"));
+  const application = await applicationFor(num(form.get("id")));
+  if (!application) return fail("That application no longer exists.");
+  if (application.rejectedAt) return fail("That application was rejected.");
+  if (application.stage !== "Applied") return fail("That application has already been screened.");
+  await move(actor, application, "Interviewing", { stage: "Interviewing" }, opt(form.get("note")));
   return OK;
 }
 
 /**
- * RC-03 — move an application along the pipeline.
- *
- * Stages only advance one step at a time, and the move is recorded, so the
- * pipeline is a history rather than a single mutable field.
+ * Ends an application without a hire, at whatever stage it reached: a
+ * profile rejected at screening, a candidate rejected after interviews, or
+ * an offer declined or withdrawn. The reason is kept.
  */
-export async function advanceApplication(
-  _prev: ActionState,
-  form: FormData,
-): Promise<ActionState> {
-  const session = await requirePermission("recruitment.manage");
-  const actor = actorOf(session);
-  const id = num(form.get("id"));
-
-  const application = await db.query.rcApplication.findFirst({
-    where: eq(rcApplication.id, id),
-  });
-  if (!application) return fail("That application no longer exists.");
-  if (application.rejectedAt) return fail("That application was rejected.");
-
-  const index = PIPELINE_STAGES.indexOf(application.stage as (typeof PIPELINE_STAGES)[number]);
-  if (index < 0) return fail("That application is in an unknown stage.");
-  if (application.stage === "Offered") {
-    return fail("Use hire conversion to move an offered candidate to hired.");
-  }
-  if (index >= PIPELINE_STAGES.length - 1) {
-    return fail("That application is already at the final stage.");
-  }
-
-  const next = PIPELINE_STAGES[index + 1];
-  const offered = str(form.get("offeredSalary"));
-
-  await audited(
-    actor,
-    { entity: "rc_application", entityId: id, subjectEmployeeId: subjectOf },
-    () => db.query.rcApplication.findFirst({ where: eq(rcApplication.id, id) }),
-    () =>
-      db
-        .update(rcApplication)
-        .set({
-          stage: next,
-          offeredSalaryPaise:
-            next === "Offered" && offered ? toPaise(offered) : application.offeredSalaryPaise,
-        })
-        .where(eq(rcApplication.id, id)),
-  );
-
-  await db.insert(rcApplicationStageHistory).values({
-    applicationId: id,
-    fromStage: application.stage,
-    toStage: next,
-    changedBy: session.username,
-    changedAt: now(),
-    note: opt(form.get("note")),
-  });
-
-  revalidateRecruitment();
-  return OK;
-}
-
 export async function rejectApplication(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const session = await requirePermission("recruitment.manage");
   const actor = actorOf(session);
-  const id = num(form.get("id"));
-
-  const application = await db.query.rcApplication.findFirst({
-    where: eq(rcApplication.id, id),
-  });
+  const application = await applicationFor(num(form.get("id")));
   if (!application) return fail("That application no longer exists.");
-  if (application.stage === "Hired") {
-    return fail("A hired candidate cannot be rejected.");
+  if (application.rejectedAt) return fail("That application was already rejected.");
+  if (application.stage === "Hired") return fail("A hired candidate cannot be rejected.");
+  const reason = opt(form.get("reason"));
+  if (!reason) return fail("Say why, for the record.");
+
+  await move(actor, application, "Rejected", { rejected_reason: reason, rejected_at: now(), rejected_by: session.displayName }, reason);
+  return OK;
+}
+
+/**
+ * The decision after interviews: approve the candidate. Needs at least one
+ * round with notes, and no round still waiting — record or cancel it first.
+ */
+export async function selectCandidate(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("recruitment.manage");
+  const actor = actorOf(session);
+  const application = await applicationFor(num(form.get("id")));
+  if (!application) return fail("That application no longer exists.");
+  if (application.rejectedAt) return fail("That application was rejected.");
+  if (application.stage !== "Interviewing") return fail("Only a candidate being interviewed can be approved.");
+
+  const rounds = await db.select().from(rcInterview).where(eq(rcInterview.applicationId, application.id));
+  if (!rounds.some((r) => r.status === "Completed")) {
+    return fail("Record at least one interview's notes before approving the candidate.");
+  }
+  const waiting = rounds.find((r) => r.status === "Scheduled");
+  if (waiting) {
+    return fail(`${waiting.round} with ${waiting.interviewer} is still scheduled. Record its notes or cancel it first.`);
   }
 
-  await audited(
+  await move(
     actor,
-    { entity: "rc_application", entityId: id, subjectEmployeeId: subjectOf },
-    () => db.query.rcApplication.findFirst({ where: eq(rcApplication.id, id) }),
-    () =>
-      db
-        .update(rcApplication)
-        .set({
-          rejectedReason: opt(form.get("reason")),
-          rejectedAt: now(),
-        })
-        .where(eq(rcApplication.id, id)),
+    application,
+    "Selected",
+    { stage: "Selected", selected_at: now(), selected_by: session.displayName, selection_note: opt(form.get("note")) },
+    opt(form.get("note")),
   );
+  return OK;
+}
 
-  await db.insert(rcApplicationStageHistory).values({
-    applicationId: id,
-    fromStage: application.stage,
-    toStage: "Rejected",
-    changedBy: session.username,
-    changedAt: now(),
-    note: opt(form.get("reason")),
-  });
+/** An approved candidate is offered the role, at a monthly salary. */
+export async function makeOffer(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const actor = actorOf(await requirePermission("recruitment.manage"));
+  const application = await applicationFor(num(form.get("id")));
+  if (!application) return fail("That application no longer exists.");
+  if (application.rejectedAt) return fail("That application was rejected.");
+  if (application.stage !== "Selected") return fail("Approve the candidate before making an offer.");
+  const salary = rupeesToPaise(form.get("offeredSalary"));
+  if (salary === null || !Number.isFinite(salary) || salary <= 0) return fail("Enter the monthly salary offered.");
 
-  revalidateRecruitment();
+  await move(actor, application, "Offered", { stage: "Offered", offered_salary_paise: salary, offered_at: now() }, opt(form.get("note")));
   return OK;
 }
 
 /* ------------------------------------------------------- RC-04 interviews */
 
-export async function saveInterview(
+const InterviewInput = z.object({
+  applicationId: z.number().int().positive("Choose an application."),
+  round: z.string().min(1, "Name the round, such as Technical round 2.").max(80),
+  interviewerEmployeeId: z.number().int().positive().nullable(),
+  interviewerName: z.string().max(120).nullable(),
+  scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a date."),
+  scheduledTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter a time, such as 14:30."),
+  durationMinutes: z.number().int().min(10, "An interview is ten minutes at least.").max(480),
+  mode: z.enum(["Video call", "On site", "Phone"]),
+  location: z.string().max(500).nullable(),
+});
+
+/**
+ * Schedules a round, or changes one: who takes it, when, how and where. The
+ * interviewer is told, and told again if it moves. Two rounds for one
+ * interviewer may not overlap.
+ */
+export async function scheduleInterview(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const actor = actorOf(await requirePermission("recruitment.manage"));
-  const original = opt(form.get("originalCode"));
-  const applicationId = num(form.get("applicationId"));
-  const scheduledDate = str(form.get("scheduledDate"));
-  const rating = str(form.get("rating"));
+  const originalId = optInt(form.get("id"));
 
-  if (!applicationId) return fail("Choose an application.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) return fail("Enter a date.");
-  if (rating && !["1", "2", "3", "4", "5"].includes(rating)) {
-    return fail("A rating is between 1 and 5.");
+  const parsed = InterviewInput.safeParse({
+    applicationId: num(form.get("applicationId")),
+    round: str(form.get("round")),
+    interviewerEmployeeId: optInt(form.get("interviewerEmployeeId")),
+    interviewerName: opt(form.get("interviewerName")),
+    scheduledDate: str(form.get("scheduledDate")),
+    scheduledTime: str(form.get("scheduledTime")),
+    durationMinutes: num(form.get("durationMinutes")) || 60,
+    mode: str(form.get("mode")) || "Video call",
+    location: opt(form.get("location")),
+  });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+  const v = parsed.data;
+  if (!v.interviewerEmployeeId && !v.interviewerName) return fail("Choose who takes the interview.");
+  if (v.location && v.mode === "Video call" && /^[a-z]+:/i.test(v.location) && !/^https?:\/\//i.test(v.location)) {
+    return fail("A meeting link must start with http:// or https://.");
+  }
+
+  const application = await applicationFor(v.applicationId);
+  if (!application) return fail("That application no longer exists.");
+  if (application.rejectedAt) return fail("That application was rejected.");
+  if (application.stage !== "Interviewing") {
+    return fail(application.stage === "Applied" ? "Take the application to interview first." : "Interviews are over for this application.");
+  }
+
+  let interviewer = v.interviewerName ?? "";
+  if (v.interviewerEmployeeId) {
+    const employee = await db.query.paEmployee.findFirst({ where: eq(paEmployee.id, v.interviewerEmployeeId) });
+    if (!employee || employee.employmentStatus === "Terminated") return fail("That interviewer is not a current employee.");
+    interviewer = (await employeeName(v.interviewerEmployeeId)) ?? employee.employeeNumber;
+    const clash = await interviewClash({ ...v, interviewerEmployeeId: v.interviewerEmployeeId, exceptId: originalId });
+    if (clash) return fail(`${interviewer} already has an interview at ${clash.time} that day, with ${clash.candidate}.`);
   }
 
   const values = {
-    applicationId,
-    round: str(form.get("round")) || "Screening call",
-    interviewer: str(form.get("interviewer")) || "—",
-    scheduledDate,
-    scheduledTime: opt(form.get("scheduledTime")),
-    mode: str(form.get("mode")) || "Video call",
-    rating: rating ? Number(rating) : null,
-    feedback: opt(form.get("feedback")),
+    applicationId: v.applicationId,
+    round: v.round,
+    interviewer,
+    interviewerEmployeeId: v.interviewerEmployeeId,
+    scheduledDate: v.scheduledDate,
+    scheduledTime: v.scheduledTime,
+    durationMinutes: v.durationMinutes,
+    mode: v.mode,
+    location: v.location,
   };
 
-  if (original) {
+  let id: number;
+  if (originalId) {
+    const before = await db.query.rcInterview.findFirst({ where: eq(rcInterview.id, originalId) });
+    if (!before || before.applicationId !== v.applicationId) return fail("That interview no longer exists.");
+    if (before.status === "Completed") return fail("That interview has happened; its notes are recorded.");
     await audited(
       actor,
-      { entity: "rc_interview", entityId: Number(original), subjectEmployeeId: subjectOf },
-      () => db.query.rcInterview.findFirst({ where: eq(rcInterview.id, Number(original)) }),
-      () => db.update(rcInterview).set(values).where(eq(rcInterview.id, Number(original))),
+      { entity: "rc_interview", entityId: originalId, subjectEmployeeId: subjectOf },
+      () => db.query.rcInterview.findFirst({ where: eq(rcInterview.id, originalId) }),
+      () => db.update(rcInterview).set({ ...values, status: "Scheduled" }).where(eq(rcInterview.id, originalId)),
     );
+    id = originalId;
   } else {
-    await recordCreated(
-      actor,
-      "rc_interview",
-      await db.insert(rcInterview).values({ ...values, createdAt: now() }).returning(),
-    );
+    const [created] = await db.insert(rcInterview).values({ ...values, status: "Scheduled", createdAt: now() }).returning();
+    await recordCreated(actor, "rc_interview", [created]);
+    id = created.id;
   }
 
+  const candidate = await db.query.rcCandidate.findFirst({ where: eq(rcCandidate.id, application.candidateId) });
+  const notices = await announceInterview({ id, ...values }, candidate?.fullName ?? "a candidate");
+  if (notices.length > 0) await rawClient().batch(notices, "write");
+
+  revalidateRecruitment();
+  return { ok: true, id };
+}
+
+const FeedbackInput = z.object({
+  rating: z.number().int().min(1, "Rate the candidate from 1 to 5.").max(5, "Rate the candidate from 1 to 5."),
+  recommendation: z.enum(RECOMMENDATIONS, "Say whether the candidate should go forward."),
+  feedback: z.string().min(1, "Write your notes on the interview.").max(8000),
+});
+
+/**
+ * Records how a round went: notes, a rating and a recommendation. The
+ * interviewer records their own; whoever runs recruitment may record any,
+ * for an interviewer who cannot sign in.
+ */
+export async function recordInterviewFeedback(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requireAnyPermission("recruitment.manage", "recruitment.interview");
+  const actor = actorOf(session);
+  const id = num(form.get("id"));
+  const interview = await db.query.rcInterview.findFirst({ where: eq(rcInterview.id, id) });
+  if (!interview) return fail("That interview no longer exists.");
+  const own = session.employeeId !== null && interview.interviewerEmployeeId === session.employeeId;
+  if (!own && !can(session, "recruitment.manage")) return fail("That interview is not assigned to you.");
+  if (interview.status === "Cancelled" || interview.status === "No-show") return fail(`That interview was marked ${interview.status.toLowerCase()}.`);
+
+  const application = await applicationFor(interview.applicationId);
+  if (!application || application.rejectedAt || application.stage !== "Interviewing") {
+    return fail("The decision on this candidate has been made; the notes can no longer change.");
+  }
+
+  const parsed = FeedbackInput.safeParse({
+    rating: num(form.get("rating")),
+    recommendation: str(form.get("recommendation")),
+    feedback: str(form.get("feedback")),
+  });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+
+  await audited(
+    actor,
+    { entity: "rc_interview", entityId: id, subjectEmployeeId: subjectOf },
+    () => db.query.rcInterview.findFirst({ where: eq(rcInterview.id, id) }),
+    () =>
+      db
+        .update(rcInterview)
+        .set({ ...parsed.data, status: "Completed", completedAt: now(), completedBy: session.displayName })
+        .where(eq(rcInterview.id, id)),
+  );
   revalidateRecruitment();
   return OK;
 }
 
+/** A round that did not happen: cancelled, or the candidate did not come. Or back to scheduled. */
+export async function setInterviewStatus(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const actor = actorOf(await requirePermission("recruitment.manage"));
+  const id = num(form.get("id"));
+  const status = str(form.get("status"));
+  if (!["Cancelled", "No-show", "Scheduled"].includes(status)) return fail("Choose what happened.");
+  const interview = await db.query.rcInterview.findFirst({ where: eq(rcInterview.id, id) });
+  if (!interview) return fail("That interview no longer exists.");
+  if (interview.status === "Completed") return fail("That interview has happened; its notes are recorded.");
+  await audited(
+    actor,
+    { entity: "rc_interview", entityId: id, subjectEmployeeId: subjectOf },
+    () => db.query.rcInterview.findFirst({ where: eq(rcInterview.id, id) }),
+    () => db.update(rcInterview).set({ status }).where(eq(rcInterview.id, id)),
+  );
+  revalidateRecruitment();
+  return OK;
+}
+
+/** Removes a round scheduled by mistake. One with notes is kept. */
 export async function deleteInterview(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const actor = actorOf(await requirePermission("recruitment.manage"));
+  const id = num(form.get("id"));
+  const interview = await db.query.rcInterview.findFirst({ where: eq(rcInterview.id, id) });
+  if (!interview) return fail("That interview no longer exists.");
+  if (interview.status === "Completed") return fail("That interview has notes, so it stays on the record. Cancel it instead.");
   await recordDeleted(
     actor,
     "rc_interview",
-    await db.delete(rcInterview).where(eq(rcInterview.id, num(form.get("id")))).returning(),
+    await db.delete(rcInterview).where(eq(rcInterview.id, id)).returning(),
   );
   revalidateRecruitment();
   return OK;
@@ -570,7 +786,7 @@ export async function convertToEmployee(
     where: eq(rcApplication.id, applicationId),
   });
   if (!application) return fail("That application no longer exists.");
-  if (application.stage !== "Offered") {
+  if (application.stage !== "Offered" || application.rejectedAt) {
     return fail("Only a candidate at the offered stage can be converted.");
   }
 
@@ -731,7 +947,8 @@ export async function convertToEmployee(
       args: [applicationId, session.username, createdAt, `Became ${employeeNumber}`],
     });
 
-    // Close the requisition once its openings are filled.
+    // Close the requisition once its openings are filled, and take it off
+    // the careers page.
     const hiredCount = await tx.execute({
       sql: `SELECT COUNT(*) AS n FROM rc_application
             WHERE requisition_id = ? AND stage = 'Hired'`,
@@ -739,8 +956,8 @@ export async function convertToEmployee(
     });
     if (Number(hiredCount.rows[0].n) >= requisition.openings) {
       await tx.execute({
-        sql: "UPDATE rc_requisition SET status = 'Closed' WHERE id = ?",
-        args: [requisition.id],
+        sql: "UPDATE rc_requisition SET status = 'Closed', is_published = 0, updated_at = ? WHERE id = ?",
+        args: [createdAt, requisition.id],
       });
     }
 

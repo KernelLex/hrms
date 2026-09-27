@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Menu,
   X,
+  ChevronDown,
   LogOut,
   Network,
   Users,
@@ -28,6 +29,9 @@ import {
   Mail,
   ShieldCheck,
   Workflow,
+  Plug,
+  CalendarClock,
+  Globe,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -55,6 +59,9 @@ const ICONS: Record<string, LucideIcon> = {
   Mail,
   ShieldCheck,
   Workflow,
+  Plug,
+  CalendarClock,
+  Globe,
 };
 
 /* -------------------------------------------------------------- brand mark */
@@ -142,46 +149,124 @@ function BellLink({ unread, onNavigate }: { unread: number; onNavigate?: () => v
 
 /* ---------------------------------------------------------------- nav list */
 
+/*
+ * Which groups someone has opened or folded, remembered in their browser. A
+ * convenience only: without storage (a private window, say) it lives in
+ * memory for the visit, and the sidebar works the same.
+ */
+const NAV_KEY = "hrms.nav.groups";
+const navListeners = new Set<() => void>();
+let navMemory = "{}";
+
+function readNavGroups(): string {
+  try {
+    return window.localStorage.getItem(NAV_KEY) ?? navMemory;
+  } catch {
+    return navMemory;
+  }
+}
+
+function writeNavGroups(next: Record<string, boolean>) {
+  navMemory = JSON.stringify(next);
+  try {
+    window.localStorage.setItem(NAV_KEY, navMemory);
+  } catch {
+    // storage refused: memory still holds it
+  }
+  navListeners.forEach((l) => l());
+}
+
+function subscribeNavGroups(listener: () => void) {
+  navListeners.add(listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    navListeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
+const parseNavGroups = (raw: string): Record<string, boolean> => {
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === "object" ? (v as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+};
+
+const isActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
+/**
+ * The sidebar's groups fold, so a long list stays short: the group holding
+ * the current page opens itself, the rest stay as they were left.
+ */
 function NavList({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const idBase = React.useId();
+  // The server has no stored choices, so the first render matches it.
+  const stored = React.useSyncExternalStore(subscribeNavGroups, readNavGroups, () => "{}");
+  const prefs = React.useMemo(() => parseNavGroups(stored), [stored]);
+  const activeGroup = groups.find((g) => g.items.some((i) => isActive(pathname, i.href)))?.label ?? null;
+
+  // Arriving at a page opens its group, even one folded earlier.
+  React.useEffect(() => {
+    if (!activeGroup) return;
+    const current = parseNavGroups(readNavGroups());
+    if (current[activeGroup] === false) writeNavGroups({ ...current, [activeGroup]: true });
+  }, [activeGroup]);
 
   return (
-    <nav className="flex flex-col gap-6">
-      {groups.map((group) => (
-        <div key={group.label}>
-          <div className="px-3 pb-2 text-xs text-muted">{group.label}</div>
-          <ul className="flex flex-col gap-0.5">
-            {group.items.map((item) => {
-              const Icon = ICONS[item.icon] ?? Users;
-              const active =
-                pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    onClick={onNavigate}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "flex h-9 items-center gap-3 rounded-lg px-3 text-sm transition-colors duration-150",
-                      active
-                        ? "bg-soft font-medium text-ink"
-                        : "text-secondary hover:bg-canvas",
-                    )}
-                  >
-                    <Icon
+    <nav className="flex flex-col gap-3">
+      {groups.map((group, n) => {
+        const open = prefs[group.label] ?? group.label === activeGroup;
+        const listId = `${idBase}-group-${n}`;
+        return (
+          <div key={group.label}>
+            <button
+              type="button"
+              onClick={() => writeNavGroups({ ...parseNavGroups(readNavGroups()), [group.label]: !open })}
+              aria-expanded={open}
+              aria-controls={listId}
+              className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-muted transition-colors duration-150 hover:bg-canvas hover:text-ink"
+            >
+              <span>{group.label}</span>
+              <ChevronDown
+                aria-hidden
+                className={cn("size-3.5 shrink-0 stroke-[1.75] transition-transform duration-150", !open && "-rotate-90")}
+              />
+            </button>
+            <ul id={listId} hidden={!open} className="mt-1 flex flex-col gap-0.5">
+              {group.items.map((item) => {
+                const Icon = ICONS[item.icon] ?? Users;
+                const active = isActive(pathname, item.href);
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onNavigate}
+                      aria-current={active ? "page" : undefined}
                       className={cn(
-                        "size-[18px] shrink-0 stroke-[1.75]",
-                        active ? "text-ink" : "text-faint",
+                        "flex h-9 items-center gap-3 rounded-lg px-3 text-sm transition-colors duration-150",
+                        active
+                          ? "bg-soft font-medium text-ink"
+                          : "text-secondary hover:bg-canvas",
                       )}
-                    />
-                    {item.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
+                    >
+                      <Icon
+                        className={cn(
+                          "size-[18px] shrink-0 stroke-[1.75]",
+                          active ? "text-ink" : "text-faint",
+                        )}
+                      />
+                      {item.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })}
     </nav>
   );
 }

@@ -1,5 +1,7 @@
 # HRMS
 
-The HR module of the ERP the client is building: org structure, employee records, time and absence, payroll, recruitment, performance and Indian tax, with a two-way API link to the ERP planned next.
+The HR module of the ERP the client is building: org structure, employee records, time and absence, payroll, recruitment, performance and Indian tax, with a two-way API link to the ERP and a public careers site.
 
 **Everything about this project — what it is, how to run it, how it is built, the design language, where it stands, what is left and what production needs — is in [HANDOVER.md](HANDOVER.md).** Keep that document current as part of every change.
+
+**Connecting a system to the HRMS?** Start with [API.md](API.md), the guide for integrators; the live reference is at `/developers`.

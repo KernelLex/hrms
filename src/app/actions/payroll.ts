@@ -21,9 +21,10 @@ import {
 import { startRun, readRunProgress, type RunProgress } from "@/lib/engines/payroll";
 import { toPaise } from "@/lib/money";
 import { rawClient } from "@/lib/db";
-import { actorOf, audited, recordCreate, recordDelete } from "@/lib/change-log";
+import { actorOf, audited, recordCreate, recordCreated, recordDelete } from "@/lib/change-log";
 import { enqueueJob, requeueJob } from "@/lib/jobs/queue";
 import { kickJobs } from "@/lib/jobs/runner";
+import { addOneOffPayment, addRecurringPayment, recordRemittancePayment } from "@/lib/services/records";
 
 export type ActionState = { error?: string; ok?: boolean; runId?: number };
 
@@ -235,25 +236,14 @@ export async function saveRecurringPayment(
   const session = await requirePermission("payroll.setup");
   const amount = num(form.get("amount"));
   if (!Number.isFinite(amount) || amount <= 0) return fail("Enter an amount above zero.");
-
-  const startDate = str(form.get("startDate"));
-  const endDate = str(form.get("endDate")) || OPEN_ENDED;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return fail("Enter a start date.");
-  if (endDate < startDate) return fail("The end date falls before the start date.");
-
-  const [created] = await db
-    .insert(pyRecurringPayment)
-    .values({
-      employeeId: num(form.get("employeeId")),
-      wageTypeCode: str(form.get("wageTypeCode")),
-      amountPaise: toPaise(amount),
-      startDate,
-      endDate,
-      createdAt: now(),
-    })
-    .returning();
-  await recordCreate(actorOf(session), "py_it0014_recurring_payment", created.id, created, created.employeeId);
-
+  const saved = await addRecurringPayment(actorOf(session), {
+    employeeId: num(form.get("employeeId")),
+    wageTypeCode: str(form.get("wageTypeCode")),
+    amountPaise: toPaise(amount),
+    startDate: str(form.get("startDate")),
+    endDate: str(form.get("endDate")) || OPEN_ENDED,
+  });
+  if (!saved.ok) return fail(saved.error);
   revalidatePayroll();
   return OK;
 }
@@ -280,22 +270,13 @@ export async function saveAdditionalPayment(
   const session = await requirePermission("payroll.setup");
   const amount = num(form.get("amount"));
   if (!Number.isFinite(amount) || amount <= 0) return fail("Enter an amount above zero.");
-
-  const paymentDate = str(form.get("paymentDate"));
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) return fail("Enter a payment date.");
-
-  const [created] = await db
-    .insert(pyAdditionalPayment)
-    .values({
-      employeeId: num(form.get("employeeId")),
-      wageTypeCode: str(form.get("wageTypeCode")),
-      amountPaise: toPaise(amount),
-      paymentDate,
-      createdAt: now(),
-    })
-    .returning();
-  await recordCreate(actorOf(session), "py_it0015_additional_payment", created.id, created, created.employeeId);
-
+  const saved = await addOneOffPayment(actorOf(session), {
+    employeeId: num(form.get("employeeId")),
+    wageTypeCode: str(form.get("wageTypeCode")),
+    amountPaise: toPaise(amount),
+    paymentDate: str(form.get("paymentDate")),
+  });
+  if (!saved.ok) return fail(saved.error);
   revalidatePayroll();
   return OK;
 }
@@ -571,7 +552,10 @@ export async function postToLedger(
   const wageTypes = await db.select().from(pyWageType);
   const glOf = new Map(wageTypes.map((w) => [w.code, w.glAccount ?? "5010"]));
 
-  await db.delete(pyGlPosting).where(eq(pyGlPosting.runId, runId));
+  // Posting again replaces the journal; the ERP hears it was deleted.
+  for (const gone of await db.delete(pyGlPosting).where(eq(pyGlPosting.runId, runId)).returning()) {
+    await recordDelete(actorOf(session), "py_gl_posting", gone.id, gone);
+  }
   const [posting] = await db
     .insert(pyGlPosting)
     .values({ runId, postingDate, postedAt: now(), postedBy: session.username })
@@ -652,7 +636,8 @@ export async function postToLedger(
     remittances.push({ runId, authority: "Income Tax Department (TDS)", amountPaise: tds, dueDate: dueDate(7), status: "Due" });
   }
   if (remittances.length > 0) {
-    await db.insert(pyStatutoryRemittance).values(remittances);
+    // Logged, so the ERP hears remittance.due.
+    await recordCreated(actorOf(session), "py_statutory_remittance", await db.insert(pyStatutoryRemittance).values(remittances).returning());
   }
   await recordCreate(actorOf(session), "py_gl_posting", posting.id, {
     run_id: runId,
@@ -671,21 +656,10 @@ export async function markRemitted(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requirePermission("payroll.post");
-  const id = num(form.get("id"));
-  await audited(
-    actorOf(session),
-    { entity: "py_statutory_remittance", entityId: id },
-    () => db.query.pyStatutoryRemittance.findFirst({ where: eq(pyStatutoryRemittance.id, id) }),
-    () =>
-      db
-        .update(pyStatutoryRemittance)
-        .set({
-          status: "Remitted",
-          remittedAt: now(),
-          reference: opt(form.get("reference")),
-        })
-        .where(eq(pyStatutoryRemittance.id, id)),
-  );
+  const saved = await recordRemittancePayment(actorOf(session), num(form.get("id")), {
+    reference: opt(form.get("reference")),
+  });
+  if (!saved.ok) return fail(saved.error);
   revalidatePayroll();
   return OK;
 }

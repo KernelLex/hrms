@@ -178,6 +178,18 @@ async function HrHome({ session, today }: { session: Access; today: string }) {
       ),
     });
   }
+  if (h.toScreen > 0) {
+    items.push({
+      tone: "action",
+      href: "/recruitment/pipeline?stage=Applied",
+      children: (
+        <>
+          <Key>{plural(h.toScreen, "new application", "new applications")}</Key>{" "}
+          {h.toScreen === 1 ? "is" : "are"} waiting to be screened.
+        </>
+      ),
+    });
+  }
   if (h.offered > 0) {
     items.push({
       tone: "action",

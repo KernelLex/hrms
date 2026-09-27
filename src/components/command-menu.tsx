@@ -28,6 +28,11 @@ import {
   Bell,
   History,
   Mail,
+  ShieldCheck,
+  Workflow,
+  Plug,
+  CalendarClock,
+  Globe,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -67,6 +72,11 @@ const ICONS: Record<string, LucideIcon> = {
   Bell,
   History,
   Mail,
+  ShieldCheck,
+  Workflow,
+  Plug,
+  CalendarClock,
+  Globe,
 };
 
 type Item = {

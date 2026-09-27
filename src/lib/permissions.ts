@@ -62,6 +62,7 @@ export const PERMISSIONS = {
 
   "recruitment.manage": { group: "Recruitment", can: "manage requisitions, candidates, the pipeline and interviews" },
   "recruitment.hire": { group: "Recruitment", can: "turn an offered candidate into an employee, with their starting pay", sensitive: true },
+  "recruitment.interview": { group: "Recruitment", can: "take the interviews assigned to them: see the candidate and the role, and record notes and a recommendation" },
 
   "performance.manage": { group: "Performance", can: "run appraisal cycles, calibration and increments", sensitive: true },
   "performance.rate_team": { group: "Performance", can: "set goals for and rate the people who report to them" },
@@ -71,6 +72,7 @@ export const PERMISSIONS = {
   "audit.view": { group: "Reports and records", can: "read the change log, access logs and outbox" },
 
   "access.manage": { group: "Administration", can: "manage roles, permissions, who holds them, and approval flows" },
+  "integrations.manage": { group: "Administration", can: "connect other systems: API clients and their secrets, webhooks, record ownership, sync issues and the reconciliation report", sensitive: true },
 
   "self.profile": { group: "Self-service", can: "see their own profile, documents and who has viewed them" },
   "self.leave": { group: "Self-service", can: "ask for leave and see their own balances" },
@@ -101,11 +103,11 @@ export const BUILT_IN_ROLES: Record<"HR_ADMIN" | "MANAGER" | "EMPLOYEE", { name:
   MANAGER: {
     name: "Manager",
     description: "Approves their team's requests, rates their team, and sees who is away.",
-    permissions: ["employee.view_team", "time.team_calendar", "performance.rate_team", ...SELF],
+    permissions: ["employee.view_team", "time.team_calendar", "performance.rate_team", "recruitment.interview", ...SELF],
   },
   EMPLOYEE: {
     name: "Employee",
     description: "Acts on their own record: leave, payslips, tax and appraisal.",
-    permissions: SELF,
+    permissions: [...SELF, "recruitment.interview"],
   },
 };

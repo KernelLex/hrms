@@ -16,7 +16,6 @@ import {
 } from "@/db/schema";
 import {
   workingDaysBetween,
-  calendarDaysBetween,
   restoreQuota,
   generateQuotas,
   daysToUnits,
@@ -26,6 +25,7 @@ import { actorOf, audited, changeStatement, recordChanges, recordCreate, recordD
 import { notificationStatements, type NotificationItem } from "@/lib/notifications";
 import { cancelStatements, decide, planRequest, requestFor, writeRequest } from "@/lib/workflow/engine";
 import { kickJobs } from "@/lib/jobs/runner";
+import { recordAbsence } from "@/lib/services/records";
 import { formatDateRange } from "@/lib/dates";
 import { getEmployee, fullName } from "@/lib/repositories/employees";
 import type { InStatement } from "@libsql/client";
@@ -252,8 +252,8 @@ export async function cancelLeaveRequest(
       after: { ...request, status: "Cancelled", decidedAt },
     },
   ]);
+  await kickJobs();
   revalidatePath("/approvals");
-
   revalidateTime();
   return OK;
 }
@@ -265,40 +265,15 @@ export async function saveAbsence(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requirePermission("time.manage");
-
-  const employeeId = num(form.get("employeeId"));
-  const absenceTypeCode = str(form.get("absenceTypeCode"));
-  const startDate = str(form.get("startDate"));
-  const endDate = str(form.get("endDate"));
-
-  if (!employeeId) return fail("Choose an employee.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return fail("Enter a start date.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return fail("Enter an end date.");
-  if (endDate < startDate) return fail("The end date falls before the start date.");
-
-  const payrollDays = await workingDaysBetween(startDate, endDate);
-  if (payrollDays === 0) {
-    return fail("That range has no working days in it.");
-  }
-
-  const [created] = await db
-    .insert(ptAbsence)
-    .values({
-      employeeId,
-      absenceTypeCode,
-      startDate,
-      endDate,
-      payrollDays,
-      calendarDays: calendarDaysBetween(startDate, endDate),
-      isHalfDay: false,
-      remarks: opt(form.get("remarks")),
-      sourceRequestId: null,
-      createdBy: session.username,
-      createdAt: now(),
-    })
-    .returning();
-  await recordCreate(actorOf(session), "pt_it2001_absence", created.id, created, employeeId);
-
+  const saved = await recordAbsence(actorOf(session), {
+    employeeId: num(form.get("employeeId")),
+    absenceTypeCode: str(form.get("absenceTypeCode")),
+    startDate: str(form.get("startDate")),
+    endDate: str(form.get("endDate")),
+    remarks: opt(form.get("remarks")),
+    createdBy: session.username,
+  });
+  if (!saved.ok) return fail(saved.error);
   revalidateTime();
   return OK;
 }

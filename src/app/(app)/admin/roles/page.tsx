@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requirePage } from "@/lib/access";
 import { Plus } from "lucide-react";
 import { listRoles } from "@/lib/repositories/access";
 import { ALL_PERMISSIONS } from "@/lib/permissions";
@@ -10,6 +11,7 @@ import { Badge, ButtonLink, Card, CardHeader, Table, Th, Tr, Td, TwoLine } from 
  * candidates but no pay, an auditor who can read but not change.
  */
 export default async function RolesPage() {
+  await requirePage(["access.manage"], "/admin");
   const roles = await listRoles();
 
   return (

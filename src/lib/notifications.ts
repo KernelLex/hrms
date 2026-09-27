@@ -41,6 +41,14 @@ export const NOTIFICATION_KINDS = {
     label: "My final rating",
     description: "When calibration finalises your appraisal rating.",
   },
+  "interview.assigned": {
+    label: "Interviews I am asked to take",
+    description: "When someone schedules you to interview a candidate, or moves your interview.",
+  },
+  "application.received": {
+    label: "Applications from the careers page",
+    description: "When a candidate applies for an open role. Only for people who run recruitment.",
+  },
 } as const;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

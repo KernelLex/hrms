@@ -4,11 +4,11 @@ import { usePathname } from "next/navigation";
 import { Tabs, Tab } from "@/components/ui";
 
 const ITEMS = [
-  { href: "/recruitment/requisitions", label: "Requisitions" },
-  { href: "/recruitment/candidates", label: "Candidates" },
-  { href: "/recruitment/pipeline", label: "Pipeline" },
-  { href: "/recruitment/interviews", label: "Interviews" },
-  { href: "/recruitment/hire", label: "Hire conversion" },
+  { href: "/recruitment/requisitions", label: "Requisitions", also: [] as string[] },
+  { href: "/recruitment/pipeline", label: "Applications", also: ["/recruitment/applications"] },
+  { href: "/recruitment/interviews", label: "Interviews", also: [] },
+  { href: "/recruitment/candidates", label: "Candidates", also: [] },
+  { href: "/recruitment/hire", label: "Hire conversion", also: [] },
 ];
 
 export function RecruitmentTabs({ counts }: { counts?: Record<string, number> }) {
@@ -16,7 +16,12 @@ export function RecruitmentTabs({ counts }: { counts?: Record<string, number> })
   return (
     <Tabs>
       {ITEMS.map((i) => (
-        <Tab key={i.href} href={i.href} active={pathname.startsWith(i.href)} count={counts?.[i.href]}>
+        <Tab
+          key={i.href}
+          href={i.href}
+          active={[i.href, ...i.also].some((p) => pathname.startsWith(p))}
+          count={counts?.[i.href]}
+        >
           {i.label}
         </Tab>
       ))}

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { rawClient } from "@/lib/db";
 import { getSession, type Session } from "@/lib/auth";
 import { PERMISSIONS, type Permission } from "@/lib/permissions";
+import { kickJobs } from "@/lib/jobs/runner";
 
 /**
  * Who someone is and what they may do, read fresh on every request.
@@ -117,7 +118,21 @@ export async function requirePermission(...permissions: Permission[]): Promise<A
   const access = await getAccess();
   if (!access) throw new Error("Not signed in.");
   if (!can(access, ...permissions)) throw new PermissionError();
+  await afterChange();
   return access;
+}
+
+/**
+ * Every Server Function that changes something passes through here, so this
+ * is where background work is woken: once the response has gone, what the
+ * function changed becomes events for the ERP, and queued work runs.
+ */
+async function afterChange(): Promise<void> {
+  try {
+    await kickJobs();
+  } catch {
+    // Outside a request (a script); the daily tick catches up.
+  }
 }
 
 /** For Server Functions and routes: signed in, and holding one of the permissions named. */
@@ -125,6 +140,7 @@ export async function requireAnyPermission(...permissions: Permission[]): Promis
   const access = await getAccess();
   if (!access) throw new Error("Not signed in.");
   if (!canAny(access, ...permissions)) throw new PermissionError();
+  await afterChange();
   return access;
 }
 

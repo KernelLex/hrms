@@ -9,3 +9,4 @@ export * from "./recruitment";
 export * from "./performance";
 export * from "./app";
 export * from "./workflow";
+export * from "./integration";

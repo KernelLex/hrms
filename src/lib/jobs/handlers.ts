@@ -6,6 +6,8 @@ import { notify, usersForEmployees, type NotificationItem } from "@/lib/notifica
 import { formatMonth, todayInIndia } from "@/lib/dates";
 import { enqueueJob, requeueJob } from "./queue";
 import { escalateOverdue } from "@/lib/workflow/engine";
+import { deliverWebhooks, nextWebhookRetry, wakeDeliveryStatement } from "@/lib/api/events";
+import { recordChanges, systemActor } from "@/lib/change-log";
 
 /**
  * What each kind of job does. A handler returns `{ again: true }` to be put
@@ -66,12 +68,30 @@ export const HANDLERS: Record<string, JobHandler> = {
     return { again: true };
   },
 
+  /**
+   * Sends due webhooks until none are left or time runs out. Retries not yet
+   * due are picked up by a later pass: the next request that queues work,
+   * or the daily tick.
+   */
+  async "webhooks.deliver"(_payload, ctx) {
+    while (timeLeft(ctx) > 2_000) {
+      const handled = await deliverWebhooks(25);
+      if (handled === 0) break;
+    }
+    const next = await nextWebhookRetry();
+    if (next !== null) return { again: true, delayMs: Math.max(0, next - Date.now()) };
+  },
+
   /** Calculates a payroll run batch by batch, and continues until it is done. */
   async "payroll.run"(payload, ctx) {
     const { runId } = payload as { runId: number };
     while (timeLeft(ctx) > 3_000) {
       const progress = await processRunBatch(runId);
       if (progress.completed) {
+        // Logged, so the ERP hears payroll.run.completed.
+        await recordChanges(systemActor("payroll"), [
+          { entity: "py_payroll_run", entityId: runId, action: "update", before: { status: "In progress" }, after: { status: "Completed" } },
+        ]);
         const run = await rawClient().execute({
           sql: "SELECT run_type FROM py_payroll_run WHERE id = ?",
           args: [runId],
@@ -149,11 +169,21 @@ export const HANDLERS: Record<string, JobHandler> = {
     );
     if (waiting.rows.length > 0) await requeueJob("outbox.deliver", null, "outbox.deliver");
 
+    // Webhook retries that were waiting for a pass.
+    const hooks = await rawClient().execute(
+      "SELECT 1 FROM app_outbox WHERE channel = 'webhook' AND status IN ('queued', 'sending') LIMIT 1",
+    );
+    if (hooks.rows.length > 0) await rawClient().execute(wakeDeliveryStatement());
+
     const month = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const week = new Date(Date.now() - 7 * 86_400_000).toISOString();
     await rawClient().batch(
       [
         { sql: "DELETE FROM app_job WHERE status = 'done' AND finished_at < ?", args: [month] },
         { sql: "DELETE FROM app_job_run WHERE started_at < ?", args: [month] },
+        // API housekeeping, as API.md promises: calls kept 30 days, idempotency keys 7.
+        { sql: "DELETE FROM int_request_log WHERE at < ?", args: [month] },
+        { sql: "DELETE FROM int_idempotency WHERE created_at < ?", args: [week] },
       ],
       "write",
     );

@@ -12,6 +12,7 @@
 import type { Client } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { ADOPT_PENDING_LEAVE } from "../../lib/workflow/adopt";
+import { seedSandboxClients } from "../../lib/api/sandbox";
 import bcrypt from "bcryptjs";
 import * as s from "../schema";
 import { seedPersonnel } from "./personnel";
@@ -152,7 +153,10 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     .onConflictDoNothing();
   await db
     .insert(s.secRolePermission)
-    .values({ roleCode: "RECRUITER", permissionCode: "recruitment.manage" })
+    .values([
+      { roleCode: "RECRUITER", permissionCode: "recruitment.manage" },
+      { roleCode: "RECRUITER", permissionCode: "recruitment.interview" },
+    ])
     .onConflictDoNothing();
 
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
@@ -200,6 +204,10 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   // requests that existed before it.
   for (const sql of ADOPT_PENDING_LEAVE) await client.execute(sql);
 
+  // Integration sandbox: known API credentials, only where asked for.
+  const sandboxSecret = process.env.SANDBOX_CLIENT_SECRET?.trim();
+  const sandboxNotes = sandboxSecret ? await seedSandboxClients(client, sandboxSecret) : [];
+
   return [
     "  2 companies, 2 personnel areas, 2 sub-areas, 2 jobs",
     "  3 org units, 4 positions, 2 reporting lines",
@@ -209,5 +217,6 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     ...payrollNotes,
     ...recruitmentNotes,
     ...performanceNotes,
+    ...sandboxNotes,
   ];
 }

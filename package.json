@@ -12,6 +12,8 @@
     "db:seed": "tsx src/db/seed/run.ts",
     "db:reset": "tsx src/db/migrate.ts && tsx src/db/seed/run.ts",
     "audit:ui": "tsx scripts/ui-audit.ts",
+    "sandbox": "tsx tools/mock-erp/run.ts",
+    "api:docs": "tsx scripts/api-docs.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

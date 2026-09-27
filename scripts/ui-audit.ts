@@ -51,12 +51,21 @@ const ROUTES = [
   "/payroll/additional", "/payroll/run", "/payroll/posting", "/payroll/my-payslips",
   "/recruitment", "/recruitment/requisitions", "/recruitment/candidates",
   "/recruitment/pipeline", "/recruitment/interviews", "/recruitment/hire",
+  "/recruitment/requisitions/new", "/recruitment/requisitions/REQ0001", "/recruitment/requisitions/REQ0001/edit",
+  "/recruitment/my-interviews",
   "/performance", "/performance/cycles", "/performance/goals", "/performance/ratings",
   "/performance/calibration", "/performance/increments", "/performance/mine",
   "/tax", "/tax/sections", "/tax/declarations", "/tax/register", "/tax/form16",
   "/inbox", "/inbox/preferences", "/change-log", "/outbox",
   "/approvals", "/admin/roles", "/admin/roles/new", "/admin/roles/HR_ADMIN", "/admin/roles/RECRUITER",
   "/admin/approval-flows", "/admin/approval-flows/leave",
+  "/admin/integrations", "/admin/integrations/new", "/admin/integrations/ownership",
+  "/admin/integrations/sync-issues", "/admin/integrations/reconciliation",
+  // Public: the careers site candidates apply on.
+  "/careers", "/careers/REQ0001",
+  // Public: the page each API error links to. (/developers itself is the
+  // third-party Scalar reference, loaded from a CDN, and is not ours to audit.)
+  "/developers/errors",
 ];
 
 /** List page, and the pattern of the detail links to follow from it. */
@@ -66,6 +75,13 @@ const DISCOVER: Array<[string, RegExp]> = [
   ["/payroll/run", /^\/payroll\/payslip\/\d+$/],
   ["/tax/form16", /^\/tax\/form16\/\d+$/],
   ["/outbox", /^\/outbox\/\d+$/],
+  ["/admin/integrations", /^\/admin\/integrations\/\d+$/],
+  // An application at each stage of the workflow, and an interview round.
+  ["/recruitment/pipeline?stage=Applied", /^\/recruitment\/applications\/\d+$/],
+  ["/recruitment/pipeline?stage=Interviewing", /^\/recruitment\/applications\/\d+$/],
+  ["/recruitment/pipeline?stage=Offered", /^\/recruitment\/applications\/\d+$/],
+  ["/recruitment/interviews", /^\/recruitment\/interviews\/\d+$/],
+  ["/recruitment/my-interviews", /^\/recruitment\/interviews\/\d+$/],
 ];
 
 const WIDTHS = [
@@ -112,7 +128,7 @@ async function discover(page: Page): Promise<string[]> {
     // A dev server may abort a navigation while it recompiles; a list page
     // that cannot be read just contributes no detail pages.
     const res = await page.goto(`${BASE}${list}`, { waitUntil: "networkidle" }).catch(() => null);
-    if (!res || new URL(page.url()).pathname !== list) continue;
+    if (!res || new URL(page.url()).pathname !== list.split("?")[0]) continue;
     const hrefs = await page
       .$$eval("a[href]", (as) => as.map((a) => new URL((a as HTMLAnchorElement).href).pathname))
       .catch((err: Error) => {

@@ -55,6 +55,7 @@ describe("the catalogue", () => {
     }
   });
 
+  // As before permissions existed, plus the interviews they are asked to take.
   it("gives each built-in role the sidebar it had", async () => {
     const hr = await createPerson({ roles: ["HR_ADMIN"] });
     const manager = await createPerson({ roles: ["MANAGER", "EMPLOYEE"] });
@@ -62,8 +63,8 @@ describe("the catalogue", () => {
     const [h, m, e] = await Promise.all([hr, manager, employee].map((p) => accessFor(p.session)));
 
     expect(hrefs(h.permissions)).toEqual(expect.arrayContaining(["/org", "/core-hr", "/payroll", "/approvals", "/admin/roles", "/change-log"]));
-    expect(hrefs(m.permissions)).toEqual(["/me", "/core-hr", "/approvals", "/time/calendar", "/time/my-leave", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/performance", "/performance/mine"]);
-    expect(hrefs(e.permissions)).toEqual(["/me", "/time/my-leave", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/performance/mine"]);
+    expect(hrefs(m.permissions)).toEqual(["/me", "/core-hr", "/approvals", "/time/calendar", "/time/my-leave", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/recruitment/my-interviews", "/performance", "/performance/mine"]);
+    expect(hrefs(e.permissions)).toEqual(["/me", "/time/my-leave", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/recruitment/my-interviews", "/performance/mine"]);
     expect(m.roleNames[0]).toBe("Manager");
   });
 });

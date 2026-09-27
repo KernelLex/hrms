@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
-import { db, rawClient } from "@/lib/db";
+import { db } from "@/lib/db";
 import { can, inScope, requirePermission, type Access } from "@/lib/access";
 import {
   paEmployee,
@@ -14,14 +14,14 @@ import {
   paFamilyMember,
   paCommunication,
   omPosition,
-  omOrgUnit,
   OPEN_ENDED,
   now,
   today,
 } from "@/db/schema";
 import { saveTimeSlice, deleteTimeSlice, SLICED_TABLES } from "@/lib/engines/timeslice";
-import { actorOf, audited, changeStatement, recordCreate, recordDelete } from "@/lib/change-log";
+import { actorOf, audited, recordCreate, recordDelete } from "@/lib/change-log";
 import { toPaise } from "@/lib/money";
+import { hire } from "@/lib/services/people";
 
 export type ActionState = { error?: string; ok?: boolean; employeeId?: number };
 
@@ -102,144 +102,13 @@ export async function hireEmployee(
   if (!parsed.success) return fail(firstIssue(parsed.error));
   const v = parsed.data;
 
-  const position = await db.query.omPosition.findFirst({
-    where: eq(omPosition.code, v.positionCode),
-  });
-  if (!position) return fail("That position no longer exists.");
-  if (!position.isVacant) {
-    return fail(
-      `${v.positionCode} is already filled. Choose a vacant position, or free that one first.`,
-    );
-  }
-
-  const unit = await db.query.omOrgUnit.findFirst({
-    where: eq(omOrgUnit.code, v.orgUnitCode),
-  });
-  if (!unit) return fail("That department no longer exists.");
-
-  // EMP1003, EMP1004, ... continuing from whatever exists.
-  const [last] = await db
-    .select({ n: paEmployee.employeeNumber })
-    .from(paEmployee)
-    .orderBy(desc(paEmployee.employeeNumber))
-    .limit(1);
-  const lastNumber = last ? Number(last.n.replace(/\D/g, "")) : 1000;
-  const employeeNumber = `EMP${lastNumber + 1}`;
-
-  const createdAt = now();
-  const client = rawClient();
-  const tx = await client.transaction("write");
-
-  let employeeId: number;
-  try {
-    const inserted = await tx.execute({
-      sql: `INSERT INTO pa_employee (employee_number, hire_date, employment_status, created_at)
-            VALUES (?, ?, 'Active', ?) RETURNING id`,
-      args: [employeeNumber, v.effectiveDate, createdAt],
-    });
-    employeeId = inserted.rows[0].id as number;
-
-    const common = [employeeId, v.effectiveDate, OPEN_ENDED, 1, session.username, createdAt];
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0000_action
-            (employee_id, valid_from, valid_to, seq, created_by, created_at, action_type, reason)
-            VALUES (?,?,?,?,?,?,?,?)`,
-      args: [...common, v.actionType, v.reason],
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0001_org_assignment
-            (employee_id, valid_from, valid_to, seq, created_by, created_at,
-             company_code, area_code, sub_area_code, org_unit_code, position_code, cost_center)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [
-        ...common,
-        v.companyCode,
-        v.areaCode,
-        null,
-        v.orgUnitCode,
-        v.positionCode,
-        v.costCenter,
-      ],
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0002_personal_data
-            (employee_id, valid_from, valid_to, seq, created_by, created_at,
-             first_name, last_name, date_of_birth, gender, marital_status, nationality)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [...common, v.firstName, v.lastName, v.dateOfBirth, v.gender, null, null],
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0007_planned_working_time
-            (employee_id, valid_from, valid_to, seq, created_by, created_at,
-             work_schedule_code, weekly_hours, employment_percent)
-            VALUES (?,?,?,?,?,?,?,?,?)`,
-      args: [...common, v.workScheduleCode, 40, 100],
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0008_basic_pay
-            (employee_id, valid_from, valid_to, seq, created_by, created_at,
-             pay_scale_type, pay_scale_area, pay_scale_group, amount_paise, currency)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [
-        ...common,
-        "Monthly salaried",
-        null,
-        v.payScaleGroup,
-        toPaise(v.amount),
-        v.currency,
-      ],
-    });
-
-    await tx.execute({
-      sql: `UPDATE om_position SET is_vacant = 0 WHERE code = ?`,
-      args: [v.positionCode],
-    });
-
-    const actor = actorOf(session);
-    const logged = [
-      changeStatement(actor, {
-        entity: "pa_employee",
-        entityId: employeeId,
-        subjectEmployeeId: employeeId,
-        action: "create",
-        after: {
-          employeeNumber,
-          actionType: v.actionType,
-          hireDate: v.effectiveDate,
-          firstName: v.firstName,
-          lastName: v.lastName,
-          companyCode: v.companyCode,
-          orgUnitCode: v.orgUnitCode,
-          positionCode: v.positionCode,
-          payScaleGroup: v.payScaleGroup,
-          amountPaise: toPaise(v.amount),
-          workScheduleCode: v.workScheduleCode,
-        },
-        reason: v.reason,
-      }),
-      changeStatement(actor, {
-        entity: "om_position",
-        entityId: v.positionCode,
-        action: "update",
-        before: { isVacant: true },
-        after: { isVacant: false },
-        reason: `Filled by ${employeeNumber}`,
-      }),
-    ];
-    for (const st of logged) if (st) await tx.execute(st);
-
-    await tx.commit();
-  } catch (err) {
-    await tx.rollback();
-    return fail(
-      err instanceof Error ? `The hire could not be completed: ${err.message}` : "The hire could not be completed.",
-    );
-  }
+  const hired = await hire(
+    actorOf(session),
+    { ...v, amountPaise: toPaise(v.amount) },
+    session.username,
+  );
+  if (!hired.ok) return fail(hired.error);
+  const employeeId = hired.value.employeeId;
 
   revalidateEmployee(employeeId);
   revalidatePath("/org", "layout");

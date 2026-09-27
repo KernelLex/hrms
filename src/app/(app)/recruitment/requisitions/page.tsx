@@ -1,125 +1,76 @@
+import Link from "next/link";
+import { Briefcase, Plus } from "lucide-react";
 import { requirePage } from "@/lib/access";
-import { asc, desc, count } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { rcRequisition, rcApplication, omPosition, omOrgUnit } from "@/db/schema";
-import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
-import { saveRequisition, deleteRequisition } from "@/app/actions/recruitment";
-import { Status, TwoLine } from "@/components/ui";
+import { listRequisitions } from "@/lib/repositories/recruitment";
+import { formatDate } from "@/lib/dates";
+import { ButtonLink, Card, EmptyState, PageHeader, Status, Table, Th, Tr, Td, TwoLine } from "@/components/ui";
 import { RecruitmentTabs } from "../tabs";
 
-const COLUMNS: Column[] = [
-  { key: "code", label: "Requisition" },
-  { key: "position", label: "Position" },
-  { key: "unit", label: "Department" },
-  { key: "openings", label: "Openings", numeric: true },
-  { key: "applicants", label: "Applicants", numeric: true },
-  { key: "priority", label: "Priority" },
-  { key: "status", label: "Status" },
-];
-
-/** RC-01 — job requisitions, opened against a vacant position. */
+/** RC-01 — job requisitions: each a vacant position and the role it offers. */
 export default async function RequisitionsPage() {
   await requirePage(["recruitment.manage"], "/");
-
-  const [rows, positions, units, applicationCounts] = await Promise.all([
-    db.select().from(rcRequisition).orderBy(desc(rcRequisition.postedDate)),
-    db.select().from(omPosition).orderBy(asc(omPosition.code)),
-    db.select().from(omOrgUnit).orderBy(asc(omOrgUnit.code)),
-    db
-      .select({ requisitionId: rcApplication.requisitionId, n: count() })
-      .from(rcApplication)
-      .groupBy(rcApplication.requisitionId),
-  ]);
-
-  const positionTitle = new Map(positions.map((p) => [p.code, p.title]));
-  const unitName = new Map(units.map((u) => [u.code, u.name]));
-  const applicants = new Map(applicationCounts.map((a) => [a.requisitionId, a.n]));
-
-  // Only vacant positions can take a new requisition.
-  const vacant = positions.filter((p) => p.isVacant && p.isActive);
-
-  const fields: FieldDef[] = [
-    {
-      kind: "select",
-      name: "positionCode",
-      label: "Position",
-      required: true,
-      options: vacant.map((p) => ({ value: p.code, label: `${p.code} — ${p.title}` })),
-      emptyLabel: vacant.length === 0 ? "No vacant positions" : undefined,
-      hint: "The department and job follow from the position.",
-    },
-    { kind: "text", name: "openings", label: "Openings", required: true, placeholder: "1" },
-    {
-      kind: "select",
-      name: "priority",
-      label: "Priority",
-      required: true,
-      options: ["High", "Medium", "Low"].map((p) => ({ value: p, label: p })),
-    },
-    { kind: "date", name: "postedDate", label: "Posted date", required: true },
-    { kind: "date", name: "targetCloseDate", label: "Target close date" },
-    {
-      kind: "select",
-      name: "status",
-      label: "Status",
-      required: true,
-      options: ["Open", "On hold", "Closed"].map((s) => ({ value: s, label: s })),
-    },
-  ];
+  const requisitions = await listRequisitions();
 
   return (
     <>
       <RecruitmentTabs />
-      <MasterScreen
+      <PageHeader
         title="Requisitions"
-        subtitle="A requisition opens hiring against a vacant position. It closes itself once its openings are filled."
-        entity="requisition"
-        columns={COLUMNS}
-        idField="code"
-        fields={fields}
-        saveAction={saveRequisition}
-        deleteAction={deleteRequisition}
-        wideDialog
-        emptyHint="Open a requisition against one of your vacant positions."
-        rows={rows.map((r) => ({
-          id: r.code,
-          describe: `${r.code} — ${positionTitle.get(r.positionCode) ?? r.positionCode}`,
-          cells: {
-            code: <span className="font-medium text-ink">{r.code}</span>,
-            position: (
-              <TwoLine
-                value={positionTitle.get(r.positionCode) ?? r.positionCode}
-                sub={r.positionCode}
-              />
-            ),
-            unit: (
-              <span className="text-secondary">
-                {unitName.get(r.orgUnitCode) ?? r.orgUnitCode}
-              </span>
-            ),
-            openings: String(r.openings),
-            applicants: String(applicants.get(r.id) ?? 0),
-            priority: <span className="text-secondary">{r.priority}</span>,
-            status: (
-              <Status
-                tone={
-                  r.status === "Open" ? "action" : r.status === "On hold" ? "waiting" : "neutral"
-                }
-              >
-                {r.status}
-              </Status>
-            ),
-          },
-          values: {
-            positionCode: r.positionCode,
-            openings: String(r.openings),
-            priority: r.priority,
-            postedDate: r.postedDate,
-            targetCloseDate: r.targetCloseDate ?? "",
-            status: r.status,
-          },
-        }))}
+        subtitle="Each opens hiring for a vacant position and describes the role. Publish one to take applications on the careers page."
+        actions={
+          <ButtonLink href="/recruitment/requisitions/new" variant="primary">
+            <Plus />
+            Open a requisition
+          </ButtonLink>
+        }
       />
+      <Card>
+        {requisitions.length === 0 ? (
+          <EmptyState icon={<Briefcase />} title="No requisitions yet">
+            Open one against a vacant position to start hiring for it.
+          </EmptyState>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Role</Th>
+                <Th>Department</Th>
+                <Th numeric>Openings</Th>
+                <Th numeric>New</Th>
+                <Th numeric>Interviewing</Th>
+                <Th numeric>Offered</Th>
+                <Th>Status</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {requisitions.map((r) => (
+                <Tr key={r.id}>
+                  <Td>
+                    <Link href={`/recruitment/requisitions/${r.code}`} className="hover:underline">
+                      <TwoLine value={r.title} sub={`${r.code}, posted ${formatDate(r.postedDate)}`} />
+                    </Link>
+                  </Td>
+                  <Td>
+                    <span className="text-secondary">{r.department}</span>
+                  </Td>
+                  <Td numeric>
+                    {r.counts.Hired > 0 ? `${r.counts.Hired} of ${r.openings}` : r.openings}
+                  </Td>
+                  <Td numeric>{r.counts.Applied || <span className="text-decor">&mdash;</span>}</Td>
+                  <Td numeric>{r.counts.Interviewing + r.counts.Selected || <span className="text-decor">&mdash;</span>}</Td>
+                  <Td numeric>{r.counts.Offered || <span className="text-decor">&mdash;</span>}</Td>
+                  <Td>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Status tone={r.status === "Open" ? "action" : r.status === "On hold" ? "waiting" : "neutral"}>{r.status}</Status>
+                      {r.isPublished ? <span className="text-xs text-muted">On careers page</span> : null}
+                    </div>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
     </>
   );
 }

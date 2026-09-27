@@ -4,17 +4,22 @@ import { appDocument } from "@/db/schema";
 import { can, getAccess, inScope, type Access } from "@/lib/access";
 import { logAccess } from "@/lib/access-log";
 import { readDocument, safeFileName, type StoredDocument } from "@/lib/storage";
+import { interviewsCandidate } from "@/lib/recruitment";
 
 /**
  * Downloads a stored document, after checking who is asking.
  *
  * Permission follows what the document belongs to: candidate files to whoever
- * manages recruitment, an employee's files to them and to whoever may open
- * their record. New owner types must add a rule here, and until they do
- * nobody can read them — the default is no.
+ * manages recruitment and to the candidate's interviewers, an employee's
+ * files to them and to whoever may open their record. New owner types must
+ * add a rule here, and until they do nobody can read them — the default is no.
  */
 async function mayRead(access: Access, doc: StoredDocument): Promise<boolean> {
-  if (doc.ownerType === "candidate") return can(access, "recruitment.manage");
+  // Candidate files: whoever runs recruitment, and anyone asked to interview them.
+  if (doc.ownerType === "candidate") {
+    if (can(access, "recruitment.manage")) return true;
+    return can(access, "recruitment.interview") && access.employeeId !== null && (await interviewsCandidate(access.employeeId, doc.ownerId));
+  }
   // An employee's own documents, and whoever may open their record.
   if (doc.ownerType === "employee") {
     if (access.employeeId === doc.ownerId) return true;

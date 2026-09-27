@@ -1,4 +1,5 @@
 import { rawClient } from "@/lib/db";
+import { requirePage } from "@/lib/access";
 import { activeFlow, flowSteps } from "@/lib/workflow/engine";
 import { PROCESSES, PROCESS_CODES, describeStep } from "@/lib/workflow/processes";
 import { listRoles, listUsers } from "@/lib/repositories/access";
@@ -10,6 +11,7 @@ import { ButtonLink, Card, CardHeader } from "@/components/ui";
  * process on the engine; corrections, claims and exits join it later.
  */
 export default async function ApprovalFlowsPage() {
+  await requirePage(["access.manage"], "/admin");
   const [roles, users] = await Promise.all([listRoles(), listUsers()]);
   const roleName = new Map(roles.map((r) => [r.code, r.name]));
   const userName = new Map(users.map((u) => [u.id, u.label]));
