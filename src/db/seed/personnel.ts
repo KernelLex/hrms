@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as s from "../schema";
 
@@ -157,13 +157,24 @@ export async function seedPersonnel(db: Db): Promise<string[]> {
       })
       .onConflictDoNothing();
 
-    await db
-      .insert(s.paCommunication)
-      .values([
-        { ...common, commType: "Email (official)", value: p.email, seq: 1 },
-        { ...common, commType: "Mobile phone", value: p.phone, seq: 2 },
-      ])
-      .onConflictDoNothing();
+    // No unique index on this table (HR may record more than one of a
+    // type), so onConflictDoNothing cannot guard it: check first, or a
+    // re-seed duplicates every row (see migration 0012).
+    const haveCommTypes = new Set(
+      (
+        await db
+          .select({ commType: s.paCommunication.commType })
+          .from(s.paCommunication)
+          .where(eq(s.paCommunication.employeeId, emp.id))
+      ).map((c) => c.commType),
+    );
+    const commRows = [
+      { ...common, commType: "Email (official)", value: p.email, seq: 1 },
+      { ...common, commType: "Mobile phone", value: p.phone, seq: 2 },
+    ].filter((r) => !haveCommTypes.has(r.commType));
+    if (commRows.length > 0) {
+      await db.insert(s.paCommunication).values(commRows);
+    }
 
     // Basic pay: Arjun gets two slices, everyone else one.
     if (p.employeeNumber === "EMP1001") {
@@ -234,9 +245,13 @@ export async function seedPersonnel(db: Db): Promise<string[]> {
     where: eq(s.paEmployee.employeeNumber, "EMP1001"),
   });
   if (arjun) {
-    await db
-      .insert(s.paAddress)
-      .values({
+    // Neither table has a unique index either (same reason as communication
+    // above): check first.
+    const hasAddress = await db.query.paAddress.findFirst({
+      where: and(eq(s.paAddress.employeeId, arjun.id), eq(s.paAddress.addressType, "Permanent")),
+    });
+    if (!hasAddress) {
+      await db.insert(s.paAddress).values({
         employeeId: arjun.id,
         addressType: "Permanent",
         line: "221 Residency Road",
@@ -249,12 +264,14 @@ export async function seedPersonnel(db: Db): Promise<string[]> {
         seq: 1,
         createdBy: BY,
         createdAt,
-      })
-      .onConflictDoNothing();
+      });
+    }
 
-    await db
-      .insert(s.paFamilyMember)
-      .values({
+    const hasFamily = await db.query.paFamilyMember.findFirst({
+      where: eq(s.paFamilyMember.employeeId, arjun.id),
+    });
+    if (!hasFamily) {
+      await db.insert(s.paFamilyMember).values({
         employeeId: arjun.id,
         relationship: "Spouse",
         name: "Kavya Mehta",
@@ -264,8 +281,8 @@ export async function seedPersonnel(db: Db): Promise<string[]> {
         seq: 1,
         createdBy: BY,
         createdAt,
-      })
-      .onConflictDoNothing();
+      });
+    }
   }
 
   notes.push("  3 work schedule rules");

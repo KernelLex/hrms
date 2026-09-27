@@ -103,11 +103,11 @@ The value is in the seams:
 |---|---|
 | Phases complete | 0 to 9 (the original build), 10 to 13 of the extended plan. Part A runs to 24; Part B is 25. |
 | Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page |
-| Database tables | 92, in 12 migrations (0000 to 0011) |
+| Database tables | 92, in 13 migrations (0000 to 0012) |
 | Engines | Time-slice, quota, payroll, tax, time evaluation; plus the job runner and the approval engine |
 | Permissions | 31, in ten groups; 3 built-in roles and a Recruiter role as the example |
 | Integration API | 50 endpoints under `/api/v1`, 21 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
-| Automated tests | **253 passing** in 28 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
+| Automated tests | **254 passing** in 29 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
 | UI audit | **276 of 276** role, screen and width combinations clean (`npm run audit:ui`), as four people at 1280 and 375 pixels |
 | CI | Typecheck, lint, tests, production build, UI audit and the mock ERP over HTTP on every push |
 | Pending on others | Cloudflare R2 (not enabled on the account), email delivery (no provider chosen), and the rest of phase 25 |
@@ -139,7 +139,7 @@ The value is in the seams:
 | Service | Status | Detail |
 |---|---|---|
 | GitHub | working | `KernelLex/hrms`; Actions runs CI on every push and pull request |
-| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0011 and seeded. One database: production and the demo are the same (§10). |
+| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0012 and seeded. One database: production and the demo are the same (§10). |
 | Vercel | working | Project `amogh24/hrms`; deploys `main` on push; Vercel Cron calls `/api/cron/tick` daily |
 | Email | recording only | No provider connected: every email is written to the outbox and readable on the Outbox screen, not sent |
 | Cloudflare R2 | pending | Not enabled on the Cloudflare account (API error 10042). Documents are stored in the database until it is (§5.8). |
@@ -161,7 +161,7 @@ The careers site, `/careers`, needs no account: the demo's HR executive role is 
 
 | Check | Result |
 |---|---|
-| `npm test` | 253 passing: corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
+| `npm test` | 254 passing: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
 | Mutation checks | Six deliberate bugs in the payroll and tax engines each fail a test; the outbox regression test fails on the old per-minute delivery key; the authorisation matrix fails when one Server Function's check is loosened |
 | `npm run audit:ui` | 276 of 276 clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
 | `npm run sandbox` | The mock ERP's 19 steps against a running app over HTTP, receiving real signed webhooks: 19 of 19 |
@@ -532,6 +532,7 @@ The hire wizard uses numbered steps with a live summary panel; balance cards are
 
 ### 7.2 Gotchas
 
+- **`.onConflictDoNothing()` guards nothing without a matching unique index.** Three repeating infotypes (`pa_it0006_address`, `pa_it0105_communication`, `pa_it0021_family_member`) have none, because HR may legitimately record more than one of a type; the seed relied on it anyway, and every re-run of `db:seed` against the same database — which every phase since 9 has done — silently duplicated every seeded row in production. Fixed by checking before inserting (migration 0012 cleans up what had already accumulated); `tests/seed.test.ts` re-seeds twice and asserts no duplicates.
 - **drizzle-kit drops `ON DELETE` from `ALTER TABLE … ADD COLUMN … REFERENCES`** (migration 0006 restores it by hand), and its snapshot must match the schema exactly — regenerate rather than hand-edit a migration's DDL. Data statements appended by hand are marked in the file (0008).
 - **Index names are global in SQLite.** Two tables cannot both have `ix_request_status`; prefix new indexes with their table's module.
 - **A local SQLite file does not enforce foreign keys** on every pooled connection: delete dependents explicitly.
@@ -2040,6 +2041,10 @@ What each phase delivered, newest first, and where the build differed from its p
 - **For the client**: `README.md` became a plain-language feature list with a "Coming next" section.
 - **Fixed on the way:** an employee could open their own payslip by its address before the month was posted; full-width form fields spanned three columns even in two-column forms, which quietly added a third column to every such form and dialog (now `col-span-full`).
 - **Where it differs from the plan:** PDFs are drawn with pdf-lib rather than printed by a headless browser, decided on paper rather than by a spike (§7.3); the password uses name and date of birth because PANs are not held; the service worker keeps no payslips offline, since nothing personal should stay on a phone.
+
+### Fixed after phase 13 — years of duplicated personal data
+
+Found by looking at Arjun's live profile after the phase 13 push: his email, phone and address each showed six to eight times. Three repeating infotypes — addresses, communication and family members — have no unique index, because HR may genuinely record more than one of a type; the seed script's `.onConflictDoNothing()` on those inserts was therefore a silent no-op, and every re-run of `npm run db:seed` against the one production database (every phase since 9 has re-seeded it after migrating) inserted a fresh duplicate of every row. Fixed in two parts: `src/db/seed/personnel.ts` now checks whether a row already exists before inserting; migration 0012 collapses the duplicates already in Turso down to one row per group, matched on every column except `id` and `created_at`, so a row that is genuinely different (a second real address, a second child) is never touched. `tests/seed.test.ts` re-seeds an already-seeded database and fails if anything grows.
 
 ### Phase 12 — The integration API, the two-way ERP link, and the recruitment workflow
 

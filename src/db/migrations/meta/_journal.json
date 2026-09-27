@@ -85,6 +85,13 @@
       "when": 1790508463872,
       "tag": "0011_self_service_payslips",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790514679429,
+      "tag": "0012_deduplicate_seeded_infotypes",
+      "breakpoints": true
     }
   ]
 }
