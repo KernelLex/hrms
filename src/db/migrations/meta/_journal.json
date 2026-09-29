@@ -92,6 +92,13 @@
       "when": 1790514679429,
       "tag": "0012_deduplicate_seeded_infotypes",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1790683952293,
+      "tag": "0013_lifecycle_actions",
+      "breakpoints": true
     }
   ]
 }

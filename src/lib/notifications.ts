@@ -53,6 +53,10 @@ export const NOTIFICATION_KINDS = {
     label: "Applications from the careers page",
     description: "When a candidate applies for an open role. Only for people who run recruitment.",
   },
+  "probation.due": {
+    label: "Probation reviews due",
+    description: "When someone's probation review is due soon, or overdue. Sent to HR.",
+  },
 } as const;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

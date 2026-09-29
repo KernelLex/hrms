@@ -3,7 +3,8 @@ import type { InStatement } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { deliverOutbox } from "@/lib/email";
 import { processRunBatch } from "@/lib/engines/payroll";
-import { notificationStatements, notify, usersForEmployees, type NotificationItem } from "@/lib/notifications";
+import { hrUserIds, notificationStatements, notify, usersForEmployees, type NotificationItem } from "@/lib/notifications";
+import { probationDue } from "@/lib/services/monitoring";
 import { formatMonth, todayInIndia } from "@/lib/dates";
 import { enqueueJob, requeueJob } from "./queue";
 import { escalateOverdue } from "@/lib/workflow/engine";
@@ -58,6 +59,34 @@ async function notifySelfReviews(cycleId: number | null): Promise<number> {
   }
   await notify(items);
   return items.length;
+}
+
+/** Reviews due within a week, or overdue, told to HR once each. */
+async function notifyProbationDue(): Promise<number> {
+  const due = (await probationDue(7)).filter((d) => !d.remindedAt);
+  if (due.length === 0) return 0;
+  const hrIds = await hrUserIds();
+  if (hrIds.length === 0) return 0;
+
+  const items: NotificationItem[] = [];
+  for (const d of due) {
+    for (const userId of hrIds) {
+      items.push({
+        userId,
+        kind: "probation.due",
+        title: d.overdue ? "A probation review is overdue" : "A probation review is due soon",
+        body: `Due ${d.date}.`,
+        link: "/core-hr/probation",
+        dedupeKey: `probation.due:${d.id}:${userId}`,
+      });
+    }
+  }
+  await notify(items);
+  await rawClient().execute({
+    sql: `UPDATE pa_it0019_monitoring SET reminded_at = ? WHERE id IN (${due.map(() => "?").join(", ")})`,
+    args: [new Date().toISOString(), ...due.map((d) => d.id)],
+  });
+  return due.length;
 }
 
 export const HANDLERS: Record<string, JobHandler> = {
@@ -184,6 +213,7 @@ export const HANDLERS: Record<string, JobHandler> = {
    */
   async "daily"() {
     await notifySelfReviews(null);
+    await notifyProbationDue();
 
     // Approval steps that have waited longer than their flow allows.
     await escalateOverdue();

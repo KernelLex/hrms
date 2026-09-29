@@ -32,8 +32,10 @@ export const NAV: NavGroup[] = [
       { label: "My profile", href: "/me", icon: "CircleUser", anyOf: ["self.profile"] },
       { label: "Org structure", href: "/org", icon: "Network", anyOf: ["org.view"] },
       { label: "Employees", href: "/core-hr", icon: "Users", anyOf: ["employee.view_all"] },
+      { label: "Probation due", href: "/core-hr/probation", icon: "UserCheck", anyOf: ["employee.edit"] },
       { label: "Reports", href: "/reports", icon: "ChartBar", anyOf: ["reports.view"] },
       { label: "My team", href: "/core-hr", icon: "Users", anyOf: ["employee.view_team"] },
+      { label: "My tasks", href: "/tasks", icon: "ListChecks", anyOf: ["self.profile"] },
     ],
   },
   {
@@ -69,6 +71,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Roles and permissions", href: "/admin/roles", icon: "ShieldCheck", anyOf: ["access.manage"] },
       { label: "Approval flows", href: "/admin/approval-flows", icon: "Workflow", anyOf: ["access.manage"] },
+      { label: "Letter templates", href: "/core-hr/letter-templates", icon: "FileText", anyOf: ["employee.edit"] },
       { label: "Integrations", href: "/admin/integrations", icon: "Plug", anyOf: ["integrations.manage"] },
       { label: "Change log", href: "/change-log", icon: "History", anyOf: ["audit.view"] },
       { label: "Outbox", href: "/outbox", icon: "Mail", anyOf: ["audit.view"] },

@@ -242,6 +242,18 @@ export async function runScenario(o: ScenarioOptions): Promise<Step[]> {
       }),
 
     async () =>
+      step("Sees the new hire's onboarding tasks, and completes one", async () => {
+        check(hiredId, "No hire to check tasks for.");
+        const tasks = await s.get<{ data: { id: number; status: string }[] }>(`/tasks?employee_id=${hiredId}&status=Pending`);
+        check(tasks.status === 200, `Answered ${tasks.status}.`);
+        if (tasks.body.data.length === 0) return "no onboarding tasks for this hire";
+        const task = tasks.body.data[0];
+        const done = await s.request<{ status: string }>("POST", `/tasks/${task.id}/complete`, { headers: { "Idempotency-Key": randomUUID() } });
+        check(done.status === 200 && done.body.status === "Done", `Answered ${done.status}: ${JSON.stringify(done.body)}`);
+        return `task ${task.id} of ${tasks.body.data.length} marked done`;
+      }),
+
+    async () =>
       step("Does not hear its own change back", async () => {
         await o.pump();
         const echoed = erp.received.find((e) => e.type === "cost_centre.changed" && e.subject === `cost-centres/${costCentre}`);

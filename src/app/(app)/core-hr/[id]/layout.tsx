@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { can, inScope, requirePage } from "@/lib/access";
 import { getEmployee, fullName } from "@/lib/repositories/employees";
-import { PageHeader, Badge } from "@/components/ui";
+import { PageHeader, Badge, ButtonLink } from "@/components/ui";
 import { InfotypeTabs } from "./tabs";
 
 export default async function EmployeeLayout(props: {
@@ -40,6 +40,20 @@ export default async function EmployeeLayout(props: {
           >
             {status}
           </Badge>
+        }
+        actions={
+          status !== "Terminated" && can(session, "employee.edit") ? (
+            <>
+              <ButtonLink href={`/core-hr/${employeeId}/transfer`} size="sm">
+                Transfer
+              </ButtonLink>
+              {can(session, "pay.view") ? (
+                <ButtonLink href={`/core-hr/${employeeId}/promote`} size="sm">
+                  Promote
+                </ButtonLink>
+              ) : null}
+            </>
+          ) : null
         }
       />
       <InfotypeTabs

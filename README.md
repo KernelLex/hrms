@@ -57,6 +57,13 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 - **Mass updates** for many employees at once.
 - **Change history** on every record: who changed what, when, and the value before and after.
 
+### Joining and moving
+
+- **Onboarding**: hiring someone starts a checklist of what needs doing — a laptop and accounts, documents, an induction — each task assigned to the right person and tracked to done. What is assigned to you shows up on **My tasks**.
+- **Probation**: reviewed on a set date after joining. HR confirms it, pushes the date back, or ends it, with the earlier decision kept on record. A **Probation due** list shows what needs deciding, and HR is reminded.
+- **Transfers and promotions** as guided steps, like hiring: a new position, department or company, and for a promotion, new pay — from a date you choose, with the record's history kept intact.
+- **Letters**: keep one or more letter templates filled in from the employee's record, and issue one in a couple of clicks. It is kept exactly as issued, even if the record or the template changes afterwards.
+
 ### Time and leave
 
 - Leave types, yearly entitlements and balances, down to half days.
@@ -125,6 +132,7 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 - **Two-way exchange through a secure API.** The HRMS sends people, organisation, time and payroll as they change, including the payroll journal and the salaries to pay. Your ERP sends back what it owns — cost centres, accounts, payments made — and confirms what it booked.
 - **Each kind of record has one owner**, so the two systems never overwrite each other.
 - **HR can see the connection at work**: what was sent, what the ERP booked, anything that could not be applied, and a reconciliation of every payroll journal against what the ERP recorded.
+- **Remove a system you no longer use**: HR can delete one that has never really connected; one that has is suspended instead, so its history stays readable.
 - **Your ERP's own employee portal can use it too**: show payslips as PDFs, and send corrections employees ask for, which HR approves as usual.
 - **A complete guide for your ERP's developers**, a live reference, and a practice environment to build against.
 
@@ -132,7 +140,6 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ## Coming next
 
-- **Joining and moving**: onboarding checklists, probation and confirmation, transfers and promotions as guided steps, and letters from templates.
 - **Organisation**: requests for new positions with approval, bulk import from spreadsheets, and a drawn org chart.
 - **Leave**: policies by grade and location, state holiday calendars, monthly accrual with carry-forward and lapse, balance forecasts, compensatory off and leave encashment.
 - **Attendance**: shift rosters, attendance devices, and approving missed punches.
@@ -152,4 +159,4 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 - **Statutory coverage is employee provident fund and income tax.** ESI, professional tax, labour welfare fund, gratuity and the employer's PF share are not calculated yet.
 - **The demo organisation** (Acme Manufacturing) is sample data, for trying the software.
 
-connecting a system to it is in [API.md](API.md).
+A guide for connecting a system to it is in [API.md](API.md).

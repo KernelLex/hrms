@@ -28,6 +28,9 @@ export function InfotypeTabs({
           {i.name}
         </Tab>
       ))}
+      <Tab href={`${base}/career`} active={pathname === `${base}/career`}>
+        Career
+      </Tab>
       <Tab href={`${base}/as-of`} active={pathname === `${base}/as-of`}>
         As of date
       </Tab>

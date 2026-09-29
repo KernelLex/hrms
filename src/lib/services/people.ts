@@ -3,6 +3,7 @@ import { rawClient } from "@/lib/db";
 import { OPEN_ENDED, now } from "@/db/schema";
 import { changeStatement, recordChanges, type Actor } from "@/lib/change-log";
 import { saveTimeSlice, readAsOf, SLICED_TABLES } from "@/lib/engines/timeslice";
+import { startOnboarding } from "./checklist";
 import type { Result } from "./result";
 
 /**
@@ -55,8 +56,14 @@ export async function hire(actor: Actor, v: HireData, createdBy: string): Promis
   if (!schedule) return { error: "That work schedule does not exist." };
   if (!area) return { error: "That personnel area does not exist." };
 
-  // EMP1003, EMP1004, ... continuing from whatever exists.
-  const last = await one("SELECT employee_number AS n FROM pa_employee ORDER BY employee_number DESC LIMIT 1", []);
+  // EMP1003, EMP1004, ... continuing from whatever exists. Ordered by the
+  // number itself, not the text — "EMP2" must outrank "EMP1000", and a
+  // differently-numbered record (a test fixture, an import) must not throw
+  // the count off.
+  const last = await one(
+    "SELECT employee_number AS n FROM pa_employee WHERE employee_number LIKE 'EMP%' ORDER BY CAST(SUBSTR(employee_number, 4) AS INTEGER) DESC LIMIT 1",
+    [],
+  );
   const lastNumber = last ? Number(String(last.n).replace(/\D/g, "")) : 1000;
   const employeeNumber = `EMP${lastNumber + 1}`;
 
@@ -134,6 +141,12 @@ export async function hire(actor: Actor, v: HireData, createdBy: string): Promis
       }),
     ];
     for (const st of logged) if (st) await tx.execute(st);
+    await startOnboarding(tx, actor, {
+      employeeId,
+      positionCode: v.positionCode,
+      effectiveDate: v.effectiveDate,
+      createdBy,
+    });
     await tx.commit();
   } catch (err) {
     await tx.rollback();

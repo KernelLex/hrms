@@ -7,6 +7,8 @@ import { ALL_SCOPES } from "@/lib/api/scopes";
 import { PROBLEM_TYPES } from "@/lib/api/problem";
 import { runPayroll } from "@/lib/engines/payroll";
 import { generateBankFile, postToLedger } from "@/app/actions/payroll";
+import { issueLetter } from "@/lib/services/letters";
+import { systemActor } from "@/lib/change-log";
 import type { Endpoint } from "@/lib/api/router";
 import { apiClient, call, type TestClient } from "./support/api";
 import { form } from "./support/fixtures";
@@ -30,6 +32,7 @@ const SAMPLE_PATHS: Record<string, () => string> = {
   "/employees/{id}/history": () => `/employees/${ids.employee}/history?record=org_assignment`,
   "/payroll/runs/{id}/results": () => `/payroll/runs/${ids.run}/results`,
   "/payroll/results/{id}/payslip": () => `/payroll/results/${ids.result}/payslip`,
+  "/letters/{id}/pdf": () => `/letters/${ids.letter}/pdf`,
 };
 
 const concrete = (e: Endpoint) => e.path.replace(/\{\w+\}/g, "1");
@@ -59,6 +62,15 @@ beforeAll(async () => {
   const list = await call("GET", "/employees?limit=1", { token: all.token });
   ids.employee = String((list.body as { data: { id: number }[] }).data[0].id);
   await call("POST", "/webhook-subscriptions", { token: all.token, body: { url: "https://erp.test/contract" } });
+
+  const template = await rawClient().execute("SELECT id FROM pa_letter_template WHERE is_active = 1 LIMIT 1");
+  const issued = await issueLetter(
+    systemActor("test"),
+    { employeeId: Number(ids.employee), templateId: Number(template.rows[0].id), issueDate: "2026-07-31" },
+    "test",
+  );
+  if (!issued.ok) throw new Error(issued.error);
+  ids.letter = String(issued.value.id);
 });
 
 describe("every endpoint", () => {

@@ -47,6 +47,11 @@ export const EVENT_TYPES = {
   },
   "candidate.hired": { scope: "recruitment:read", description: "An offered candidate became an employee. `data` has the application and the new employee's id." },
   "appraisal.finalised": { scope: "performance:read", description: "Calibration made a rating final. `data` is the appraisal." },
+  "employee.transferred": { scope: "employees:read", description: "An employee moved to a new position, department or company. `data` is the employee." },
+  "employee.promoted": { scope: "employees:read", description: "An employee moved into a new position with new pay. `data` is the employee; the new basic pay needs pay:read." },
+  "employee.confirmed": { scope: "employees:read", description: "A probation review confirmed someone's employment. `data` is the employee." },
+  "onboarding.completed": { scope: "employees:read", description: "A new joiner's onboarding checklist finished — every task done. `data` is the employee." },
+  "letter.issued": { scope: "employees:read", description: "A letter was issued to an employee from a template. `data` names it; the PDF is at /letters/{id}/pdf." },
 } as const satisfies Record<string, { scope: Scope; description: string }>;
 
 export type EventType = keyof typeof EVENT_TYPES;
@@ -83,6 +88,20 @@ export function eventFor(c: ChangeRow): Derived | null {
     if (c.action === "create") return emp("employee.hired", c.entity_id);
     if ("employment_status" in after) return emp("employee.status_changed", c.entity_id);
     return emp("employee.updated", c.entity_id);
+  }
+  if (c.entity === "pa_it0000_action" && c.subject_employee_id) {
+    const actionType = String(after.action_type ?? "");
+    if (actionType === "Transfer") return emp("employee.transferred", c.subject_employee_id);
+    if (actionType === "Promotion") return emp("employee.promoted", c.subject_employee_id);
+  }
+  if (c.entity === "pa_it0019_monitoring" && c.action === "update" && after.status === "Confirmed" && c.subject_employee_id) {
+    return emp("employee.confirmed", c.subject_employee_id);
+  }
+  if (c.entity === "pa_checklist" && c.action === "update" && after.completed_at && c.subject_employee_id) {
+    return emp("onboarding.completed", c.subject_employee_id);
+  }
+  if (c.entity === "pa_letter" && c.action === "create") {
+    return { type: "letter.issued", subject: `letters/${c.entity_id}`, key: `letter:${c.entity_id}` };
   }
   if (c.entity.startsWith("pa_it") && c.subject_employee_id) return emp("employee.updated", c.subject_employee_id);
   if (c.entity in ORG_KINDS) {
@@ -265,6 +284,19 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
         [Number(id)],
       );
       return r ? { id: Number(r.id), cycle_id: Number(r.cycle_id), employee_id: Number(r.employee_id), final_rating: Number(r.calibrated_rating), finalised_at: r.finalised_at ?? null } : null;
+    }
+    case "employee.transferred":
+    case "employee.promoted":
+    case "employee.confirmed":
+    case "onboarding.completed": {
+      const [rep] = await loadEmployees([Number(id)], todayInIndia(), { pay: true, bank: true });
+      return rep ?? null;
+    }
+    case "letter.issued": {
+      const r = await one("SELECT * FROM pa_letter WHERE id = ?", [Number(id)]);
+      return r
+        ? { id: Number(r.id), employee_id: Number(r.employee_id), kind: String(r.kind), issue_date: String(r.issue_date), issued_at: String(r.issued_at) }
+        : null;
     }
   }
 }

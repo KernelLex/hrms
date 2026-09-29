@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { rawClient } from "@/lib/db";
 import { OPEN_ENDED } from "@/db/schema";
 import { dispatch } from "@/lib/api";
@@ -7,6 +7,7 @@ import { createApiClient } from "@/lib/api/clients";
 import { ERP_SCOPES } from "@/lib/api/scopes";
 import { deliverWebhooks, deriveEvents, replayDeliveries, setWebhookTransport, signWebhook, newWebhookSecret, MAX_WEBHOOK_ATTEMPTS } from "@/lib/api/events";
 import { upsertCostCentre } from "@/lib/services/records";
+import { issueLetter } from "@/lib/services/letters";
 import { systemActor } from "@/lib/change-log";
 import { runPayroll } from "@/lib/engines/payroll";
 import { generateBankFile, postToLedger } from "@/app/actions/payroll";
@@ -78,7 +79,123 @@ describe("the mock ERP", () => {
     // Every step did its work: none found nothing to do.
     const idle = steps.filter((s) => /^(no |skipped)/.test(s.detail)).map((s) => `${s.name}: ${s.detail}`);
     expect(idle).toEqual([]);
-    expect(steps.length).toBeGreaterThanOrEqual(19);
+    expect(steps.length).toBeGreaterThanOrEqual(20);
+  });
+});
+
+describe("guided actions, tasks and letters through the API", () => {
+  const one = async (sql: string, args: (string | number)[] = []) => (await rawClient().execute({ sql, args })).rows[0] as Record<string, unknown> | undefined;
+
+  // The ERP is already subscribed to webhooks (the earlier scenario did
+  // that); draining what these tests derive keeps the webhook-delivery
+  // tests below from tripping over a leftover queued delivery.
+  afterEach(() => pump());
+
+  async function vacantPosition(): Promise<string> {
+    const code = `PSMK${randomUUID().slice(0, 6).toUpperCase()}`;
+    await rawClient().execute({
+      sql: `INSERT INTO om_position (code, title, org_unit_code, job_code, reports_to_code, is_manager, is_vacant, valid_from, valid_to, is_active)
+            VALUES (?, 'Integration role', 'OU0002', 'JB0001', NULL, 0, 1, '2024-01-01', ?, 1)`,
+      args: [code, OPEN_ENDED],
+    });
+    return code;
+  }
+
+  it("transfers, promotes and confirms probation, deriving their events", async () => {
+    const posA = await vacantPosition();
+    const posB = await vacantPosition();
+    const hireClient = await apiClient(["employees:hire", "employees:read", "pay:read"]);
+    const hired = await call("POST", "/employees", {
+      token: hireClient.token,
+      body: {
+        effective_date: "2026-01-05",
+        company: "CO01",
+        personnel_area: "PA01",
+        department: "OU0002",
+        position: posA,
+        first_name: "Test",
+        last_name: "Lifecycle",
+        basic_pay: { amount: "50000.00", currency: "INR" },
+      },
+    });
+    expect(hired.status).toBe(201);
+    const employeeId = (hired.body as { id: number }).id;
+
+    const write = await apiClient(["employees:write", "employees:read", "pay:read"]);
+
+    const transferred = await call("POST", `/employees/${employeeId}/actions`, {
+      token: write.token,
+      body: { action: "transfer", effective_date: "2026-01-10", company: "CO01", department: "OU0002", position: posB },
+    });
+    expect(transferred.status, JSON.stringify(transferred.body)).toBe(200);
+    expect((transferred.body as { org_assignment: { position: { code: string } } }).org_assignment.position.code).toBe(posB);
+
+    // posA is vacant again since the transfer freed it.
+    const promoted = await call("POST", `/employees/${employeeId}/actions`, {
+      token: write.token,
+      body: { action: "promotion", effective_date: "2026-01-20", position: posA, basic_pay: { amount: "60000.00", currency: "INR" } },
+    });
+    expect(promoted.status, JSON.stringify(promoted.body)).toBe(200);
+    expect((promoted.body as { basic_pay: { amount: { amount: string } } }).basic_pay.amount.amount).toBe("60000.00");
+
+    const pending = await one("SELECT id FROM pa_it0019_monitoring WHERE employee_id = ? AND status = 'Pending'", [employeeId]);
+    const confirmed = await call("POST", `/employees/${employeeId}/actions`, {
+      token: write.token,
+      body: { action: "confirmation", outcome: "confirm" },
+    });
+    expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
+    expect((await one("SELECT status FROM pa_it0019_monitoring WHERE id = ?", [Number(pending!.id)]))?.status).toBe("Confirmed");
+
+    await deriveEvents();
+    const events = await rawClient().execute({ sql: "SELECT type FROM int_event WHERE subject = ?", args: [`employees/${employeeId}`] });
+    const types = events.rows.map((r) => String(r.type));
+    expect(types).toContain("employee.transferred");
+    expect(types).toContain("employee.promoted");
+    expect(types).toContain("employee.confirmed");
+  });
+
+  it("lists and completes onboarding tasks, and lists and downloads a letter", async () => {
+    const hireClient = await apiClient(["employees:hire", "employees:read", "pay:read"]);
+    const hired = await call("POST", "/employees", {
+      token: hireClient.token,
+      body: {
+        effective_date: "2026-01-05",
+        company: "CO01",
+        personnel_area: "PA01",
+        department: "OU0002",
+        position: await vacantPosition(),
+        first_name: "Second",
+        last_name: "Lifecycle",
+        basic_pay: { amount: "50000.00", currency: "INR" },
+      },
+    });
+    expect(hired.status).toBe(201);
+    const employeeId = (hired.body as { id: number }).id;
+
+    const read = await apiClient(["employees:read"]);
+    const tasks = await call("GET", `/tasks?employee_id=${employeeId}&status=Pending`, { token: read.token });
+    expect(tasks.status).toBe(200);
+    const task = (tasks.body as { data: { id: number }[] }).data[0];
+    expect(task).toBeTruthy();
+
+    const write = await apiClient(["employees:write"]);
+    const done = await call("POST", `/tasks/${task.id}/complete`, { token: write.token });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect((done.body as { status: string }).status).toBe("Done");
+
+    const template = await one("SELECT id FROM pa_letter_template WHERE is_active = 1 LIMIT 1");
+    const issued = await issueLetter(systemActor("test"), { employeeId, templateId: Number(template!.id), issueDate: "2026-01-05" }, "test");
+    expect(issued.ok).toBe(true);
+    if (!issued.ok) return;
+
+    const letters = await call("GET", `/letters?employee_id=${employeeId}`, { token: read.token });
+    expect(letters.status).toBe(200);
+    expect((letters.body as { data: { id: number }[] }).data.some((l) => l.id === issued.value.id)).toBe(true);
+
+    const pdf = await call("GET", `/letters/${issued.value.id}/pdf`, { token: read.token });
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers.get("content-type")).toBe("application/pdf");
+    expect(Buffer.from(pdf.bytes!.slice(0, 5)).toString()).toBe("%PDF-");
   });
 });
 

@@ -268,6 +268,10 @@ describe("interview rounds", () => {
     expect(hired.employeeId).toBeGreaterThan(0);
     const closed = await one("SELECT status, is_published FROM rc_requisition WHERE code = ?", [requisition]);
     expect(closed).toMatchObject({ status: "Closed", is_published: 0 });
+
+    // Converting a candidate starts onboarding, the same as hiring on the screen.
+    const checklist = await one("SELECT * FROM pa_checklist WHERE employee_id = ?", [hired.employeeId!]);
+    expect(checklist).toBeTruthy();
   });
 
   it("are refused to someone who neither runs recruitment nor interviews", async () => {

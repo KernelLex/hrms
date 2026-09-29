@@ -101,14 +101,14 @@ The value is in the seams:
 
 | | |
 |---|---|
-| Phases complete | 0 to 9 (the original build), 10 to 13 of the extended plan. Part A runs to 24; Part B is 25. |
-| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page |
-| Database tables | 92, in 13 migrations (0000 to 0012) |
+| Phases complete | 0 to 9 (the original build), 10 to 14 of the extended plan. Part A runs to 24; Part B is 25. |
+| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page; phase 14 added 6: the Career tab, transfer and promotion wizards, My tasks, Probation due and Letter templates |
+| Database tables | 99, in 14 migrations (0000 to 0013) |
 | Engines | Time-slice, quota, payroll, tax, time evaluation; plus the job runner and the approval engine |
 | Permissions | 31, in ten groups; 3 built-in roles and a Recruiter role as the example |
-| Integration API | 50 endpoints under `/api/v1`, 21 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
-| Automated tests | **254 passing** in 29 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
-| UI audit | **276 of 276** role, screen and width combinations clean (`npm run audit:ui`), as four people at 1280 and 375 pixels |
+| Integration API | 55 endpoints under `/api/v1`, 26 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
+| Automated tests | **272 passing** in 31 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
+| UI audit | **292 of 292** role, screen and width combinations clean (`npm run audit:ui`), as four people at 1280 and 375 pixels |
 | CI | Typecheck, lint, tests, production build, UI audit and the mock ERP over HTTP on every push |
 | Pending on others | Cloudflare R2 (not enabled on the account), email delivery (no provider chosen), and the rest of phase 25 |
 
@@ -130,8 +130,9 @@ The value is in the seams:
 | 11 | Permissions and approvals | done |
 | 12 | Integration API and the two-way ERP link, with the recruitment workflow reworked | done |
 | 13 | Self-service and payslips | done |
-| 14 | Joining, moving and letters | **next** |
-| 15–24 | Org tools, leave policies, attendance, statutory payroll, loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
+| 14 | Joining, moving and letters | done |
+| 15 | Org and data tools | **next** |
+| 16–24 | Leave policies, attendance, statutory payroll, loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
 | 25 | Outside input: the ERP go-live, email, R2, e-signature and the rest | waits on you and the client (§9.6) |
 
 ### 3.3 Infrastructure
@@ -139,7 +140,7 @@ The value is in the seams:
 | Service | Status | Detail |
 |---|---|---|
 | GitHub | working | `KernelLex/hrms`; Actions runs CI on every push and pull request |
-| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0012 and seeded. One database: production and the demo are the same (§10). |
+| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0013 and seeded. One database: production and the demo are the same (§10). |
 | Vercel | working | Project `amogh24/hrms`; deploys `main` on push; Vercel Cron calls `/api/cron/tick` daily |
 | Email | recording only | No provider connected: every email is written to the outbox and readable on the Outbox screen, not sent |
 | Cloudflare R2 | pending | Not enabled on the Cloudflare account (API error 10042). Documents are stored in the database until it is (§5.8). |
@@ -161,10 +162,10 @@ The careers site, `/careers`, needs no account: the demo's HR executive role is 
 
 | Check | Result |
 |---|---|
-| `npm test` | 254 passing: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
+| `npm test` | 272 passing: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, onboarding checklists and tasks, transfers and promotions through the time-slice engine, probation confirm/extend/end, letters (merge, PDF, immutability), the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document, the guided-actions endpoint and its events), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
 | Mutation checks | Six deliberate bugs in the payroll and tax engines each fail a test; the outbox regression test fails on the old per-minute delivery key; the authorisation matrix fails when one Server Function's check is loosened |
-| `npm run audit:ui` | 276 of 276 clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
-| `npm run sandbox` | The mock ERP's 19 steps against a running app over HTTP, receiving real signed webhooks: 19 of 19 |
+| `npm run audit:ui` | 292 of 292 clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
+| `npm run sandbox` | The mock ERP's 20 steps against a running app over HTTP, receiving real signed webhooks: 20 of 20 |
 | `API.md` | Its reference is generated from the endpoint definitions; a test fails when it is stale |
 | `npx tsc --noEmit`, `npm run lint`, `next build` | clean |
 | CI | all of the above on GitHub Actions, on every push |
@@ -1451,11 +1452,10 @@ Technical choices that need nobody's input, taken here so Part A can proceed wit
 | Attendance devices until a vendor is chosen | CSV upload and a generic punch endpoint | Every device can export CSV, and any middleware can call an endpoint. |
 | Continuous integration | GitHub Actions running typecheck, lint, tests, build, the UI audit and the mock ERP against a local database | Needs no secrets, because tests never touch Turso. |
 
-### 9.5 Part A — phases 12 to 24
+### 9.5 Part A — phases 15 to 24
 
 | # | Phase | Roadmap features | Depends on |
 |---|---|---|---|
-| 14 | Joining, moving and letters | Onboarding checklists, probation and confirmation, transfers and promotions as actions, letters from templates | 13 |
 | 15 | Org and data tools | Headcount requests, bulk import, a drawn org chart | 11, 12 |
 | 16 | Leave policies | Policies by grade, regional holiday calendars, accrual with carry-forward and lapse, leave balance forecast, compensatory off, leave encashment | 11, 12 |
 | 17 | Attendance and shifts | Shift rosters, attendance devices (CSV and a generic endpoint), team attendance regularisation | 12, 16 |
@@ -1495,29 +1495,6 @@ flowchart LR
   P23 --> P25
   P15 --> P25
 ```
-
-#### Phase 14 — Joining, moving and letters
-
-**Goal.** The moments in an employee's life are guided actions with their paperwork, not raw record edits.
-
-**Features.** Onboarding checklists · Probation and confirmation · Transfers and promotions as actions · Letters from templates.
-
-**Build**
-
-| Part | What |
-|---|---|
-| Data | `pa_checklist_template` and its items (task, owner role, due days from the event), shared with offboarding in phase 20 · `pa_task` (employee, item, assignee, due, done by, done at) · `pa_it0019_monitoring` — SAP's dated reminders: probation end, contract end, visa expiry · `pa_letter_template` (kind, body with merge fields, version) · `pa_letter` (employee, template version, merged text as issued, stored document, issued by, status) |
-| Logic | The hire action — in Core HR, in recruitment's conversion, and through the API — creates the onboarding checklist. Probation end comes from the hire date and a policy; the manager is reminded ahead of it; confirmation is an approval with confirm, extend or end. **Transfer and promotion become guided actions like hiring:** one transaction writing the IT0000 action, org assignment and basic pay from an effective date through the time-slice engine, vacating and filling positions. A backdated promotion needs nothing new — phase 9's retro pays the arrears. Letters merge the record **as of the issue date**, render to PDF (phase 13), and are stored as the employee's documents. |
-| Screens | My tasks for anyone assigned · onboarding progress per joiner as a progress track (§8.9) · probation due list with confirm and extend · transfer and promotion wizards with a live summary panel, as the hire action has · letter templates with a merge-field picker and preview · "Issue letter" on the employee record |
-| API and events | `POST /v1/employees/{id}/actions` for transfer, promotion and confirmation, validated exactly like the wizards · `/v1/tasks`, so the ERP can close tasks it owns, such as issuing a laptop · `/v1/letters` with the issued PDF · `employee.transferred`, `employee.promoted`, `employee.confirmed`, `onboarding.completed`, `letter.issued` |
-
-**Done when**
-- Hiring someone creates their onboarding tasks with owners and dates.
-- A promotion effective next month writes action, assignment and pay in one transaction, and that month's payroll reads the new pay.
-- A backdated promotion pays arrears once.
-- The manager is reminded ahead of probation end.
-- An issued appointment letter matches the record as it stood on the issue date and cannot be edited afterwards.
-- The mock ERP receives `employee.promoted` with the new position, and the new pay if it holds `pay:read`.
 
 #### Phase 15 — Org and data tools
 
@@ -1814,10 +1791,10 @@ Kept to what belongs in the HR module of an ERP for an Indian company. Features 
 | Year-to-date on the payslip | Gross, tax and PF so far this year, which employees need for their own filing. | 13 | built |
 | Payslips by email | Posted payslips delivered as a PDF, password-protected. | 13, delivery in 25 | built, delivery in 25 |
 | Installable phone app | The phone layouts already exist; a web app manifest and a service worker make it installable. Payslips are not kept offline: nothing personal stays on the phone. | 13 | built |
-| Onboarding checklists | Laptop, accounts, documents, induction — tasks assigned from the hire action and tracked to done. | 14 | planned |
-| Probation and confirmation | A due date from the hire date, a manager's recommendation, and a confirmation action. | 14 | planned |
-| Transfers and promotions as actions | Guided actions like hiring, writing org assignment and pay together, effective from a date. | 14 | planned |
-| Letters from templates | Offer, appointment, experience and relieving letters filled from the record and stored as documents. | 14 | planned |
+| Onboarding checklists | Laptop, accounts, documents, induction — tasks assigned from the hire action and tracked to done. | 14 | built |
+| Probation and confirmation | A due date from the hire date, and a direct HR action to confirm, extend or end it. | 14 | built |
+| Transfers and promotions as actions | Guided actions like hiring, writing org assignment and pay together, effective from a date. | 14 | built |
+| Letters from templates | Appointment letters filled from the record and stored as documents; offer, experience and relieving letters use the same templates once those moments exist (phase 20, 22). | 14 | built |
 | Headcount requests | A manager asks for a new position; HR and finance approve it before a requisition opens. | 15 | planned |
 | Bulk import | Load employees and their history from a spreadsheet, with a check before anything is written. | 15 | planned |
 | A drawn org chart | The hierarchy as boxes and lines, not only an indented list. | 15 | planned |
@@ -2028,6 +2005,17 @@ The engine handles provident fund (the employee's share) and income tax. A real 
 ## 11. History
 
 What each phase delivered, newest first, and where the build differed from its plan. When a phase in §9 is finished, it moves here.
+
+### Phase 14 — Joining, moving and letters
+
+- **Onboarding**: hiring someone — from Core HR, from recruitment's conversion, or through the API — starts their checklist from the one active template, each task assigned to their reporting manager or to HR and dated from the hire date; the checklist finishes itself once every task is done. A new **My tasks** screen lists what is assigned to you, and `POST /tasks/{id}/complete` lets the ERP close one it owns, such as issuing a laptop.
+- **Probation**: a review is scheduled 90 days from the hire date. HR confirms it, extends it to a new date (the one it replaces stays on record), or ends the employment — the minimal primitive payroll already prorates a leaver by, not phase 20's full exit process. A **Probation due** screen lists what is due or overdue; HR is reminded once, the first time a review enters the window.
+- **Transfers and promotions** are guided actions like hiring: one transaction writes the IT0000 action, org assignment and — for a promotion — basic pay, through the time-slice engine, and vacates and fills the two positions. A backdated promotion needs nothing extra: the next payroll run's retro finds the newer basic-pay slice and pays the arrears.
+- **Letters**: HR keeps one or more letter kinds (**Letter templates**), each with a body of `{{merge_fields}}`; issuing one merges the template with the record as of the issue date and keeps the merged text verbatim, so it reads the same for good even if the record or the template changes afterwards. The Career tab (a new employee-record tab) shows onboarding progress, probation history and issued letters, with an Issue letter dialog.
+- **API and events**: `POST /employees/{id}/actions` (`transfer`, `promotion`, or `confirmation` with an outcome), `GET /tasks` and `POST /tasks/{id}/complete`, `GET /letters` and `GET /letters/{id}/pdf` (re-rendered from the stored text, not the template); `employee.transferred`, `employee.promoted`, `employee.confirmed`, `onboarding.completed`, `letter.issued`.
+- **Also shipped this phase** (asked for before it began): HR can delete a connected system that has never really called the API — no calls, deliveries, acknowledgements or sync issues on record; one that has is told to suspend it instead, so its history stays readable.
+- **Fixed on the way:** `hire()` and `convertToEmployee`'s "next employee number" both ordered `pa_employee.employee_number` as text to find the highest one — correct only by luck while every number has the same digit count, and already wrong for any row whose number does not start `EMP`. Caught by a test that mixed a hire with a `createPerson` test fixture (whose numbers sort above any real one); both now order by the number itself.
+- **Where it differs from the plan:** confirming probation is a **direct HR action**, not an approval — nobody but HR is asked to decide it, so there is no one else to route it to, and the live approval engine's binary decision was left alone rather than generalised for a three-outcome one. For the same reason, the review reminder goes to HR generally, not a specific reporting manager. The transfer and promotion screens are a single form each, not a numbered wizard with a live summary panel — the action is one decision, not the several hiring makes at once. Letters are read-only through the API: the ERP can list and download them, but issuing one — choosing a template — stays HR's own action, the way a letter is actually decided.
 
 ### Phase 13 — Self-service and payslips
 

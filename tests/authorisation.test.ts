@@ -9,6 +9,7 @@ import * as coreHr from "@/app/actions/core-hr";
 import * as corrections from "@/app/actions/corrections";
 import * as documents from "@/app/actions/documents";
 import * as integrations from "@/app/actions/integrations";
+import * as lifecycle from "@/app/actions/lifecycle";
 import * as notifications from "@/app/actions/notifications";
 import * as org from "@/app/actions/org";
 import * as payroll from "@/app/actions/payroll";
@@ -47,6 +48,7 @@ const MODULES = {
   corrections,
   documents,
   integrations,
+  lifecycle,
   notifications,
   org,
   payroll,
@@ -95,6 +97,16 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     retryIssue: ["integrations.manage"],
     discardIssue: ["integrations.manage"],
     resendJournal: ["payroll.post", "integrations.manage"],
+  },
+  lifecycle: {
+    completeTask: "signed-in",
+    confirmProbationAction: ["employee.edit"],
+    extendProbationAction: ["employee.edit"],
+    endProbationAction: ["employee.edit"],
+    transferEmployeeAction: ["employee.edit"],
+    promoteEmployeeAction: ["employee.edit"], // and pay.view: like hireEmployee
+    saveLetterTemplate: ["employee.edit"],
+    issueLetterAction: ["employee.edit"],
   },
   notifications: { openNotification: "signed-in", markAllRead: "signed-in", saveNotificationPrefs: "signed-in" },
   org: org_([

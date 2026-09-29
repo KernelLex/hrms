@@ -2,6 +2,7 @@ export * from "./_shared";
 export * from "./security";
 export * from "./org";
 export * from "./personnel";
+export * from "./lifecycle";
 export * from "./time";
 export * from "./payroll";
 export * from "./tax";

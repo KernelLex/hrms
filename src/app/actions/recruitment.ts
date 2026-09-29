@@ -28,6 +28,7 @@ import {
   now,
 } from "@/db/schema";
 import { toPaise } from "@/lib/money";
+import { startOnboarding } from "@/lib/services/checklist";
 import { documentSummary } from "@/lib/document-kinds";
 import {
   storeDocument,
@@ -806,12 +807,13 @@ export async function convertToEmployee(
     return fail(`${position.code} has already been filled.`);
   }
 
-  const [last] = await db
-    .select({ n: paEmployee.employeeNumber })
-    .from(paEmployee)
-    .orderBy(desc(paEmployee.employeeNumber))
-    .limit(1);
-  const employeeNumber = `EMP${(last ? Number(last.n.replace(/\D/g, "")) : 1000) + 1}`;
+  // Ordered by the number itself, not the text — see people.ts's hire().
+  const last = (
+    await rawClient().execute(
+      "SELECT employee_number AS n FROM pa_employee WHERE employee_number LIKE 'EMP%' ORDER BY CAST(SUBSTR(employee_number, 4) AS INTEGER) DESC LIMIT 1",
+    )
+  ).rows[0];
+  const employeeNumber = `EMP${(last ? Number(String(last.n).replace(/\D/g, "")) : 1000) + 1}`;
 
   // Split the candidate's name the way the hire form would have.
   const parts = candidate.fullName.trim().split(/\s+/);
@@ -960,6 +962,13 @@ export async function convertToEmployee(
         args: [createdAt, requisition.id],
       });
     }
+
+    await startOnboarding(tx, actor, {
+      employeeId,
+      positionCode: requisition.positionCode,
+      effectiveDate: hireDate,
+      createdBy: session.username,
+    });
 
     await tx.commit();
   } catch (err) {

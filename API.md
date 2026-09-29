@@ -442,6 +442,11 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `change_request.decided` | `employees:read` | HR decided a correction an employee asked for to their record. `data` says what, from when, and the outcome; an approved change also arrives as employee.updated. |
 | `candidate.hired` | `recruitment:read` | An offered candidate became an employee. `data` has the application and the new employee's id. |
 | `appraisal.finalised` | `performance:read` | Calibration made a rating final. `data` is the appraisal. |
+| `employee.transferred` | `employees:read` | An employee moved to a new position, department or company. `data` is the employee. |
+| `employee.promoted` | `employees:read` | An employee moved into a new position with new pay. `data` is the employee; the new basic pay needs pay:read. |
+| `employee.confirmed` | `employees:read` | A probation review confirmed someone's employment. `data` is the employee. |
+| `onboarding.completed` | `employees:read` | A new joiner's onboarding checklist finished — every task done. `data` is the employee. |
+| `letter.issued` | `employees:read` | A letter was issued to an employee from a template. `data` names it; the PDF is at /letters/{id}/pdf. |
 
 ### Error codes
 
@@ -482,6 +487,11 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | POST | [`/employees`](#post-employees) | `employees:hire` | Hire someone |
 | PATCH | [`/employees/{id}`](#patch-employees-id) | `employees:write` | Change fields the ERP owns |
 | PUT | [`/employees/{id}/external-ids`](#put-employees-id-external-ids) | `employees:write` | Record your id for an employee |
+| POST | [`/employees/{id}/actions`](#post-employees-id-actions) | `employees:write` | Transfer, promote, or decide a probation review |
+| GET | [`/tasks`](#get-tasks) | `employees:read` | List onboarding tasks |
+| POST | [`/tasks/{id}/complete`](#post-tasks-id-complete) | `employees:write` | Mark an onboarding task done |
+| GET | [`/letters`](#get-letters) | `employees:read` | List issued letters |
+| GET | [`/letters/{id}/pdf`](#get-letters-id-pdf) | `employees:read` | A letter as a PDF |
 | POST | [`/employees/{id}/change-requests`](#post-employees-id-change-requests) | `employees:write` | Ask for a correction |
 | GET | [`/change-requests`](#get-change-requests) | `employees:read` | List correction requests |
 | GET | [`/companies`](#get-companies) | `org:read` | List companies |
@@ -911,6 +921,76 @@ Content-Type: application/json
   "external_id": "EMP-0042"
 }
 ```
+
+#### POST /employees/{id}/actions
+
+<a id="post-employees-id-actions"></a>**Transfer, promote, or decide a probation review.** The same guided actions the Career screen offers: moving someone to a new position (`transfer`), moving them up with new pay (`promotion`), or deciding a pending probation review (`confirmation`, with `outcome` confirm, extend or end). A transfer or promotion arrives as `employee.transferred` or `employee.promoted`; a confirmation as `employee.confirmed`, or as `employee.status_changed` if the outcome ends the employment. A promotion needs pay:read.
+
+Needs `employees:write`. More fields with `pay:read` or `bank:read`. Send an `Idempotency-Key`. Returns an `ETag`; honours `If-Match`. Answers 200.
+
+| Path parameter | Meaning |
+| --- | --- |
+| `id` | The employee's id. |
+
+```http
+POST /api/v1/employees/3/actions
+Content-Type: application/json
+
+{
+  "action": "transfer",
+  "effective_date": "2026-11-01",
+  "company": "CO01",
+  "department": "OU0003",
+  "position": "PS0007"
+}
+```
+
+#### GET /tasks
+
+<a id="get-tasks"></a>**List onboarding tasks.** Tasks from onboarding checklists, oldest due first. Filter with `employee_id` and `status`.
+
+Needs `employees:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `employee_id` | integer |  |  |
+| `status` | `Pending` \\| `Done` |  |  |
+
+#### POST /tasks/{id}/complete
+
+<a id="post-tasks-id-complete"></a>**Mark an onboarding task done.** Marks one task done, as its assignee would. Once every task in the checklist is done, it finishes and `onboarding.completed` fires. Safe to call again on a task already done.
+
+Needs `employees:write`. Send an `Idempotency-Key`. Answers 200.
+
+| Path parameter | Meaning |
+| --- | --- |
+| `id` | The task's id. |
+
+#### GET /letters
+
+<a id="get-letters"></a>**List issued letters.** Letters issued from a template — appointment, experience, relieving, and so on — newest first. Filter with `employee_id`. The PDF is at `GET /letters/{id}/pdf`.
+
+Needs `employees:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `employee_id` | integer |  |  |
+
+#### GET /letters/{id}/pdf
+
+<a id="get-letters-id-pdf"></a>**A letter as a PDF.** One letter as the PDF issued, re-rendered from the text it was issued with — never from the template, which may have moved on since.
+
+Needs `employees:read`. Answers 200.
+
+| Path parameter | Meaning |
+| --- | --- |
+| `id` | The letter's id. |
 
 #### POST /employees/{id}/change-requests
 
