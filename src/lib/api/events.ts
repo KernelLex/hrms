@@ -52,6 +52,11 @@ export const EVENT_TYPES = {
   "employee.confirmed": { scope: "employees:read", description: "A probation review confirmed someone's employment. `data` is the employee." },
   "onboarding.completed": { scope: "employees:read", description: "A new joiner's onboarding checklist finished — every task done. `data` is the employee." },
   "letter.issued": { scope: "employees:read", description: "A letter was issued to an employee from a template. `data` names it; the PDF is at /letters/{id}/pdf." },
+  "headcount_request.decided": {
+    scope: "org:read",
+    description: "A headcount request was approved or rejected. `data` says which, and the position it opened, if any; an approval also arrives as position.changed.",
+  },
+  "import.completed": { scope: "org:read", description: "A bulk import finished. `data` is its counts: written, already on record, and could not be read." },
 } as const satisfies Record<string, { scope: Scope; description: string }>;
 
 export type EventType = keyof typeof EVENT_TYPES;
@@ -102,6 +107,12 @@ export function eventFor(c: ChangeRow): Derived | null {
   }
   if (c.entity === "pa_letter" && c.action === "create") {
     return { type: "letter.issued", subject: `letters/${c.entity_id}`, key: `letter:${c.entity_id}` };
+  }
+  if (c.entity === "om_headcount_request" && (after.status === "Approved" || after.status === "Rejected")) {
+    return { type: "headcount_request.decided", subject: `headcount-requests/${c.entity_id}`, key: `hcr:${c.entity_id}` };
+  }
+  if (c.entity === "app_import" && after.status === "Completed") {
+    return { type: "import.completed", subject: `imports/${c.entity_id}`, key: `import:${c.entity_id}` };
   }
   if (c.entity.startsWith("pa_it") && c.subject_employee_id) return emp("employee.updated", c.subject_employee_id);
   if (c.entity in ORG_KINDS) {
@@ -296,6 +307,36 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
       const r = await one("SELECT * FROM pa_letter WHERE id = ?", [Number(id)]);
       return r
         ? { id: Number(r.id), employee_id: Number(r.employee_id), kind: String(r.kind), issue_date: String(r.issue_date), issued_at: String(r.issued_at) }
+        : null;
+    }
+    case "headcount_request.decided": {
+      const r = await one("SELECT * FROM om_headcount_request WHERE id = ?", [Number(id)]);
+      if (!r) return null;
+      const { money } = await import("./format");
+      return {
+        id: Number(r.id),
+        org_unit_code: String(r.org_unit_code),
+        job_code: String(r.job_code),
+        title: String(r.title),
+        grade: r.grade ?? null,
+        budget: money(Number(r.budget_paise)),
+        status: String(r.status),
+        position_code: r.position_code ?? null,
+        decided_at: r.decided_at ?? null,
+      };
+    }
+    case "import.completed": {
+      const r = await one("SELECT * FROM app_import WHERE id = ?", [Number(id)]);
+      return r
+        ? {
+            id: Number(r.id),
+            kind: String(r.kind),
+            total_rows: Number(r.total_rows),
+            written_rows: Number(r.written_rows),
+            skipped_rows: Number(r.skipped_rows),
+            error_rows: Number(r.error_rows),
+            finished_at: r.finished_at ?? null,
+          }
         : null;
     }
   }

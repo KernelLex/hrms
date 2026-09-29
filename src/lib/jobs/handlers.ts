@@ -5,6 +5,7 @@ import { deliverOutbox } from "@/lib/email";
 import { processRunBatch } from "@/lib/engines/payroll";
 import { hrUserIds, notificationStatements, notify, usersForEmployees, type NotificationItem } from "@/lib/notifications";
 import { probationDue } from "@/lib/services/monitoring";
+import { getImport, runImportBatch } from "@/lib/services/imports";
 import { formatMonth, todayInIndia } from "@/lib/dates";
 import { enqueueJob, requeueJob } from "./queue";
 import { escalateOverdue } from "@/lib/workflow/engine";
@@ -199,6 +200,31 @@ export const HANDLERS: Record<string, JobHandler> = {
       const statements = [...publish, ...(mail?.statements ?? []), ...(await notificationStatements(items))];
       if (statements.length > 0) await rawClient().batch(statements, "write");
     }
+  },
+
+  /** Writes an import's rows a batch at a time, and continues until it is done. */
+  async "import.run"(payload, ctx) {
+    const { importId, createdBy, notifyUserId } = payload as { importId: number; createdBy: string; notifyUserId: number | null };
+    while (timeLeft(ctx) > 3_000) {
+      const progress = await runImportBatch(importId, createdBy);
+      if (progress.completed) {
+        const done = await getImport(importId);
+        if (done && notifyUserId) {
+          await notify([
+            {
+              userId: notifyUserId,
+              kind: "import.completed",
+              title: `Your import of ${done.totalRows} rows has finished`,
+              body: `${done.writtenRows} written, ${done.skippedRows} already on record, ${done.errorRows} could not be read.`,
+              link: `/org/imports/${importId}`,
+              dedupeKey: `import.completed:${importId}`,
+            },
+          ]);
+        }
+        return;
+      }
+    }
+    return { again: true };
   },
 
   /** When a cycle opens: everyone with a self review to write. */

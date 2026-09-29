@@ -184,6 +184,8 @@ type Facts = {
     amount_paise: number;
     for_period_id: number | null;
   }[];
+  /** What an imported employee earned and paid before this system held their history. */
+  openingBalance: { asOfYm: number; grossPaidPaise: number; tdsDeductedPaise: number } | null;
 };
 
 async function loadContext(financialYear: string): Promise<Context> {
@@ -288,11 +290,16 @@ async function loadFacts(
                 AND p.year * 100 + p.month BETWEEN ? AND ?`,
         args: [e, excludeRunId, fromYm, toYm],
       },
+      {
+        sql: `SELECT as_of_ym, gross_paid_paise, tds_deducted_paise FROM py_opening_balance
+              WHERE employee_id = ? AND financial_year = ?`,
+        args: [e, financialYear],
+      },
     ],
     "read",
   );
 
-  const [emp, basic, bank, recurring, absences, oneOffs, declaration, history, lines] = rs;
+  const [emp, basic, bank, recurring, absences, oneOffs, declaration, history, lines, openingBalance] = rs;
   if (emp.rows.length === 0) return null;
   const d = declaration.rows[0];
   const rows = <T>(r: (typeof rs)[number]) => r.rows as unknown as T[];
@@ -342,6 +349,13 @@ async function loadFacts(
       amount_paise: Number(l.amount_paise),
       for_period_id: l.for_period_id === null ? null : Number(l.for_period_id),
     })),
+    openingBalance: openingBalance.rows[0]
+      ? {
+          asOfYm: Number(openingBalance.rows[0].as_of_ym),
+          grossPaidPaise: Number(openingBalance.rows[0].gross_paid_paise),
+          tdsDeductedPaise: Number(openingBalance.rows[0].tds_deducted_paise),
+        }
+      : null,
   };
 }
 
@@ -614,7 +628,10 @@ function retroLines(
  *
  * Months before the system was in use, where there is no stored result, are
  * assumed paid at today's rate with an even share of the tax deducted; a
- * joiner's months before joining count as nothing.
+ * joiner's months before joining count as nothing. An imported employee's
+ * opening balance (services/imports.ts) replaces that assumption for the
+ * months it covers with what they actually earned and actually paid,
+ * bringing the projection back to the real figure the moment it is known.
  */
 function incomeTax(opts: {
   f: Facts;
@@ -634,19 +651,22 @@ function incomeTax(opts: {
     f.history.filter((h) => ym(h.year, h.month) <= current).map((h) => h.result_id),
   );
   const recordedLines = f.historyLines.filter((l) => recorded.has(l.result_id));
-  const taxablePaid = recordedLines
-    .filter((l) => l.kind === "Earning" && isTaxable(l.wage_type_code))
-    .reduce((s, l) => s + l.amount_paise, 0);
-  const tdsDeducted = recordedLines
-    .filter((l) => l.wage_type_code === "TDS")
-    .reduce((s, l) => s + l.amount_paise, 0);
+  const obAsOfYm = f.openingBalance?.asOfYm ?? 0;
+  const taxablePaid =
+    (f.openingBalance?.grossPaidPaise ?? 0) +
+    recordedLines
+      .filter((l) => l.kind === "Earning" && isTaxable(l.wage_type_code))
+      .reduce((s, l) => s + l.amount_paise, 0);
+  const tdsDeducted =
+    (f.openingBalance?.tdsDeductedPaise ?? 0) +
+    recordedLines.filter((l) => l.wage_type_code === "TDS").reduce((s, l) => s + l.amount_paise, 0);
 
   const regularMonths = new Set(
     f.history.filter((h) => h.run_type === "Regular").map((h) => ym(h.year, h.month)),
   );
   const months = monthsOfYear(ctx.financialYear).filter((m) => employedIn(f, m.year, m.month));
   const unrecorded = months.filter(
-    (m) => ym(m.year, m.month) < current && !regularMonths.has(ym(m.year, m.month)),
+    (m) => ym(m.year, m.month) < current && !regularMonths.has(ym(m.year, m.month)) && ym(m.year, m.month) > obAsOfYm,
   ).length;
   const future = months.filter((m) => ym(m.year, m.month) > current).length;
   // An off-cycle run before this month's regular run still expects it.

@@ -24,7 +24,7 @@ export type ProcessDef = {
   link: string;
 };
 
-export const PROCESSES: { leave: ProcessDef; correction: ProcessDef } = {
+export const PROCESSES: { leave: ProcessDef; correction: ProcessDef; headcount: ProcessDef } = {
   leave: {
     label: "Leave",
     overridePermission: "leave.decide_any",
@@ -39,6 +39,12 @@ export const PROCESSES: { leave: ProcessDef; correction: ProcessDef } = {
     // A changed bank account is how payroll fraud starts: two people, always.
     distinctApprovers: true,
     link: "/approvals?process=correction",
+  },
+  headcount: {
+    label: "Headcount requests",
+    overridePermission: "org.edit",
+    facts: {},
+    link: "/approvals?process=headcount",
   },
 };
 

@@ -8,6 +8,8 @@ import * as careers from "@/app/actions/careers";
 import * as coreHr from "@/app/actions/core-hr";
 import * as corrections from "@/app/actions/corrections";
 import * as documents from "@/app/actions/documents";
+import * as headcount from "@/app/actions/headcount";
+import * as imports from "@/app/actions/imports";
 import * as integrations from "@/app/actions/integrations";
 import * as lifecycle from "@/app/actions/lifecycle";
 import * as notifications from "@/app/actions/notifications";
@@ -47,6 +49,8 @@ const MODULES = {
   "core-hr": coreHr,
   corrections,
   documents,
+  headcount,
+  imports,
   integrations,
   lifecycle,
   notifications,
@@ -85,6 +89,12 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   // Only about the person themselves; HR decides in the approvals inbox.
   corrections: { requestChange: ["self.profile"], cancelChange: ["self.profile"] },
   documents: { uploadEmployeeDocument: ["employee.documents"], removeEmployeeDocument: ["employee.documents"] },
+  headcount: { requestHeadcount: ["employee.view_team", "org.edit"] },
+  imports: {
+    uploadImport: ["employee.edit"], // and org.edit: like hireEmployee
+    confirmImportAction: ["employee.edit"], // and org.edit: like hireEmployee
+    watchImport: ["org.view"],
+  },
   integrations: {
     createIntegrationClient: ["integrations.manage"],
     updateIntegrationClient: ["integrations.manage"],
@@ -200,7 +210,7 @@ const MATRIX: Record<string, Record<string, Rule>> = {
 function call(fn: (...args: never[]) => Promise<unknown>, name: string): Promise<unknown> {
   const f = fn as unknown as (...args: unknown[]) => Promise<unknown>;
   if (name === "searchPeople") return f("ab");
-  if (name === "watchRun" || name === "resumeRun") return f(0);
+  if (name === "watchRun" || name === "resumeRun" || name === "watchImport") return f(0);
   if (name === "markAllRead") return f();
   if (name === "openNotification") return f(new FormData());
   return f({}, new FormData());

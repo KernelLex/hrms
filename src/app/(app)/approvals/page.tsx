@@ -21,6 +21,7 @@ import {
 } from "@/components/ui";
 import { DecisionButtons } from "@/app/(app)/time/approvals/decision";
 import { CorrectionList } from "./corrections";
+import { HeadcountList } from "./headcount";
 
 /**
  * One inbox for everything waiting on this person, across processes, with a
@@ -134,6 +135,8 @@ export default async function ApprovalsPage(props: { searchParams: Promise<{ pro
             seeBank={can(session, "bank.view")}
             seeDocuments={can(session, "employee.view_all")}
           />
+        ) : process === "headcount" ? (
+          <HeadcountList rows={rows} steps={steps} />
         ) : (
           <Table>
             <thead>

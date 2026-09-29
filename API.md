@@ -447,6 +447,8 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `employee.confirmed` | `employees:read` | A probation review confirmed someone's employment. `data` is the employee. |
 | `onboarding.completed` | `employees:read` | A new joiner's onboarding checklist finished — every task done. `data` is the employee. |
 | `letter.issued` | `employees:read` | A letter was issued to an employee from a template. `data` names it; the PDF is at /letters/{id}/pdf. |
+| `headcount_request.decided` | `org:read` | A headcount request was approved or rejected. `data` says which, and the position it opened, if any; an approval also arrives as position.changed. |
+| `import.completed` | `org:read` | A bulk import finished. `data` is its counts: written, already on record, and could not be read. |
 
 ### Error codes
 
@@ -503,7 +505,14 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | PUT | [`/cost-centres/{code}`](#put-cost-centres-code) | `org:write` | Create or update a cost centre |
 | GET | [`/gl-accounts`](#get-gl-accounts) | `gl:read` | List the chart of accounts |
 | PUT | [`/gl-accounts/{code}`](#put-gl-accounts-code) | `gl:write` | Create or update an account |
+| GET | [`/org-chart`](#get-org-chart) | `org:read` | The org structure as a tree |
 | GET | [`/ownership`](#get-ownership) | any token | Who owns what |
+| POST | [`/headcount-requests`](#post-headcount-requests) | `org:write` | Ask for a new position |
+| GET | [`/headcount-requests`](#get-headcount-requests) | `org:read` | List headcount requests |
+| POST | [`/imports`](#post-imports) | any token | Check rows for import (dry run) |
+| GET | [`/imports/{id}`](#get-imports-id) | `org:read` | Read an import's status |
+| GET | [`/imports/{id}/rows`](#get-imports-id-rows) | `org:read` | Read an import's rows |
+| POST | [`/imports/{id}/confirm`](#post-imports-id-confirm) | any token | Write the rows that passed |
 | GET | [`/holidays`](#get-holidays) | `time:read` | List public holidays |
 | GET | [`/absences`](#get-absences) | `time:read` | List absences |
 | POST | [`/absences`](#post-absences) | `time:write` | Record an absence |
@@ -1145,6 +1154,127 @@ Content-Type: application/json
   "is_active": true
 }
 ```
+
+#### GET /org-chart
+
+<a id="get-org-chart"></a>**The org structure as a tree.** Departments nested under their parent, each with the positions that sit in it. A position names what it reports to, so the reporting line — which can cross departments — is reconstructable from the flat list even though the tree nests by department. For a company the client is not scoped to, nothing is returned.
+
+Needs `org:read`. Answers 200.
+
+#### POST /headcount-requests
+
+<a id="post-headcount-requests"></a>**Ask for a new position.** Files a headcount request against a department and job that already exist, and starts its approval (manager, then HR, then a finance role by default). Approved, it opens a vacant position — the same one recruitment opens a requisition against — and arrives as `headcount_request.decided`; the new position also arrives as `position.changed`.
+
+Needs `org:write`. Send an `Idempotency-Key`. Answers 201.
+
+| Body field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `org_unit_code` | string | yes |  |
+| `job_code` | string | yes |  |
+| `title` | string | yes |  |
+| `grade` | string, or null |  |  |
+| `budget` | Money | yes |  |
+| `reason` | string, or null |  |  |
+
+```http
+POST /api/v1/headcount-requests
+Content-Type: application/json
+
+{
+  "org_unit_code": "OU0002",
+  "job_code": "JB0001",
+  "title": "Backend engineer",
+  "grade": "L3",
+  "budget": {
+    "amount": "90000.00",
+    "currency": "INR"
+  },
+  "reason": "Growing the platform team."
+}
+```
+
+#### GET /headcount-requests
+
+<a id="get-headcount-requests"></a>**List headcount requests.** Oldest first. Filter with `status`.
+
+Needs `org:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` |  |  |
+
+#### POST /imports
+
+<a id="post-imports"></a>**Check rows for import (dry run).** Validates rows for one of the import kinds without writing anything, exactly as uploading a spreadsheet does — the same row-by-row checks, including whether each is already on record. Read the report (`GET /imports/{id}`, `GET /imports/{id}/rows`), then `POST /imports/{id}/confirm` to write what passed. Needs org:write for positions, employees:write for employees and opening balances.
+
+Any valid token. Send an `Idempotency-Key`. Answers 201.
+
+| Body field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `kind` | `org_structure` \\| `employees` \\| `opening_balances` | yes |  |
+| `rows` | array of object | yes |  |
+
+```http
+POST /api/v1/imports
+Content-Type: application/json
+
+{
+  "kind": "employees",
+  "rows": [
+    {
+      "employee_number": "EMP2050",
+      "first_name": "Meera",
+      "last_name": "Nair",
+      "hire_date": "2023-05-02",
+      "company_code": "CO01",
+      "org_unit_code": "OU0002",
+      "position_code": "PS0101",
+      "basic_pay": "68000",
+      "work_schedule_code": "WS01"
+    }
+  ]
+}
+```
+
+#### GET /imports/{id}
+
+<a id="get-imports-id"></a>**Read an import's status.** The counts so far: checked, written, already on record, and could not be read.
+
+Needs `org:read`. Answers 200.
+
+| Path parameter | Meaning |
+| --- | --- |
+| `id` | The import's id. |
+
+#### GET /imports/{id}/rows
+
+<a id="get-imports-id-rows"></a>**Read an import's rows.** Every row with its outcome and, for one that failed, why. Filter with `outcome`.
+
+Needs `org:read`. Answers 200.
+
+| Path parameter | Meaning |
+| --- | --- |
+| `id` | The import's id. |
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `outcome` | `ok` \\| `written` \\| `skipped` \\| `error` |  |  |
+
+#### POST /imports/{id}/confirm
+
+<a id="post-imports-id-confirm"></a>**Write the rows that passed.** Commits every row still marked `ok`, in the background — a batch at a time, so a large file does not depend on one request. Poll `GET /imports/{id}` for progress; a completed import arrives as `import.completed`.
+
+Any valid token. Send an `Idempotency-Key`. Answers 200.
+
+| Path parameter | Meaning |
+| --- | --- |
+| `id` | The import's id. |
 
 ### Payroll journal endpoints
 

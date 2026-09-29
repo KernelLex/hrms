@@ -92,6 +92,8 @@ export const omPosition = sqliteTable(
     isManager: integer("is_manager", { mode: "boolean" }).notNull().default(false),
     /** Set true when nobody holds the chair; recruitment opens requisitions against these. */
     isVacant: integer("is_vacant", { mode: "boolean" }).notNull().default(true),
+    /** The monthly cost HR budgeted for the chair, set when a headcount request opens it. */
+    budgetPaise: integer("budget_paise"),
     validFrom: text("valid_from").notNull(),
     validTo: text("valid_to").notNull(),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
@@ -118,3 +120,32 @@ export const omReportingLine = sqliteTable(
   },
   (t) => [index("ix_reportingline_position").on(t.positionCode)],
 );
+
+/**
+ * A manager asking to grow the structure: a new position, before it exists.
+ * Goes through the "headcount" approval flow; approving it opens the
+ * position (and its job and, if it is new, its department) with the budget
+ * asked for, ready for recruitment to open a requisition against.
+ */
+export const omHeadcountRequest = sqliteTable("om_headcount_request", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  orgUnitCode: text("org_unit_code")
+    .notNull()
+    .references(() => omOrgUnit.code),
+  jobCode: text("job_code")
+    .notNull()
+    .references(() => omJob.code),
+  title: text("title").notNull(),
+  grade: text("grade"),
+  budgetPaise: integer("budget_paise").notNull(),
+  reason: text("reason"),
+  requestedByEmployeeId: integer("requested_by_employee_id"),
+  requestedByName: text("requested_by_name").notNull(),
+  /** "Pending", "Approved", "Rejected" or "Cancelled" — mirrors the wf_request it drives. */
+  status: text("status").notNull().default("Pending"),
+  /** Set once approved: the position the request opened. */
+  positionCode: text("position_code").references(() => omPosition.code),
+  requestedAt: text("requested_at").notNull(),
+  decidedAt: text("decided_at"),
+  decisionNote: text("decision_note"),
+});

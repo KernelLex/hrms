@@ -14,6 +14,7 @@ const ITEMS: { href: string; label: string; countKey?: string }[] = [
   { href: "/org/positions", label: "Positions", countKey: "positions" },
   { href: "/org/reporting-lines", label: "Reporting lines", countKey: "lines" },
   { href: "/org/chart", label: "Org chart" },
+  { href: "/org/imports", label: "Imports" },
 ];
 
 export function OrgTabs({ counts }: { counts: TabCounts }) {
@@ -24,7 +25,7 @@ export function OrgTabs({ counts }: { counts: TabCounts }) {
         <Tab
           key={i.href}
           href={i.href}
-          active={pathname === i.href}
+          active={i.href === "/org/imports" ? pathname.startsWith(i.href) : pathname === i.href}
           count={i.countKey ? counts[i.countKey] : undefined}
         >
           {i.label}

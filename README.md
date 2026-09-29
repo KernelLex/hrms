@@ -45,8 +45,10 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 ### Organisation
 
 - Companies, locations, departments, jobs and positions, each with the dates it is valid for, so the structure has a history.
-- Reporting lines between positions, and an **org chart** drawn from them.
+- Reporting lines between positions, and an **org chart** drawn as boxes and lines you can search, collapse, pan and zoom — with a plain list alongside it for anyone who needs one.
 - Vacant positions, ready for hiring.
+- **Headcount requests**: a manager asks for a new position, with its budget; approved by their manager, HR and finance, it opens vacant and ready to hire against.
+- **Bulk import**: load positions, employees with their history, and opening balances — what someone earned, paid in tax and had left in leave before switching to this system — from a spreadsheet. Every row is checked before anything is written, and importing the same file twice changes nothing.
 
 ### Employee records
 
@@ -109,7 +111,7 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ### Approvals
 
-- **Approval routes you configure** for leave and for corrections to employee records: who approves each kind of request, extra steps for larger requests or bank changes, and HR brought in when a request waits too long.
+- **Approval routes you configure** for leave, corrections to employee records and headcount requests: who approves each kind of request, extra steps for larger requests or bank changes, and HR brought in when a request waits too long.
 - **Two people for a bank change**: the person who approved one step can never approve the next.
 - **One inbox** for everything waiting on each person.
 - **Delegation** while someone is away, recorded as "approved on behalf of".
@@ -140,7 +142,6 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ## Coming next
 
-- **Organisation**: requests for new positions with approval, bulk import from spreadsheets, and a drawn org chart.
 - **Leave**: policies by grade and location, state holiday calendars, monthly accrual with carry-forward and lapse, balance forecasts, compensatory off and leave encashment.
 - **Attendance**: shift rosters, attendance devices, and approving missed punches.
 - **Payroll**: salary structures and CTC; ESI, professional tax, labour welfare fund and the employer's PF share; the EPFO file; costs split across cost centres; loans and advances; reimbursement claims.

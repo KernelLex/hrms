@@ -34,6 +34,7 @@ import {
   CalendarClock,
   Globe,
   ListChecks,
+  Users2,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,7 @@ const ICONS: Record<string, LucideIcon> = {
   CalendarClock,
   Globe,
   ListChecks,
+  Users2,
 };
 
 type Item = {

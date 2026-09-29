@@ -63,7 +63,7 @@ describe("the catalogue", () => {
     const [h, m, e] = await Promise.all([hr, manager, employee].map((p) => accessFor(p.session)));
 
     expect(hrefs(h.permissions)).toEqual(expect.arrayContaining(["/org", "/core-hr", "/payroll", "/approvals", "/admin/roles", "/change-log"]));
-    expect(hrefs(m.permissions)).toEqual(["/me", "/core-hr", "/tasks", "/approvals", "/time/calendar", "/time/my-leave", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/recruitment/my-interviews", "/performance", "/performance/mine"]);
+    expect(hrefs(m.permissions)).toEqual(["/me", "/core-hr", "/tasks", "/headcount-requests", "/approvals", "/time/calendar", "/time/my-leave", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/recruitment/my-interviews", "/performance", "/performance/mine"]);
     expect(hrefs(e.permissions)).toEqual(["/me", "/tasks", "/time/my-leave", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/recruitment/my-interviews", "/performance/mine"]);
     expect(m.roleNames[0]).toBe("Manager");
   });

@@ -44,6 +44,7 @@ const ROUTES = [
   "/", "/me", "/reports", "/time/calendar",
   "/org", "/org/companies", "/org/personnel-areas", "/org/sub-areas", "/org/jobs",
   "/org/departments", "/org/positions", "/org/reporting-lines", "/org/chart",
+  "/org/imports", "/org/imports/new", "/org/imports/1", "/headcount-requests",
   "/core-hr", "/core-hr/hire", "/core-hr/mass-update", "/core-hr/probation", "/core-hr/letter-templates",
   "/core-hr/2/career", "/core-hr/2/transfer", "/core-hr/2/promote", "/tasks",
   "/time", "/time/absences", "/time/attendances", "/time/quotas", "/time/evaluation",
@@ -59,7 +60,7 @@ const ROUTES = [
   "/tax", "/tax/sections", "/tax/declarations", "/tax/register", "/tax/form16",
   "/inbox", "/inbox/preferences", "/change-log", "/outbox",
   "/approvals", "/admin/roles", "/admin/roles/new", "/admin/roles/HR_ADMIN", "/admin/roles/RECRUITER",
-  "/admin/approval-flows", "/admin/approval-flows/leave",
+  "/admin/approval-flows", "/admin/approval-flows/leave", "/admin/approval-flows/headcount",
   "/admin/integrations", "/admin/integrations/new", "/admin/integrations/ownership",
   "/admin/integrations/sync-issues", "/admin/integrations/reconciliation",
   // Public: the careers site candidates apply on.

@@ -297,3 +297,28 @@ export const pyStatutoryRemittance = sqliteTable(
   },
   (t) => [index("ix_remittance_run").on(t.runId)],
 );
+
+/**
+ * What an imported employee earned and paid in tax before this system held
+ * their history — one row per employee per financial year. The TDS estimate
+ * (engines/tax.ts) credits this instead of assuming today's rate for every
+ * month before go-live, so mid-year onboarding does not overtax the rest of
+ * the year. `asOfYm` is the last month it covers, as YYYYMM; only months
+ * after it are still projected.
+ */
+export const pyOpeningBalance = sqliteTable(
+  "py_opening_balance",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    financialYear: text("financial_year").notNull(),
+    asOfYm: integer("as_of_ym").notNull(),
+    grossPaidPaise: integer("gross_paid_paise").notNull().default(0),
+    tdsDeductedPaise: integer("tds_deducted_paise").notNull().default(0),
+    createdBy: text("created_by").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("ux_opening_balance_employee_year").on(t.employeeId, t.financialYear)],
+);

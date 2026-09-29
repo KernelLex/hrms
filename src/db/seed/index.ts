@@ -22,6 +22,8 @@ import { seedCorrections } from "./corrections";
 import { seedRecruitment } from "./recruitment";
 import { seedPerformance } from "./performance";
 import { seedLifecycle } from "./lifecycle";
+import { seedHeadcount } from "./headcount";
+import { seedImports } from "./imports";
 
 const OPEN = s.OPEN_ENDED;
 export const DEMO_PASSWORD = "demo1234";
@@ -207,6 +209,8 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   for (const sql of ADOPT_PENDING_LEAVE) await client.execute(sql);
   const correctionNotes = await seedCorrections(client);
   const lifecycleNotes = await seedLifecycle(client);
+  const headcountNotes = await seedHeadcount(client);
+  const importNotes = await seedImports(client);
 
   // Integration sandbox: known API credentials, only where asked for.
   const sandboxSecret = process.env.SANDBOX_CLIENT_SECRET?.trim();
@@ -223,6 +227,8 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     ...performanceNotes,
     ...correctionNotes,
     ...lifecycleNotes,
+    ...headcountNotes,
+    ...importNotes,
     ...sandboxNotes,
   ];
 }

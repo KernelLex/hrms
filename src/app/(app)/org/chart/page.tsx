@@ -3,17 +3,25 @@ import { Building2, Network, User, Waypoints } from "lucide-react";
 import { db } from "@/lib/db";
 import { omCompany, omOrgUnit, omPosition } from "@/db/schema";
 import { Card, CardHeader, PageHeader, EmptyState, Badge } from "@/components/ui";
+import { OrgChartSvg } from "./svg-chart";
+import { ChartViewToggle } from "./view-toggle";
 
 /**
  * OM-08 — the org chart.
  *
- * Read-only, derived entirely from the two self-referencing hierarchies:
+ * Derived entirely from the two self-referencing hierarchies:
  * `om_org_unit.parent_code` for the department tree, and
  * `om_position.reports_to_code` for the reporting line inside each department.
  *
  * A position whose manager sits in a different department is rendered at the
  * top of its own department rather than being hidden — otherwise a cross-team
  * reporting line would make a position disappear from the chart.
+ *
+ * Two views of the same read: boxes and lines, drawn client-side with pan,
+ * zoom, search and collapse; and this indented list, which stays the
+ * accessible one — screen readers and keyboard users get a plain nested
+ * list rather than an SVG canvas. Both read the same rows, fetched once,
+ * here, on the server.
  */
 
 type Unit = typeof omOrgUnit.$inferSelect;
@@ -135,33 +143,44 @@ export default async function OrgChartPage() {
           </EmptyState>
         </Card>
       ) : (
-        <div className="flex flex-col gap-6">
-          {companies.map((c) => {
-            const roots = (childUnits.get(null) ?? []).filter(
-              (u) => u.companyCode === c.code,
-            );
-            if (roots.length === 0) return null;
+        <ChartViewToggle
+          chart={
+            <OrgChartSvg
+              companies={companies.map((c) => ({ code: c.code, name: c.name }))}
+              units={units.map((u) => ({ code: u.code, name: u.name, parentCode: u.parentCode, companyCode: u.companyCode }))}
+              positions={positions.map((p) => ({ code: p.code, title: p.title, orgUnitCode: p.orgUnitCode, reportsToCode: p.reportsToCode, isVacant: p.isVacant }))}
+            />
+          }
+          list={
+            <div className="flex flex-col gap-6">
+              {companies.map((c) => {
+                const roots = (childUnits.get(null) ?? []).filter(
+                  (u) => u.companyCode === c.code,
+                );
+                if (roots.length === 0) return null;
 
-            return (
-              <Card key={c.code}>
-                <CardHeader title={c.name} description={c.code} />
-                <div className="px-3 pb-4">
-                  {roots.flatMap((u) => [
-                    <Row
-                      key={u.code}
-                      depth={0}
-                      icon={<Building2 />}
-                      name={u.name}
-                      code={u.code}
-                    />,
-                    ...renderPositions(u.code, 1),
-                    ...renderUnits(u.code, 1),
-                  ])}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+                return (
+                  <Card key={c.code}>
+                    <CardHeader title={c.name} description={c.code} />
+                    <div className="px-3 pb-4">
+                      {roots.flatMap((u) => [
+                        <Row
+                          key={u.code}
+                          depth={0}
+                          icon={<Building2 />}
+                          name={u.name}
+                          code={u.code}
+                        />,
+                        ...renderPositions(u.code, 1),
+                        ...renderUnits(u.code, 1),
+                      ])}
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          }
+        />
       )}
     </>
   );

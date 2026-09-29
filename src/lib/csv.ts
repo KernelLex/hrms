@@ -35,3 +35,64 @@ export function csvResponse(csv: string, fileName: string): Response {
     },
   });
 }
+
+/**
+ * Reads a spreadsheet's own CSV back: a header row naming each column, then
+ * one row per record, quoted fields honoured (a comma or a newline inside
+ * "quotes"), a doubled quote as an escaped one. Blank lines are skipped, so a
+ * trailing newline never becomes a phantom last row.
+ */
+export function parseCsv(text: string): Record<string, string>[] {
+  const body = text.replace(/^﻿/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  let i = 0;
+  const endField = () => {
+    row.push(field);
+    field = "";
+  };
+  const endRow = () => {
+    endField();
+    rows.push(row);
+    row = [];
+  };
+  while (i < body.length) {
+    const c = body[i];
+    if (inQuotes) {
+      if (c === '"' && body[i + 1] === '"') {
+        field += '"';
+        i += 2;
+        continue;
+      }
+      if (c === '"') {
+        inQuotes = false;
+        i += 1;
+        continue;
+      }
+      field += c;
+      i += 1;
+      continue;
+    }
+    if (c === '"') {
+      inQuotes = true;
+      i += 1;
+    } else if (c === ",") {
+      endField();
+      i += 1;
+    } else if (c === "\n") {
+      endRow();
+      i += 1;
+    } else {
+      field += c;
+      i += 1;
+    }
+  }
+  if (field !== "" || row.length > 0) endRow();
+
+  const nonEmpty = rows.filter((r) => !(r.length === 1 && r[0] === ""));
+  if (nonEmpty.length === 0) return [];
+  const header = nonEmpty[0].map((h) => h.trim());
+  return nonEmpty.slice(1).map((r) => Object.fromEntries(header.map((h, idx) => [h, (r[idx] ?? "").trim()])));
+}

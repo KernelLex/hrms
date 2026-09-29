@@ -8,6 +8,7 @@ import { PROBLEM_TYPES } from "@/lib/api/problem";
 import { runPayroll } from "@/lib/engines/payroll";
 import { generateBankFile, postToLedger } from "@/app/actions/payroll";
 import { issueLetter } from "@/lib/services/letters";
+import { startImport } from "@/lib/services/imports";
 import { systemActor } from "@/lib/change-log";
 import type { Endpoint } from "@/lib/api/router";
 import { apiClient, call, type TestClient } from "./support/api";
@@ -33,6 +34,8 @@ const SAMPLE_PATHS: Record<string, () => string> = {
   "/payroll/runs/{id}/results": () => `/payroll/runs/${ids.run}/results`,
   "/payroll/results/{id}/payslip": () => `/payroll/results/${ids.result}/payslip`,
   "/letters/{id}/pdf": () => `/letters/${ids.letter}/pdf`,
+  "/imports/{id}": () => `/imports/${ids.import}`,
+  "/imports/{id}/rows": () => `/imports/${ids.import}/rows`,
 };
 
 const concrete = (e: Endpoint) => e.path.replace(/\{\w+\}/g, "1");
@@ -71,6 +74,15 @@ beforeAll(async () => {
   );
   if (!issued.ok) throw new Error(issued.error);
   ids.letter = String(issued.value.id);
+
+  const started = await startImport(systemActor("test"), {
+    kind: "org_structure",
+    rows: [{ position_code: `PC${randomUUID().slice(0, 6).toUpperCase()}`, title: "Contract test role", org_unit_code: "OU0002", job_code: "JB0001" }],
+    fileName: null,
+    uploadedBy: "test",
+  });
+  if (!started.ok) throw new Error(started.error);
+  ids.import = String(started.value.id);
 });
 
 describe("every endpoint", () => {
@@ -223,6 +235,19 @@ describe("guards", () => {
     const third = await call("GET", "/companies", { token: c.token });
     expect(third.status).toBe(429);
     expect(third.headers.get("retry-after")).toBe("60");
+  });
+
+  it("import needs the scope that matches what is being imported, not just any write scope", async () => {
+    const orgOnly = await apiClient(["org:write"]);
+    const wrongKind = await call("POST", "/imports", { token: orgOnly.token, body: { kind: "employees", rows: [{ employee_number: "X" }] } });
+    expect(wrongKind.status).toBe(403);
+    expect((wrongKind.body as { code: string }).code).toBe("insufficient_scope");
+
+    const empOnly = await apiClient(["employees:write"]);
+    const rightKind = await call("POST", "/imports", { token: empOnly.token, body: { kind: "employees", rows: [{ employee_number: "X" }] } });
+    expect(rightKind.status).toBe(201);
+    const stillWrong = await call("POST", "/imports", { token: empOnly.token, body: { kind: "org_structure", rows: [{ position_code: "X" }] } });
+    expect(stillWrong.status).toBe(403);
   });
 
   it("keep each client to its companies", async () => {

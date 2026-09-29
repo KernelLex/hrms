@@ -57,6 +57,14 @@ export const NOTIFICATION_KINDS = {
     label: "Probation reviews due",
     description: "When someone's probation review is due soon, or overdue. Sent to HR.",
   },
+  "headcount_request.decided": {
+    label: "Decisions on my headcount requests",
+    description: "When your request for a new position is approved or rejected.",
+  },
+  "import.completed": {
+    label: "Imports I started",
+    description: "When a bulk import you confirmed finishes, with what was written and what failed.",
+  },
 } as const;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

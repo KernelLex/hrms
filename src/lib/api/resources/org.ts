@@ -91,6 +91,33 @@ const Position = z
     external_ids: z.record(z.string(), z.string()),
   })
   .meta({ id: "Position" });
+const OrgChartPosition = z
+  .object({
+    code: z.string(),
+    title: z.string(),
+    reports_to: z.string().nullable(),
+    is_manager: z.boolean(),
+    is_vacant: z.boolean(),
+    holder_employee_id: z.number().int().nullable(),
+  })
+  .meta({ id: "OrgChartPosition" });
+type OrgChartUnitT = {
+  code: string;
+  name: string;
+  company: string;
+  positions: z.infer<typeof OrgChartPosition>[];
+  children: OrgChartUnitT[];
+};
+const OrgChartUnit: z.ZodType<OrgChartUnitT> = z.lazy(() =>
+  z.object({
+    code: z.string(),
+    name: z.string(),
+    company: z.string(),
+    positions: z.array(OrgChartPosition),
+    children: z.array(OrgChartUnit),
+  }),
+).meta({ id: "OrgChartUnit" });
+
 export const CostCentre = z
   .object({ code: z.string(), name: z.string(), company: z.string().nullable(), is_active: z.boolean(), updated_at: z.string() })
   .meta({ id: "CostCentre" });
@@ -327,6 +354,59 @@ export const orgEndpoints: Endpoint[] = [
       if (!saved.ok) throw invalid(saved.error);
       const rep = glAccountOf(saved.value.row);
       return { status: saved.value.created ? 201 : 200, body: rep, headers: { ETag: etagOf(rep) } };
+    },
+  },
+  {
+    method: "GET",
+    path: "/org-chart",
+    tag: "Organisation",
+    summary: "The org structure as a tree",
+    description:
+      "Departments nested under their parent, each with the positions that sit in it. A position names what it reports to, so the reporting line — which can cross departments — is reconstructable from the flat list even though the tree nests by department. For a company the client is not scoped to, nothing is returned.",
+    scopes: ["org:read"],
+    response: z.object({ data: z.array(OrgChartUnit) }),
+    handler: async (ctx) => {
+      const c = companyWhere(ctx, "company_code");
+      const units = await rows(`SELECT code, name, parent_code, company_code FROM om_org_unit WHERE ${c.sql} AND is_active = 1 ORDER BY code`, c.args);
+      const unitCodes = new Set(units.map((u) => String(u.code)));
+      const positions = unitCodes.size
+        ? await rows(
+            `SELECT pos.*, (SELECT o.employee_id FROM pa_it0001_org_assignment o WHERE o.position_code = pos.code
+                              AND o.valid_from <= date('now') AND o.valid_to >= date('now') LIMIT 1) AS holder
+             FROM om_position pos WHERE pos.is_active = 1 AND pos.org_unit_code IN (${[...unitCodes].map(() => "?").join(", ")})`,
+            [...unitCodes],
+          )
+        : [];
+      const positionsByUnit = new Map<string, z.infer<typeof OrgChartPosition>[]>();
+      for (const p of positions) {
+        const unit = String(p.org_unit_code);
+        const list = positionsByUnit.get(unit) ?? [];
+        list.push({
+          code: String(p.code),
+          title: String(p.title),
+          reports_to: s(p.reports_to_code),
+          is_manager: bool(p.is_manager),
+          is_vacant: bool(p.is_vacant),
+          holder_employee_id: p.holder === null ? null : Number(p.holder),
+        });
+        positionsByUnit.set(unit, list);
+      }
+      const childrenOf = new Map<string | null, Record<string, unknown>[]>();
+      for (const u of units) {
+        const parent = s(u.parent_code);
+        const list = childrenOf.get(parent) ?? [];
+        list.push(u);
+        childrenOf.set(parent, list);
+      }
+      const build = (parent: string | null): z.infer<typeof OrgChartUnit>[] =>
+        (childrenOf.get(parent) ?? []).map((u) => ({
+          code: String(u.code),
+          name: String(u.name),
+          company: String(u.company_code),
+          positions: positionsByUnit.get(String(u.code)) ?? [],
+          children: build(String(u.code)),
+        }));
+      return { body: { data: build(null) } };
     },
   },
   {

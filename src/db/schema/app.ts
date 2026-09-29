@@ -232,3 +232,57 @@ export const appJobRun = sqliteTable(
   (t) => [index("ix_job_run_kind").on(t.kind, t.startedAt)],
 );
 
+/* ------------------------------------------------------------ bulk import */
+
+/**
+ * A spreadsheet loaded in bulk: the org structure, employees with their
+ * dated history, or opening balances. Uploading validates every row without
+ * writing anything (`status` "Validated"); confirming commits the rows that
+ * passed, a batch at a time, on the job table, so a large file never times
+ * out one request. The API's `POST /v1/imports` writes the same rows the
+ * same way, so a spreadsheet and the ERP's own bulk load run through one
+ * engine and one set of checks.
+ */
+export const appImport = sqliteTable(
+  "app_import",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** "org_structure", "employees" or "opening_balances". */
+    kind: text("kind").notNull(),
+    fileName: text("file_name"),
+    /** "Validating", "Validated", "Importing", "Completed" or "Failed". */
+    status: text("status").notNull().default("Validating"),
+    totalRows: integer("total_rows").notNull().default(0),
+    okRows: integer("ok_rows").notNull().default(0),
+    errorRows: integer("error_rows").notNull().default(0),
+    /** Rows already on record, left untouched — what makes a re-import a no-op. */
+    skippedRows: integer("skipped_rows").notNull().default(0),
+    writtenRows: integer("written_rows").notNull().default(0),
+    uploadedBy: text("uploaded_by").notNull(),
+    uploadedAt: text("uploaded_at").notNull(),
+    confirmedAt: text("confirmed_at"),
+    finishedAt: text("finished_at"),
+  },
+  (t) => [index("ix_import_status").on(t.status)],
+);
+
+/** One row of an import: what it held, and what came of it. */
+export const appImportRow = sqliteTable(
+  "app_import_row",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    importId: integer("import_id")
+      .notNull()
+      .references(() => appImport.id, { onDelete: "cascade" }),
+    rowNumber: integer("row_number").notNull(),
+    /** The natural key it names, for the report: an employee or position code. */
+    key: text("key"),
+    data: text("data").notNull(),
+    /** "ok" (validated, not yet written), "written", "skipped" or "error". */
+    outcome: text("outcome").notNull(),
+    /** What went wrong, or why it was skipped — one line each, as JSON. */
+    messages: text("messages"),
+  },
+  (t) => [index("ix_import_row_import").on(t.importId, t.rowNumber)],
+);
+

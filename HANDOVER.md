@@ -101,14 +101,14 @@ The value is in the seams:
 
 | | |
 |---|---|
-| Phases complete | 0 to 9 (the original build), 10 to 14 of the extended plan. Part A runs to 24; Part B is 25. |
-| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page; phase 14 added 6: the Career tab, transfer and promotion wizards, My tasks, Probation due and Letter templates |
-| Database tables | 99, in 14 migrations (0000 to 0013) |
-| Engines | Time-slice, quota, payroll, tax, time evaluation; plus the job runner and the approval engine |
-| Permissions | 31, in ten groups; 3 built-in roles and a Recruiter role as the example |
-| Integration API | 55 endpoints under `/api/v1`, 26 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
-| Automated tests | **272 passing** in 31 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
-| UI audit | **292 of 292** role, screen and width combinations clean (`npm run audit:ui`), as four people at 1280 and 375 pixels |
+| Phases complete | 0 to 9 (the original build), 10 to 15 of the extended plan. Part A runs to 24; Part B is 25. |
+| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page; phase 14 added 6: the Career tab, transfer and promotion wizards, My tasks, Probation due and Letter templates; phase 15 added 4: headcount requests, and the import wizard's upload, report and list screens — plus the org chart redrawn as boxes and lines, with the indented list kept beside it as the accessible view |
+| Database tables | 103, in 15 migrations (0000 to 0014) |
+| Engines | Time-slice, quota, payroll, tax, time evaluation; plus the job runner, the approval engine and the import engine |
+| Permissions | 31, in ten groups; 3 built-in roles, and Recruiter and Finance as examples of roles HR can create |
+| Integration API | 62 endpoints under `/api/v1`, 28 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
+| Automated tests | **286 passing** in 33 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
+| UI audit | **304 of 304** role, screen and width combinations clean (`npm run audit:ui`), as four people at 1280 and 375 pixels |
 | CI | Typecheck, lint, tests, production build, UI audit and the mock ERP over HTTP on every push |
 | Pending on others | Cloudflare R2 (not enabled on the account), email delivery (no provider chosen), and the rest of phase 25 |
 
@@ -131,8 +131,9 @@ The value is in the seams:
 | 12 | Integration API and the two-way ERP link, with the recruitment workflow reworked | done |
 | 13 | Self-service and payslips | done |
 | 14 | Joining, moving and letters | done |
-| 15 | Org and data tools | **next** |
-| 16–24 | Leave policies, attendance, statutory payroll, loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
+| 15 | Org and data tools | done |
+| 16 | Leave policies | **next** |
+| 17–24 | Attendance, statutory payroll, loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
 | 25 | Outside input: the ERP go-live, email, R2, e-signature and the rest | waits on you and the client (§9.6) |
 
 ### 3.3 Infrastructure
@@ -162,9 +163,9 @@ The careers site, `/careers`, needs no account: the demo's HR executive role is 
 
 | Check | Result |
 |---|---|
-| `npm test` | 272 passing: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, onboarding checklists and tasks, transfers and promotions through the time-slice engine, probation confirm/extend/end, letters (merge, PDF, immutability), the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document, the guided-actions endpoint and its events), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
+| `npm test` | 286 passing: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, onboarding checklists and tasks, transfers and promotions through the time-slice engine, probation confirm/extend/end, letters (merge, PDF, immutability), headcount requests through their approval to a vacant position recruitment can hire against, bulk import (dry run, confirm, batching 5,000 employees, re-importing a file writing nothing twice), opening balances reducing a projected month's TDS, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document, the guided-actions endpoint and its events, imports needing the scope that matches what is being imported), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
 | Mutation checks | Six deliberate bugs in the payroll and tax engines each fail a test; the outbox regression test fails on the old per-minute delivery key; the authorisation matrix fails when one Server Function's check is loosened |
-| `npm run audit:ui` | 292 of 292 clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
+| `npm run audit:ui` | 304 of 304 clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
 | `npm run sandbox` | The mock ERP's 20 steps against a running app over HTTP, receiving real signed webhooks: 20 of 20 |
 | `API.md` | Its reference is generated from the endpoint definitions; a test fails when it is stale |
 | `npx tsc --noEmit`, `npm run lint`, `next build` | clean |
@@ -1452,11 +1453,10 @@ Technical choices that need nobody's input, taken here so Part A can proceed wit
 | Attendance devices until a vendor is chosen | CSV upload and a generic punch endpoint | Every device can export CSV, and any middleware can call an endpoint. |
 | Continuous integration | GitHub Actions running typecheck, lint, tests, build, the UI audit and the mock ERP against a local database | Needs no secrets, because tests never touch Turso. |
 
-### 9.5 Part A — phases 15 to 24
+### 9.5 Part A — phases 16 to 24
 
 | # | Phase | Roadmap features | Depends on |
 |---|---|---|---|
-| 15 | Org and data tools | Headcount requests, bulk import, a drawn org chart | 11, 12 |
 | 16 | Leave policies | Policies by grade, regional holiday calendars, accrual with carry-forward and lapse, leave balance forecast, compensatory off, leave encashment | 11, 12 |
 | 17 | Attendance and shifts | Shift rosters, attendance devices (CSV and a generic endpoint), team attendance regularisation | 12, 16 |
 | 18 | Salary structures and statutory payroll | Salary structures and CTC; ESI, professional tax, LWF and employer PF; ECR file; split cost centres; accounting export | 11, 12 |
@@ -1495,27 +1495,6 @@ flowchart LR
   P23 --> P25
   P15 --> P25
 ```
-
-#### Phase 15 — Org and data tools
-
-**Goal.** Grow the structure through approvals, load real data in bulk, and see the organisation.
-
-**Features.** Headcount requests · Bulk import · A drawn org chart.
-
-**Build**
-
-| Part | What |
-|---|---|
-| Data | `om_headcount_request` (department, job, title, grade, budgeted cost, reason, approval request) · a budget on `om_position` · `app_import` (kind, file, status, counts, error report) · `app_import_row` (row, outcome, messages) |
-| Logic | A headcount request goes manager → HR → a finance role; approval creates the vacant position, and optionally its requisition. **Imports validate everything before writing anything:** a dry run with a report per row, then batches through the service layer on the job table. Templates cover the org structure; employees with their dated history (personal data, assignment, pay, bank); and **opening balances** — leave, and year-to-date pay and tax, which the TDS projection needs to be right mid-year. Re-importing the same file changes nothing. The org chart draws positions as boxes and lines in SVG: hairlines, ink text, vacancies as outlined badges, search, collapse, pan and zoom. The indented list stays as the accessible version. |
-| Screens | Headcount requests · an import wizard: choose, download the template, upload, read the dry run, confirm · a chart view on the org structure |
-| API and events | **Imports and the API share one engine**: `POST /v1/imports` takes the same files, and bulk JSON uses the same validation and dry run, so the ERP can load its existing employees with the same checks as a spreadsheet · `/v1/headcount-requests`, so a position budgeted in the ERP can be requested from there · `/v1/org-chart` as a tree · `headcount_request.decided`, `import.completed` |
-
-**Done when**
-- An approved headcount request produces a vacant position recruitment can open a requisition against.
-- 5,000 employees with history import through batches, and a second import of the same file changes nothing (test).
-- Imported year-to-date tax reduces the next month's TDS (test).
-- A 500-position chart renders and passes the UI audit.
 
 #### Phase 16 — Leave policies
 
@@ -1795,9 +1774,9 @@ Kept to what belongs in the HR module of an ERP for an Indian company. Features 
 | Probation and confirmation | A due date from the hire date, and a direct HR action to confirm, extend or end it. | 14 | built |
 | Transfers and promotions as actions | Guided actions like hiring, writing org assignment and pay together, effective from a date. | 14 | built |
 | Letters from templates | Appointment letters filled from the record and stored as documents; offer, experience and relieving letters use the same templates once those moments exist (phase 20, 22). | 14 | built |
-| Headcount requests | A manager asks for a new position; HR and finance approve it before a requisition opens. | 15 | planned |
-| Bulk import | Load employees and their history from a spreadsheet, with a check before anything is written. | 15 | planned |
-| A drawn org chart | The hierarchy as boxes and lines, not only an indented list. | 15 | planned |
+| Headcount requests | A manager asks for a new position; approved through HR and finance, it opens vacant, ready for recruitment to open a requisition against. | 15 | built |
+| Bulk import | Load positions, employees and opening balances from a spreadsheet, with a check before anything is written. | 15 | built |
+| A drawn org chart | The hierarchy as boxes and lines, not only an indented list. | 15 | built |
 | Policies by grade | Different entitlements for different grades or locations. | 16 | planned |
 | Regional holiday calendars | Holidays differ by state; today there is one national list. | 16 | planned |
 | Leave accrual, carry-forward and lapse | Entitlement earned monthly, part carried into next year, the rest lapsing, per policy. | 16 | planned |
@@ -2005,6 +1984,15 @@ The engine handles provident fund (the employee's share) and income tax. A real 
 ## 11. History
 
 What each phase delivered, newest first, and where the build differed from its plan. When a phase in §9 is finished, it moves here.
+
+### Phase 15 — Org and data tools
+
+- **Headcount requests**: a manager asks for a new position — department, job, title, grade and a monthly budget — and it goes through a new "headcount" approval flow: the requester's own manager, then HR, then a finance role, each configurable on the Approval flows screen like any other. Approved, it opens the position vacant and budgeted, exactly the way recruitment opens a requisition against any other vacant position; rejected, only the request is marked. A **Headcount requests** screen (top level, not under Org structure, so a manager without `org.view` can still reach it) lists a manager's own requests, or every one for HR. A seeded **Finance** role shows how HR would give the last step to someone real; nobody holds it in the demo, so it falls back to HR, exactly as the engine already does for any step nobody can fill.
+- **Bulk import**: one engine, three kinds — positions (against departments and jobs that already exist), employees with the dated records payroll needs, and opening balances. Uploading a spreadsheet checks every row — a natural key, references, required fields — and writes nothing; the report shows what would happen, row by row, before HR confirms it. Confirming writes only the rows that passed, a batch of 100 at a time on the job table, so a file of thousands does not depend on one request surviving. A row whose key is already on record is skipped, which is what makes importing the same file twice a no-op. `POST /v1/imports` runs the identical checks over JSON, so the ERP's own bulk load faces exactly what a spreadsheet does.
+- **Opening balances**: what an employee earned, paid in tax, and had left in leave before this system existed. Leave balances write straight into the quota an employee already has; pay and tax add a new `py_opening_balance` row that the TDS projection (`engines/payroll.ts`) now credits for the months it covers, in place of the assumption it always made for months before go-live — paid at today's rate with an even share of tax deducted. A mid-year switchover now taxes the rest of the year correctly instead of guessing.
+- **The org chart, drawn**: boxes and hairline connectors in SVG, laid out from the same two hierarchies the existing indented list already walked, with search (which expands and centres on a match without disturbing what you had collapsed), collapse, pan and zoom, and vacancies as an outlined badge. A Chart/List toggle keeps the indented list exactly as it was, as the accessible view — screen readers and keyboard users get a plain nested list, never the canvas.
+- **API and events**: `GET /org-chart` as a tree of departments, each with its positions; `POST /headcount-requests` and `GET /headcount-requests`; `POST /imports`, `GET /imports/{id}`, `GET /imports/{id}/rows` and `POST /imports/{id}/confirm`; `headcount_request.decided` and `import.completed`.
+- **Where it differs from the plan:** the org-structure import loads positions only, against departments and jobs that already exist, and a position naming one to report to must name one already on record — a spreadsheet loads the managers' positions before the ones that report to them, in a load of its own if needed. Companies, personnel areas and departments stay a by-hand edit on the org screens: rarer, smaller changes that are not worth a spreadsheet's row-by-row validation. An imported employee gets none of a fresh hire's onboarding checklist or probation review — they joined long before today, under a process this system never ran.
 
 ### Phase 14 — Joining, moving and letters
 
