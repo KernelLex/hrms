@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Check, Copy, Loader2, RotateCw } from "lucide-react";
 import {
   createIntegrationClient,
+  deleteIntegrationClient,
   discardIssue,
   replayWebhookDeliveries,
   retryIssue,
@@ -18,6 +19,7 @@ import {
 } from "@/app/actions/integrations";
 import { SCOPES, type Scope } from "@/lib/api/scopes";
 import { Button, Card, CardHeader, Notice } from "@/components/ui";
+import { Dialog } from "@/components/dialog";
 import { Field, FormError, FormGrid, Input, Select } from "@/components/inputs";
 import { useToast } from "@/components/toast";
 
@@ -277,6 +279,46 @@ export function OwnerSelect({ recordType, field, owner, allowInherit, label }: {
       </Button>
       {state.error ? <span className="text-[13px] text-danger">{state.error}</span> : null}
     </form>
+  );
+}
+
+/** Removes a system that was never really used; one with history is kept — suspend it instead. */
+export function DeleteClientButton({ pk, name }: { pk: number; name: string }) {
+  const router = useRouter();
+  const [open, setOpen] = React.useState(false);
+  const [state, action, pending] = useActionState(async (prev: ActionState, form: FormData) => {
+    const r = await deleteIntegrationClient(prev, form);
+    if (r.ok) router.push("/admin/integrations");
+    return r;
+  }, {} as ActionState);
+  return (
+    <>
+      <Button variant="ghost" onClick={() => setOpen(true)}>
+        Delete
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Delete ${name}?`}
+        description="Only a system that has never called the API and has no deliveries, acknowledgements or sync issues can be deleted. Its client id and secret stop working at once and cannot be undone."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
+              Keep it
+            </Button>
+            <Button type="submit" form="delete-client" variant="destructive" disabled={pending}>
+              {pending ? <Loader2 className="animate-spin" /> : null}
+              Delete system
+            </Button>
+          </>
+        }
+      >
+        <form id="delete-client" action={action} className="pb-1">
+          <input type="hidden" name="id" value={pk} />
+          {state.error ? <FormError>{state.error}</FormError> : null}
+        </form>
+      </Dialog>
+    </>
   );
 }
 

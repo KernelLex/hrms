@@ -86,6 +86,7 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   integrations: {
     createIntegrationClient: ["integrations.manage"],
     updateIntegrationClient: ["integrations.manage"],
+    deleteIntegrationClient: ["integrations.manage"],
     rotateIntegrationSecret: ["integrations.manage"],
     revokeIntegrationSecrets: ["integrations.manage"],
     setWebhookActive: ["integrations.manage"],

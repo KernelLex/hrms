@@ -4,7 +4,7 @@ import { rawClient } from "@/lib/db";
 import { clientDetail } from "@/lib/repositories/integrations";
 import { formatTimestamp } from "@/lib/dates";
 import { Card, CardHeader, EmptyState, KeyValue, KeyValueRow, Status, Table, Th, Tr, Td, TwoLine } from "@/components/ui";
-import { ClientSettingsForm, ReplayButton, SecretActions, WebhookToggle } from "../forms";
+import { ClientSettingsForm, DeleteClientButton, ReplayButton, SecretActions, WebhookToggle } from "../forms";
 
 const DELIVERY: Record<string, { label: string; tone: "done" | "waiting" | "problem" | "neutral" }> = {
   sent: { label: "Delivered", tone: "done" },
@@ -107,7 +107,7 @@ export default async function IntegrationPage(props: { params: Promise<{ id: str
 
       <div className="flex flex-col gap-6">
         <Card>
-          <CardHeader title={client.name} />
+          <CardHeader title={client.name} actions={<DeleteClientButton pk={client.pk} name={client.name} />} />
           <div className="px-6 pb-4">
             <KeyValue>
               <KeyValueRow label="Client id">

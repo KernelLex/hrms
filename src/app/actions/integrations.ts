@@ -95,6 +95,41 @@ export async function updateIntegrationClient(_prev: ActionState, form: FormData
   return OK;
 }
 
+/**
+ * Removes a system that was connected by mistake, or is no longer wanted,
+ * and was never really used — the same "kept for the audit trail" rule
+ * `deleteCandidate` and `deleteRequisition` follow. One that has taken
+ * calls, or has deliveries, acknowledgements or sync issues HR might still
+ * need to read, cannot be deleted; suspend it instead, from its settings,
+ * which stops it at once and keeps its history.
+ */
+export async function deleteIntegrationClient(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("integrations.manage");
+  const pk = Number(form.get("id"));
+  const client = (await rawClient().execute({ sql: "SELECT * FROM int_client WHERE id = ?", args: [pk] })).rows[0];
+  if (!client) return fail("That system is no longer registered.");
+
+  const used = await rawClient().execute({
+    sql: `SELECT
+            (SELECT COUNT(*) FROM int_request_log WHERE client_pk = ?1) +
+            (SELECT COUNT(*) FROM int_event WHERE caused_by_client_pk = ?1) +
+            (SELECT COUNT(*) FROM int_ack WHERE client_pk = ?1) +
+            (SELECT COUNT(*) FROM int_sync_issue WHERE client_pk = ?1) AS n`,
+    args: [pk],
+  });
+  if (Number(used.rows[0].n) > 0) {
+    return fail(`${String(client.name)} has called the API, or has deliveries, acknowledgements or sync issues on record. Suspend it instead, so that history stays readable.`);
+  }
+
+  // Cascades its secrets and webhook subscriptions.
+  await rawClient().execute({ sql: "DELETE FROM int_client WHERE id = ?", args: [pk] });
+  await recordChanges(actorOf(session), [
+    { entity: "int_client", entityId: String(client.client_id), action: "delete", before: { name: client.name, scopes: client.scopes, status: client.status } },
+  ]);
+  revalidateIntegrations();
+  return OK;
+}
+
 /** A new secret, shown once; the old ones keep working for a day. */
 export async function rotateIntegrationSecret(_prev: ActionState, form: FormData): Promise<ActionState> {
   const session = await requirePermission("integrations.manage");
