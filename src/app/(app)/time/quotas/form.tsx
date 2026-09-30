@@ -3,28 +3,29 @@
 import * as React from "react";
 import { useActionState } from "react";
 import { Loader2 } from "lucide-react";
-import { generateQuotaAction, type ActionState } from "@/app/actions/time";
+import { adjustQuotaAction, type ActionState } from "@/app/actions/time";
 import { Button, Card, CardHeader } from "@/components/ui";
 import { Field, Select, Input, FormGrid, FormError } from "@/components/inputs";
 import { useToast } from "@/components/toast";
 
-type QuotaType = { value: string; label: string; defaultDays: number };
+type QuotaType = { value: string; label: string };
+type Employee = { value: string; label: string };
 
-export function GenerateQuotaForm({
+export function AdjustQuotaForm({
   year,
   types,
+  employees,
 }: {
   year: number;
   types: QuotaType[];
+  employees: Employee[];
 }) {
   const toast = useToast();
-  const [typeCode, setTypeCode] = React.useState(types[0]?.value ?? "");
-  const selected = types.find((t) => t.value === typeCode);
 
   const [state, action, pending] = useActionState(
     async (prev: ActionState, form: FormData): Promise<ActionState> => {
-      const result = await generateQuotaAction(prev, form);
-      if (result.ok) toast("Quota generated");
+      const result = await adjustQuotaAction(prev, form);
+      if (result.ok) toast("Balance adjusted");
       return result;
     },
     {},
@@ -33,18 +34,22 @@ export function GenerateQuotaForm({
   return (
     <Card>
       <CardHeader
-        title="Generate entitlement"
-        description="Grants leave for every employee. Re-running adjusts the entitlement and leaves whatever has already been taken untouched."
+        title="Adjust a balance"
+        description="A one-off change outside what a policy accrues automatically — a correction, or a goodwill day. Positive days grant more; negative days take some away. Shows up on that person's ledger with the reason given."
       />
       <form action={action} className="px-6 pb-5">
         <FormGrid columns={3}>
+          <Field label="Employee" htmlFor="employeeId" required>
+            <Select id="employeeId" name="employeeId" defaultValue={employees[0]?.value}>
+              {employees.map((e) => (
+                <option key={e.value} value={e.value}>
+                  {e.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="Quota type" htmlFor="quotaTypeCode" required>
-            <Select
-              id="quotaTypeCode"
-              name="quotaTypeCode"
-              value={typeCode}
-              onChange={(e) => setTypeCode(e.target.value)}
-            >
+            <Select id="quotaTypeCode" name="quotaTypeCode" defaultValue={types[0]?.value}>
               {types.map((t) => (
                 <option key={t.value} value={t.value}>
                   {t.label}
@@ -55,21 +60,15 @@ export function GenerateQuotaForm({
           <Field label="Year" htmlFor="year" required>
             <Input id="year" name="year" defaultValue={String(year)} className="tabular" />
           </Field>
-          <Field
-            label="Entitlement days"
-            htmlFor="entitlementDays"
-            required
-            hint={selected ? `Standard is ${selected.defaultDays} days.` : undefined}
-          >
-            <Input
-              id="entitlementDays"
-              name="entitlementDays"
-              key={typeCode}
-              defaultValue={String(selected?.defaultDays ?? 0)}
-              className="tabular"
-            />
+          <Field label="Days" htmlFor="days" required hint="Negative to take days away.">
+            <Input id="days" name="days" type="number" step="0.5" placeholder="1" className="tabular" />
           </Field>
         </FormGrid>
+        <div className="mt-4">
+          <Field label="Reason" htmlFor="reason" required>
+            <Input id="reason" name="reason" placeholder="Goodwill day for covering the on-call rota" />
+          </Field>
+        </div>
 
         {state.error ? (
           <div className="mt-4">
@@ -80,7 +79,7 @@ export function GenerateQuotaForm({
         <div className="mt-4">
           <Button type="submit" variant="primary" disabled={pending}>
             {pending ? <Loader2 className="animate-spin" /> : null}
-            Generate quota
+            Adjust balance
           </Button>
         </div>
       </form>

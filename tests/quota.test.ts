@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, rawClient } from "@/lib/db";
 import { ptAbsenceQuota } from "@/db/schema";
+import { systemActor } from "@/lib/change-log";
 import {
   workingDaysBetween,
   calendarDaysBetween,
@@ -16,15 +17,25 @@ import { createBareEmployee } from "./support/fixtures";
  * units rather than floats.
  */
 
+const actor = systemActor("test");
+
 describe("working days", () => {
   it("skips weekends and public holidays", async () => {
-    // 24–25 Jan 2026 is a weekend; 26 Jan is Republic Day, which is seeded.
+    // 24–25 Jan 2026 is a weekend; 26 Jan is Republic Day, which is seeded
+    // onto every calendar.
     expect(calendarDaysBetween("2026-01-23", "2026-01-27")).toBe(5);
-    expect(await workingDaysBetween("2026-01-23", "2026-01-27")).toBe(2);
+    expect(await workingDaysBetween("2026-01-23", "2026-01-27", "NATIONAL")).toBe(2);
   });
 
   it("charges nothing for a pure weekend", async () => {
-    expect(await workingDaysBetween("2026-01-24", "2026-01-25")).toBe(0);
+    expect(await workingDaysBetween("2026-01-24", "2026-01-25", "NATIONAL")).toBe(0);
+  });
+
+  it("reads a different calendar's own holidays", async () => {
+    // Maharashtra Day, 1 May, is only on the Maharashtra calendar; 29 Apr–1
+    // May 2026 is a Wed–Fri with no weekend in the way.
+    expect(await workingDaysBetween("2026-04-29", "2026-05-01", "MAHARASHTRA")).toBe(2);
+    expect(await workingDaysBetween("2026-04-29", "2026-05-01", "NATIONAL")).toBe(3);
   });
 });
 
@@ -37,7 +48,27 @@ describe("quota engine", () => {
       })
     )?.usedHalfDays;
   const take = (days: number, year = 2026) =>
-    consumeQuota({ employeeId, quotaTypeCode: "ANNUAL", year, units: daysToUnits(days) });
+    consumeQuota(rawClient(), {
+      employeeId,
+      quotaTypeCode: "ANNUAL",
+      year,
+      units: daysToUnits(days),
+      refType: "test",
+      refId: "take",
+      createdBy: "test",
+      actor,
+    });
+  const give = (days: number, year = 2026) =>
+    restoreQuota(rawClient(), {
+      employeeId,
+      quotaTypeCode: "ANNUAL",
+      year,
+      units: daysToUnits(days),
+      refType: "test",
+      refId: "give",
+      createdBy: "test",
+      actor,
+    });
 
   beforeAll(async () => {
     employeeId = await createBareEmployee("ZZQ");
@@ -68,12 +99,7 @@ describe("quota engine", () => {
   });
 
   it("puts the days back when leave is restored", async () => {
-    await restoreQuota({
-      employeeId,
-      quotaTypeCode: "ANNUAL",
-      year: 2026,
-      units: daysToUnits(3.5),
-    });
+    await give(3.5);
     expect(await used()).toBe(0);
   });
 
@@ -82,10 +108,23 @@ describe("quota engine", () => {
     const results = await Promise.all([take(6), take(6)]);
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     expect(await used()).toBe(daysToUnits(6));
-    await restoreQuota({ employeeId, quotaTypeCode: "ANNUAL", year: 2026, units: daysToUnits(6) });
+    await give(6);
   });
 
   it("refuses to consume a quota that was never granted", async () => {
     expect((await take(1, 2099)).ok).toBe(false);
+  });
+
+  it("writes a ledger entry for every credit and debit, matching the balance", async () => {
+    const ledger = await rawClient().execute({
+      sql: "SELECT SUM(half_days) AS n FROM pt_quota_ledger WHERE employee_id = ? AND quota_type_code = 'ANNUAL' AND year = 2026",
+      args: [employeeId],
+    });
+    const quota = await db.query.ptAbsenceQuota.findFirst({ where: eq(ptAbsenceQuota.employeeId, employeeId) });
+    // The ledger only tracks what moved after the opening quota was written
+    // directly above; entitled stays put, so the ledger sum is -usedHalfDays.
+    // (Added rather than compared by sign, since both sides land on zero here
+    // and -0 !== 0 under Object.is.)
+    expect(Number(ledger.rows[0].n) + (quota?.usedHalfDays ?? 0)).toBe(0);
   });
 });

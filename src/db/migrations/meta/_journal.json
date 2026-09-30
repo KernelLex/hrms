@@ -106,6 +106,20 @@
       "when": 1790689910375,
       "tag": "0014_fine_king_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1790755311418,
+      "tag": "0015_leave_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1790755334425,
+      "tag": "0016_drop_holiday_region",
+      "breakpoints": true
     }
   ]
 }

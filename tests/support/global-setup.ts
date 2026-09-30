@@ -19,6 +19,13 @@ export default async function setup() {
     fs.rmSync(file + suffix, { force: true });
   }
 
+  // Matches vitest.config.mts's own test.env: some seed steps reach for the
+  // engines' rawClient() singleton (e.g. leave-policy accrual), which reads
+  // this directly and otherwise only sees it once a test file's worker
+  // process starts — after this setup has already run.
+  process.env.TURSO_DATABASE_URL = `file:${file}`;
+  process.env.TURSO_AUTH_TOKEN = "";
+
   const client = createClient({ url: `file:${file}` });
   await migrate(drizzle(client), {
     migrationsFolder: path.resolve(__dirname, "../../src/db/migrations"),

@@ -11,24 +11,27 @@ import {
   ptAttendance,
   ptLeaveRequest,
   ptHoliday,
+  ptHolidayCalendar,
+  ptLeavePolicy,
   ptWorkScheduleRule,
+  ACCRUAL_FREQUENCIES,
   now,
 } from "@/db/schema";
 import {
-  workingDaysBetween,
   restoreQuota,
-  generateQuotas,
+  postLedger,
   daysToUnits,
+  calendarFor,
+  holidaysBetween,
+  isWeekend,
 } from "@/lib/engines/quota";
+import { earnCompOff, encashLeave } from "@/lib/engines/leave-policy";
 import { evaluatePeriod } from "@/lib/engines/time-evaluation";
-import { actorOf, audited, changeStatement, recordChanges, recordCreate, recordDelete } from "@/lib/change-log";
-import { notificationStatements, type NotificationItem } from "@/lib/notifications";
-import { cancelStatements, decide, planRequest, requestFor, writeRequest } from "@/lib/workflow/engine";
+import { actorOf, audited, recordChanges, recordCreate, recordDelete } from "@/lib/change-log";
+import { cancelStatements, decide, requestFor } from "@/lib/workflow/engine";
 import { kickJobs } from "@/lib/jobs/runner";
-import { recordAbsence } from "@/lib/services/records";
-import { formatDateRange } from "@/lib/dates";
-import { getEmployee, fullName } from "@/lib/repositories/employees";
-import type { InStatement } from "@libsql/client";
+import { recordAbsence, submitLeave } from "@/lib/services/records";
+import { todayInIndia } from "@/lib/dates";
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -92,82 +95,8 @@ export async function submitLeaveRequest(
   if (!parsed.success) return fail(firstIssue(parsed.error));
   const v = parsed.data;
 
-  if (v.toDate < v.fromDate) return fail("The end date falls before the start date.");
-  if (v.isHalfDay && v.fromDate !== v.toDate) {
-    return fail("A half day covers a single date.");
-  }
-
-  const workingDays = await workingDaysBetween(v.fromDate, v.toDate);
-  if (workingDays === 0) {
-    return fail("That range has no working days in it — it falls on weekends or holidays.");
-  }
-  const payrollDays = Math.round((v.isHalfDay ? 0.5 : workingDays) * 2) / 2;
-
-  const [type, employee] = await Promise.all([
-    db.query.ptAbsenceType.findFirst({ where: eq(ptAbsenceType.code, v.absenceTypeCode) }),
-    getEmployee(employeeId),
-  ]);
-  const who = employee ? fullName(employee) : "Someone";
-  const range = formatDateRange(v.fromDate, v.toDate);
-  const what = `${payrollDays} working ${payrollDays === 1 ? "day" : "days"} of ${type?.name.toLowerCase() ?? "leave"}`;
-  const approval = {
-    process: "leave" as const,
-    subjectType: "pt_leave_request",
-    subjectEmployeeId: employeeId,
-    requester: session,
-    summary: `${who}: ${what}, ${range}`,
-    facts: { days: payrollDays },
-  };
-
-  // Who approves is read first; the request, its place on the approval flow,
-  // its change-log entry and the approvers' notifications then commit
-  // together: nobody is told about a request that was not saved.
-  let plan;
-  try {
-    plan = await planRequest({ ...approval, subjectId: 0 });
-  } catch (err) {
-    return fail(err instanceof Error ? err.message : "Leave approval is not set up.");
-  }
-
-  const tx = await rawClient().transaction("write");
-  try {
-    const inserted = await tx.execute({
-      sql: `INSERT INTO pt_leave_request
-              (employee_id, absence_type_code, from_date, to_date, is_half_day, payroll_days, reason, status, submitted_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?) RETURNING *`,
-      args: [employeeId, v.absenceTypeCode, v.fromDate, v.toDate, v.isHalfDay ? 1 : 0, payrollDays, v.reason, now()],
-    });
-    const request = inserted.rows[0] as unknown as Record<string, unknown>;
-    const requestId = Number(request.id);
-    await writeRequest(tx, { ...approval, subjectId: requestId }, plan);
-
-    const items: NotificationItem[] = plan.recipients.map((userId) => ({
-      userId,
-      kind: "leave.submitted" as const,
-      title: `${who} asked for leave: ${range}`,
-      body: `${what.charAt(0).toUpperCase()}${what.slice(1)}` + (v.reason ? `. "${v.reason}"` : "."),
-      link: "/approvals?process=leave",
-      dedupeKey: `leave.submitted:${requestId}:${userId}`,
-    }));
-
-    const statements: InStatement[] = [
-      changeStatement(actorOf(session), {
-        entity: "pt_leave_request",
-        entityId: requestId,
-        subjectEmployeeId: employeeId,
-        action: "create",
-        after: request,
-      })!,
-      ...(await notificationStatements(items)),
-    ];
-    for (const st of statements) await tx.execute(st);
-    await tx.commit();
-  } catch (err) {
-    await tx.rollback();
-    throw err;
-  } finally {
-    tx.close();
-  }
+  const result = await submitLeave(session, { employeeId, ...v });
+  if (!result.ok) return fail(result.error);
 
   await kickJobs();
   revalidateTime();
@@ -294,11 +223,15 @@ export async function deleteAbsence(
       where: eq(ptAbsenceType.code, absence.absenceTypeCode),
     });
     if (type?.countsAgainstQuota && type.quotaTypeCode) {
-      await restoreQuota({
+      await restoreQuota(rawClient(), {
         employeeId: absence.employeeId,
         quotaTypeCode: type.quotaTypeCode,
         year: Number(absence.startDate.slice(0, 4)),
         units: daysToUnits(absence.isHalfDay ? 0.5 : absence.payrollDays),
+        refType: "pt_it2001_absence",
+        refId: id,
+        createdBy: session.username,
+        actor: actorOf(session),
       });
     }
     const requestId = absence.sourceRequestId;
@@ -345,6 +278,21 @@ export async function saveAttendance(
     .returning();
   await recordCreate(actorOf(session), "pt_it2002_attendance", created.id, created, employeeId);
 
+  // Working a holiday or a weekend earns a comp-off, banked for later.
+  const calendar = await calendarFor(employeeId, date);
+  const holidays = await holidaysBetween(date, date, calendar);
+  if (isWeekend(date) || holidays.has(date)) {
+    await earnCompOff(rawClient(), {
+      employeeId,
+      earnedOn: date,
+      halfDays: hours >= 4 ? 2 : 1,
+      sourceAttendanceId: created.id,
+      note: `Worked ${holidays.has(date) ? "a holiday" : "a weekend"}`,
+      createdBy: session.username,
+      actor: actorOf(session),
+    });
+  }
+
   revalidateTime();
   return OK;
 }
@@ -364,38 +312,102 @@ export async function deleteAttendance(
 
 /* ------------------------------------------------------- TM-03 quotas */
 
-export async function generateQuotaAction(
+/**
+ * A one-off change to one person's balance, outside the policies that
+ * accrue it automatically — a correction, a goodwill day, anything that is
+ * not one of the ledger's other entry types. Always needs a reason: it is
+ * the only entry type a person chooses to write rather than the system
+ * deriving from a policy or a request.
+ */
+export async function adjustQuotaAction(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const session = await requirePermission("time.manage");
 
+  const employeeId = num(form.get("employeeId"));
   const year = num(form.get("year"));
   const quotaTypeCode = str(form.get("quotaTypeCode"));
-  const entitlementDays = num(form.get("entitlementDays"));
+  const days = num(form.get("days"));
+  const reason = str(form.get("reason"));
 
+  if (!employeeId) return fail("Choose an employee.");
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     return fail("Enter a year between 2000 and 2100.");
   }
   if (!quotaTypeCode) return fail("Choose a quota type.");
-  if (!Number.isFinite(entitlementDays) || entitlementDays < 0) {
-    return fail("Enter the entitlement in days.");
-  }
+  if (!Number.isFinite(days) || days === 0) return fail("Enter how many days to add or take away.");
+  if (!reason) return fail("Say why, for the record.");
 
-  const affected = await generateQuotas({ year, quotaTypeCode, entitlementDays });
-  if (affected > 0) {
-    await recordChanges(actorOf(session), [
-      {
-        entity: "pt_it2006_absence_quota",
-        entityId: `${quotaTypeCode}:${year}`,
-        action: "create",
-        after: { quota_type_code: quotaTypeCode, year, entitlement_days: entitlementDays, employees: affected },
-        reason: `Generated for ${affected} ${affected === 1 ? "employee" : "employees"}`,
-      },
-    ]);
+  const halfDays = daysToUnits(days);
+  const tx = await rawClient().transaction("write");
+  try {
+    await postLedger(tx, {
+      employeeId,
+      quotaTypeCode,
+      year,
+      entryType: "Adjustment",
+      halfDays,
+      note: reason,
+      createdBy: session.username,
+      actor: actorOf(session),
+    });
+    await tx.commit();
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  } finally {
+    tx.close();
   }
   revalidateTime();
-  if (affected === 0) return fail("There are no employees to generate quotas for.");
+  return OK;
+}
+
+/**
+ * Pays out days straight from a balance, at the governing policy's daily
+ * rate, within what it allows for the year — queued as a one-off payment
+ * the next payroll run pays like any other off-cycle line.
+ */
+export async function encashLeaveAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("time.manage");
+
+  const employeeId = num(form.get("employeeId"));
+  const year = num(form.get("year"));
+  const quotaTypeCode = str(form.get("quotaTypeCode"));
+  const days = num(form.get("days"));
+
+  if (!employeeId) return fail("Choose an employee.");
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    return fail("Enter a year between 2000 and 2100.");
+  }
+  if (!quotaTypeCode) return fail("Choose a quota type.");
+  if (!Number.isFinite(days) || days <= 0) return fail("Enter how many days to encash.");
+
+  const tx = await rawClient().transaction("write");
+  let result: Awaited<ReturnType<typeof encashLeave>>;
+  try {
+    result = await encashLeave(tx, {
+      employeeId,
+      quotaTypeCode,
+      year,
+      days,
+      paymentDate: todayInIndia(),
+      createdBy: session.username,
+      actor: actorOf(session),
+    });
+    if (result.ok) await tx.commit();
+    else await tx.rollback();
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  } finally {
+    tx.close();
+  }
+  if (!result.ok) return fail(result.reason);
+  revalidateTime();
   return OK;
 }
 
@@ -486,24 +498,25 @@ export async function saveHoliday(
   const original = opt(form.get("originalCode"));
   const date = str(form.get("date"));
   const name = str(form.get("name"));
-  const region = str(form.get("region")) || "National";
+  const calendarCode = str(form.get("calendarCode"));
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail("Enter a date.");
   if (!name) return fail("Enter a holiday name.");
+  if (!calendarCode) return fail("Choose a calendar.");
 
   if (original) {
     await audited(
       actorOf(session),
       { entity: "pt_holiday", entityId: Number(original) },
       () => db.query.ptHoliday.findFirst({ where: eq(ptHoliday.id, Number(original)) }),
-      () => db.update(ptHoliday).set({ date, name, region }).where(eq(ptHoliday.id, Number(original))),
+      () => db.update(ptHoliday).set({ date, name, calendarCode }).where(eq(ptHoliday.id, Number(original))),
     );
   } else {
     const existing = await db.query.ptHoliday.findFirst({
-      where: and(eq(ptHoliday.date, date), eq(ptHoliday.region, region)),
+      where: and(eq(ptHoliday.date, date), eq(ptHoliday.calendarCode, calendarCode)),
     });
-    if (existing) return fail(`${region} already has a holiday on ${date}.`);
-    const [created] = await db.insert(ptHoliday).values({ date, name, region }).returning();
+    if (existing) return fail(`That calendar already has a holiday on ${date}.`);
+    const [created] = await db.insert(ptHoliday).values({ date, name, calendarCode }).returning();
     await recordCreate(actorOf(session), "pt_holiday", created.id, created);
   }
 
@@ -520,6 +533,128 @@ export async function deleteHoliday(
   const before = await db.query.ptHoliday.findFirst({ where: eq(ptHoliday.id, id) });
   await db.delete(ptHoliday).where(eq(ptHoliday.id, id));
   if (before) await recordDelete(actorOf(session), "pt_holiday", id, before);
+  revalidateTime();
+  return OK;
+}
+
+/* ------------------------------------------------------ holiday calendars */
+
+export async function saveHolidayCalendar(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("time.manage");
+  const original = opt(form.get("originalCode"));
+  const parsed = z
+    .object({
+      code: z.string().trim().min(1, "Enter a code.").max(20).regex(/^[A-Za-z0-9_-]+$/, "A code may use only letters, numbers, hyphens and underscores."),
+      name: z.string().trim().min(1, "Enter a name."),
+      isActive: z.boolean(),
+    })
+    .safeParse({ code: str(form.get("code")).toUpperCase(), name: str(form.get("name")), isActive: bool(form.get("isActive")) });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+  const v = parsed.data;
+
+  if (!original) {
+    const existing = await db.query.ptHolidayCalendar.findFirst({ where: eq(ptHolidayCalendar.code, v.code) });
+    if (existing) return fail(`Calendar ${v.code} already exists.`);
+    const [created] = await db.insert(ptHolidayCalendar).values(v).returning();
+    await recordCreate(actorOf(session), "pt_holiday_calendar", created.code, created);
+  } else {
+    await audited(
+      actorOf(session),
+      { entity: "pt_holiday_calendar", entityId: original },
+      () => db.query.ptHolidayCalendar.findFirst({ where: eq(ptHolidayCalendar.code, original) }),
+      () => db.update(ptHolidayCalendar).set(v).where(eq(ptHolidayCalendar.code, original)),
+    );
+  }
+  revalidateTime();
+  return OK;
+}
+
+export async function deleteHolidayCalendar(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("time.manage");
+  const code = str(form.get("code"));
+  const inUse = await rawClient().execute({ sql: "SELECT 1 FROM om_personnel_area WHERE calendar_code = ? LIMIT 1", args: [code] });
+  if (inUse.rows.length > 0) return fail("A personnel area is still on this calendar. Move it to another calendar first.");
+  const before = await db.query.ptHolidayCalendar.findFirst({ where: eq(ptHolidayCalendar.code, code) });
+  await db.delete(ptHolidayCalendar).where(eq(ptHolidayCalendar.code, code));
+  if (before) await recordDelete(actorOf(session), "pt_holiday_calendar", code, before);
+  revalidateTime();
+  return OK;
+}
+
+/* -------------------------------------------------------- leave policies */
+
+const LeavePolicyInput = z.object({
+  code: z.string().trim().min(1, "Enter a code.").max(20).regex(/^[A-Za-z0-9_-]+$/, "A code may use only letters, numbers, hyphens and underscores."),
+  name: z.string().trim().min(1, "Enter a name."),
+  quotaTypeCode: z.string().min(1, "Choose a quota type."),
+  appliesToGrade: z.string().nullable(),
+  appliesToAreaCode: z.string().nullable(),
+  entitlementHalfDaysPerYear: z.number().int().min(0, "Enter the yearly entitlement, in days or half days."),
+  accrualFrequency: z.enum(ACCRUAL_FREQUENCIES),
+  proRataForJoiners: z.boolean(),
+  carryForwardCapHalfDays: z.number().int().min(0),
+  lapseOn: z.string().regex(/^\d{2}-\d{2}$/, "Enter the lapse date as MM-DD."),
+  encashableHalfDaysPerYear: z.number().int().min(0),
+  sandwichRule: z.boolean(),
+  isActive: z.boolean(),
+});
+
+export async function saveLeavePolicy(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("time.manage");
+  const original = opt(form.get("originalCode"));
+  const parsed = LeavePolicyInput.safeParse({
+    code: str(form.get("code")).toUpperCase(),
+    name: str(form.get("name")),
+    quotaTypeCode: str(form.get("quotaTypeCode")),
+    appliesToGrade: opt(form.get("appliesToGrade")),
+    appliesToAreaCode: opt(form.get("appliesToAreaCode")),
+    entitlementHalfDaysPerYear: daysToUnits(num(form.get("entitlementDays"))),
+    accrualFrequency: str(form.get("accrualFrequency")),
+    proRataForJoiners: bool(form.get("proRataForJoiners")),
+    carryForwardCapHalfDays: daysToUnits(num(form.get("carryForwardCapDays"))),
+    lapseOn: str(form.get("lapseOn")),
+    encashableHalfDaysPerYear: daysToUnits(num(form.get("encashableDays"))),
+    sandwichRule: bool(form.get("sandwichRule")),
+    isActive: bool(form.get("isActive")),
+  });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+  const v = parsed.data;
+
+  if (!original) {
+    const existing = await db.query.ptLeavePolicy.findFirst({ where: eq(ptLeavePolicy.code, v.code) });
+    if (existing) return fail(`Policy ${v.code} already exists.`);
+    const [created] = await db.insert(ptLeavePolicy).values({ ...v, createdAt: now() }).returning();
+    await recordCreate(actorOf(session), "pt_leave_policy", created.code, created);
+  } else {
+    await audited(
+      actorOf(session),
+      { entity: "pt_leave_policy", entityId: original },
+      () => db.query.ptLeavePolicy.findFirst({ where: eq(ptLeavePolicy.code, original) }),
+      () => db.update(ptLeavePolicy).set(v).where(eq(ptLeavePolicy.code, original)),
+    );
+  }
+  revalidateTime();
+  return OK;
+}
+
+export async function deleteLeavePolicy(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("time.manage");
+  const code = str(form.get("code"));
+  const before = await db.query.ptLeavePolicy.findFirst({ where: eq(ptLeavePolicy.code, code) });
+  await db.delete(ptLeavePolicy).where(eq(ptLeavePolicy.code, code));
+  if (before) await recordDelete(actorOf(session), "pt_leave_policy", code, before);
   revalidateTime();
   return OK;
 }

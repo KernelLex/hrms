@@ -1,7 +1,8 @@
 import "server-only";
 import type { InStatement } from "@libsql/client";
 import { changeStatement, type Actor as LogActor } from "@/lib/change-log";
-import { calendarDaysBetween, daysToUnits, shortfall } from "@/lib/engines/quota";
+import { calendarDaysBetween, consumeQuota, daysToUnits } from "@/lib/engines/quota";
+import { consumeCompOff } from "@/lib/engines/leave-policy";
 import { formatDateRange } from "@/lib/dates";
 import type { NotificationItem } from "@/lib/notifications";
 import type { Completion } from "./engine";
@@ -40,22 +41,26 @@ export const completeLeave: Completion = async (tx, request, outcome) => {
   if (claimed.rowsAffected === 0) {
     return { error: `That request was already ${String(leave.status).toLowerCase()}.` };
   }
-  const statements: (InStatement | null)[] = [
-    changeStatement(logActor, {
-      entity: "pt_leave_request",
-      entityId: id,
-      subjectEmployeeId: employeeId,
-      action: "update",
-      before: leave,
-      after: {
-        ...leave,
-        status: decision,
-        decided_at: decidedAt,
-        decided_by_employee_id: actor.employeeId,
-        decision_note: comment,
-      },
-    }),
-  ];
+  // Logged and executed right away, ahead of the quota debit below, so the
+  // change log reads in the same order the mutations actually happened —
+  // consumeQuota writes its own entry as soon as it runs.
+  const requestLogged = changeStatement(logActor, {
+    entity: "pt_leave_request",
+    entityId: id,
+    subjectEmployeeId: employeeId,
+    action: "update",
+    before: leave,
+    after: {
+      ...leave,
+      status: decision,
+      decided_at: decidedAt,
+      decided_by_employee_id: actor.employeeId,
+      decision_note: comment,
+    },
+  });
+  if (requestLogged) await tx.execute(requestLogged);
+
+  const statements: (InStatement | null)[] = [];
 
   if (approved) {
     const typeRow = await tx.execute({
@@ -65,36 +70,33 @@ export const completeLeave: Completion = async (tx, request, outcome) => {
     const type = typeRow.rows[0];
     if (!type) return { error: "That leave type no longer exists." };
 
-    if (Number(type.counts_against_quota) === 1 && type.quota_type_code) {
+    if (Number(type.is_comp_off) === 1) {
+      const units = daysToUnits(payrollDays);
+      const taken = await consumeCompOff(tx, {
+        employeeId,
+        halfDays: units,
+        refType: "pt_leave_request",
+        refId: id,
+        createdBy: actor.username,
+        actor: logActor,
+      });
+      if (!taken.ok) return { error: taken.reason };
+    } else if (Number(type.counts_against_quota) === 1 && type.quota_type_code) {
       const year = Number(fromDate.slice(0, 4));
       const units = daysToUnits(payrollDays);
-      const quotaRow = await tx.execute({
-        sql: `SELECT * FROM pt_it2006_absence_quota
-              WHERE employee_id = ? AND quota_type_code = ? AND year = ?`,
-        args: [employeeId, String(type.quota_type_code), year],
+      const taken = await consumeQuota(tx, {
+        employeeId,
+        quotaTypeCode: String(type.quota_type_code),
+        year,
+        units,
+        refType: "pt_leave_request",
+        refId: id,
+        createdBy: actor.username,
+        actor: logActor,
       });
-      const quota = quotaRow.rows[0] as unknown as Record<string, unknown> | undefined;
-      if (!quota) {
-        return { error: `No ${String(type.quota_type_code)} entitlement exists for ${year}. Generate the quota first.` };
+      if (!taken.ok) {
+        return { error: taken.reason.startsWith("No") ? `${taken.reason} Set up a leave policy first, or grant it directly on Quotas.` : taken.reason };
       }
-      const taken = await tx.execute({
-        sql: `UPDATE pt_it2006_absence_quota SET used_half_days = used_half_days + ?1
-              WHERE id = ?2 AND entitled_half_days - used_half_days >= ?1`,
-        args: [units, Number(quota.id)],
-      });
-      if (taken.rowsAffected === 0) {
-        return { error: shortfall(units, Number(quota.entitled_half_days) - Number(quota.used_half_days)) };
-      }
-      statements.push(
-        changeStatement(logActor, {
-          entity: "pt_it2006_absence_quota",
-          entityId: Number(quota.id),
-          subjectEmployeeId: employeeId,
-          action: "update",
-          before: quota,
-          after: { ...quota, used_half_days: Number(quota.used_half_days) + units },
-        }),
-      );
     }
 
     const absence = await tx.execute({

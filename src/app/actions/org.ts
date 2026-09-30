@@ -168,6 +168,7 @@ const AreaInput = z.object({
   companyCode: code("company"),
   name: label("area name"),
   location: z.string().trim().max(120).nullable(),
+  calendarCode: code("holiday calendar"),
   isActive: z.boolean(),
 });
 
@@ -183,6 +184,7 @@ export async function saveArea(
     companyCode: str(form.get("companyCode")),
     name: str(form.get("name")),
     location: optional(form.get("location")),
+    calendarCode: str(form.get("calendarCode")),
     isActive: bool(form.get("isActive")),
   });
   if (!parsed.success) return fail(firstIssue(parsed.error));

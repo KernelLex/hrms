@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
-import { ptAbsenceQuota, ptTimeEvaluation } from "@/db/schema";
+import { ptTimeEvaluation } from "@/db/schema";
 import { evaluatePeriod } from "@/lib/engines/time-evaluation";
-import { generateQuotas, consumeQuota, daysToUnits } from "@/lib/engines/quota";
 import { createArea, hireForPayroll } from "./support/payroll-fixtures";
 
-/** Time evaluation and quota generation, both rewritten to read in bulk. */
+/** Time evaluation, rewritten to read in bulk. Quota generation is now
+ * policy-driven; see tests/leave-policies.test.ts. */
 
 async function absence(employeeId: number, type: string, from: string, to: string, half = false) {
   await rawClient().execute({
@@ -49,21 +49,5 @@ describe("time evaluation", () => {
       .where(and(eq(ptTimeEvaluation.employeeId, id), eq(ptTimeEvaluation.periodMonth, 8)));
     expect(rows).toHaveLength(1);
     expect(rows[0].unpaidDays).toBe(1);
-  });
-});
-
-describe("quota generation", () => {
-  it("changes the entitlement on a re-run but keeps what has been used", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 1 }] });
-
-    await generateQuotas({ year: 2031, quotaTypeCode: "ANNUAL", entitlementDays: 18, employeeIds: [id] });
-    await consumeQuota({ employeeId: id, quotaTypeCode: "ANNUAL", year: 2031, units: daysToUnits(4) });
-    await generateQuotas({ year: 2031, quotaTypeCode: "ANNUAL", entitlementDays: 20, employeeIds: [id] });
-
-    const q = await db.query.ptAbsenceQuota.findFirst({
-      where: and(eq(ptAbsenceQuota.employeeId, id), eq(ptAbsenceQuota.year, 2031)),
-    });
-    expect(q).toMatchObject({ entitledHalfDays: daysToUnits(20), usedHalfDays: daysToUnits(4) });
   });
 });

@@ -87,7 +87,7 @@ describe("recording changes", () => {
   });
 
   it("logs master data that belongs to nobody in particular", async () => {
-    await saveHoliday({}, form({ date: "2031-01-26", name: "Republic Day", region: "ALL" }));
+    await saveHoliday({}, form({ date: "2031-01-26", name: "Republic Day", calendarCode: "NATIONAL" }));
     const { rows } = await listChanges({ entity: "pt_holiday" }, 10);
     expect(rows[0].after).toMatchObject({ date: "2031-01-26", name: "Republic Day" });
     expect(rows[0].subjectEmployeeId).toBeNull();

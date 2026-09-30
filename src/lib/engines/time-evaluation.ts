@@ -11,8 +11,11 @@ import { ptTimeEvaluation, now } from "@/db/schema";
  * unpaid days and overtime. Payroll computes its own unpaid days from the same
  * absences, date by date, so the two always agree.
  *
- * The whole period is read in three statements — holidays, absences,
- * attendance — however many people there are, and written back in one upsert.
+ * Working days come from each employee's own holiday calendar, by their
+ * personnel area at the end of the period — a plant in Maharashtra and the
+ * head office in Karnataka can have a different working-day count for the
+ * same month. The whole period is still read in a handful of statements,
+ * however many calendars are in play, and written back in one upsert.
  */
 
 export type EvaluationRow = {
@@ -24,6 +27,8 @@ export type EvaluationRow = {
   unpaidDays: number;
   overtimeHours: number;
 };
+
+const DEFAULT_CALENDAR = "NATIONAL";
 
 function monthRange(year: number, month: number): { from: string; to: string } {
   const from = `${year}-${String(month).padStart(2, "0")}-01`;
@@ -57,9 +62,15 @@ export async function evaluatePeriod(opts: {
   const filter = only ? `AND employee_id IN (${only.map(() => "?").join(", ")})` : "";
   const ids = only ?? [];
 
-  const [holidays, employees, absences, attendance] = await rawClient().batch(
+  const [calendars, holidays, employees, absences, attendance] = await rawClient().batch(
     [
-      { sql: "SELECT date FROM pt_holiday WHERE date BETWEEN ? AND ?", args: [from, to] },
+      {
+        sql: `SELECT o.employee_id, a.calendar_code FROM pa_it0001_org_assignment o
+              JOIN om_personnel_area a ON a.code = o.area_code
+              WHERE o.valid_from <= ? AND o.valid_to >= ? ${only ? `AND o.employee_id IN (${only.map(() => "?").join(", ")})` : ""}`,
+        args: [to, to, ...ids],
+      },
+      { sql: "SELECT date, calendar_code FROM pt_holiday WHERE date BETWEEN ? AND ?", args: [from, to] },
       {
         // Everyone employed at some point in the month.
         sql: `SELECT id, employee_number, hire_date, termination_date FROM pa_employee
@@ -86,8 +97,21 @@ export async function evaluatePeriod(opts: {
     "read",
   );
 
-  const holidaySet = new Set(holidays.rows.map((r) => String(r.date)));
-  const periodDates = workingDates(from, to, holidaySet);
+  const calendarOf = new Map(calendars.rows.map((r) => [Number(r.employee_id), String(r.calendar_code)]));
+  const holidaysByCalendar = new Map<string, Set<string>>();
+  for (const h of holidays.rows) {
+    const code = String(h.calendar_code);
+    if (!holidaysByCalendar.has(code)) holidaysByCalendar.set(code, new Set());
+    holidaysByCalendar.get(code)!.add(String(h.date));
+  }
+  const datesByCalendar = new Map<string, string[]>();
+  const workingDatesFor = (calendarCode: string): string[] => {
+    if (!datesByCalendar.has(calendarCode)) {
+      datesByCalendar.set(calendarCode, workingDates(from, to, holidaysByCalendar.get(calendarCode) ?? new Set()));
+    }
+    return datesByCalendar.get(calendarCode)!;
+  };
+
   const overtimeOf = new Map(attendance.rows.map((r) => [Number(r.employee_id), Number(r.hours)]));
   const absencesOf = new Map<number, typeof absences.rows>();
   for (const a of absences.rows) {
@@ -98,6 +122,7 @@ export async function evaluatePeriod(opts: {
 
   const results: EvaluationRow[] = employees.rows.map((e) => {
     const id = Number(e.id);
+    const periodDates = workingDatesFor(calendarOf.get(id) ?? DEFAULT_CALENDAR);
     const windowFrom = String(e.hire_date) > from ? String(e.hire_date) : from;
     const windowTo =
       e.termination_date && String(e.termination_date) < to ? String(e.termination_date) : to;

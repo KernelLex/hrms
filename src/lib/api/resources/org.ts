@@ -20,7 +20,7 @@ const s = (v: unknown) => (v === null || v === undefined ? null : String(v));
 const bool = (v: unknown) => Number(v) === 1;
 
 /** A simple list keyed by a code, paged by that code. */
-function codeList<T extends { code: string }>(opts: {
+export function codeList<T extends { code: string }>(opts: {
   path: string;
   summary: string;
   description?: string;

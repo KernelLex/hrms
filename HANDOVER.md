@@ -132,8 +132,9 @@ The value is in the seams:
 | 13 | Self-service and payslips | done |
 | 14 | Joining, moving and letters | done |
 | 15 | Org and data tools | done |
-| 16 | Leave policies | **next** |
-| 17–24 | Attendance, statutory payroll, loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
+| 16 | Leave policies | done |
+| 17 | Attendance and shifts | **next** |
+| 18–24 | Statutory payroll, loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
 | 25 | Outside input: the ERP go-live, email, R2, e-signature and the rest | waits on you and the client (§9.6) |
 
 ### 3.3 Infrastructure
@@ -141,7 +142,7 @@ The value is in the seams:
 | Service | Status | Detail |
 |---|---|---|
 | GitHub | working | `KernelLex/hrms`; Actions runs CI on every push and pull request |
-| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0014 and seeded. One database: production and the demo are the same (§10). |
+| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0016 and seeded. One database: production and the demo are the same (§10). |
 | Vercel | working | Project `amogh24/hrms`; deploys `main` on push; Vercel Cron calls `/api/cron/tick` daily |
 | Email | recording only | No provider connected: every email is written to the outbox and readable on the Outbox screen, not sent |
 | Cloudflare R2 | pending | Not enabled on the Cloudflare account (API error 10042). Documents are stored in the database until it is (§5.8). |
@@ -369,19 +370,19 @@ Turso is SQLite. Getting any of these wrong produces wrong numbers or a schema t
 
 ### 5.4 Data model
 
-92 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
+107 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
 
 | Prefix | Tables |
 |---|---|
-| `om_` | company, personnel_area, personnel_sub_area, job, org_unit, position, reporting_line, cost_centre (sent by the ERP) |
-| `pa_` | employee; change_request (a correction an employee asked for, and its approval); infotypes it0000_action, it0001_org_assignment, it0002_personal_data, it0006_address, it0007_planned_working_time, it0008_basic_pay, it0009_bank_details, it0021_family_member, it0105_communication |
-| `pt_` | absence_type, attendance_type, quota_type, it2001_absence, it2002_attendance, it2006_absence_quota, leave_request, work_schedule_rule, holiday, time_evaluation_result |
-| `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line (with the ERP's payment confirmation), gl_posting, gl_posting_line, statutory_remittance, gl_account (sent by the ERP) |
+| `om_` | company, personnel_area, personnel_sub_area, job, org_unit, position, reporting_line, cost_centre (sent by the ERP), headcount_request |
+| `pa_` | employee; change_request (a correction an employee asked for, and its approval); checklist, checklist_item, checklist_template, task, letter, letter_template; infotypes it0000_action, it0001_org_assignment, it0002_personal_data, it0006_address, it0007_planned_working_time, it0008_basic_pay, it0009_bank_details, it0019_monitoring (probation), it0021_family_member, it0105_communication |
+| `pt_` | absence_type, attendance_type, quota_type, it2001_absence, it2002_attendance, it2006_absence_quota (a running total; `quota_ledger` is the source of truth), leave_request, leave_policy, quota_ledger, comp_off, work_schedule_rule, holiday, holiday_calendar, time_evaluation_result |
+| `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, opening_balance, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line (with the ERP's payment confirmation), gl_posting, gl_posting_line, statutory_remittance, gl_account (sent by the ERP) |
 | `rc_` | requisition (the role as candidates read it, and whether it is published), candidate, application (channel, screening, the decision and the offer), application_stage_history, interview (each round: interviewer, time, place, status, rating, recommendation, notes), hire_conversion |
 | `pm_` | appraisal_template, appraisal_cycle, goal, appraisal, calibration, increment_recommendation |
 | `tds_` | section_master, tax_slab, employee_declaration, deduction_register, form16 |
 | `sec_` | app_user, role, user_role, permission, role_permission, role_scope |
-| `app_` | document (registry of stored files) and document_content (bytes when stored in the database), access_log (who read whose records), change_log (who changed what, before and after), notification and notification_pref, outbox (every message waiting to go), job and job_run |
+| `app_` | document (registry of stored files) and document_content (bytes when stored in the database), access_log (who read whose records), change_log (who changed what, before and after), notification and notification_pref, outbox (every message waiting to go), job and job_run, import and import_row (bulk loads) |
 | `wf_` | flow and step (versioned approval routes), request, assignee, action (each decision, on whose behalf), delegation |
 | `int_` | client and client_secret (connected systems), request_log, idempotency, external_ref (the ERP's ids against ours), ownership, ack (what the ERP booked or refused), sync_issue, event (the feed), webhook (subscriptions) |
 
@@ -394,10 +395,11 @@ Two tables the mockups lack but the features need: `py_payroll_result_line` (the
 The line between a prototype and a clickable mockup; everything else is forms over tables.
 
 1. **Time slices** (`engines/timeslice.ts`). Writing an infotype closes, trims, splits or replaces whatever it overlaps, in one transaction (`saveTimeSlice`, or `writeTimeSlice` inside a transaction the caller owns, such as an approval's), and logs each step to the change log in the same transaction. `readAsOf(table, employee, date)` answers "what was true then"; the as-of screen and every salary lookup use it. Addresses and contacts are sliced per type, so a new permanent address closes only the old permanent one. A new slice records the values it replaced, so the change log reads "₹65,000 → ₹72,000".
-2. **Quotas** (`engines/quota.ts`). Generates entitlements, counts working days against the schedule and holidays, and moves balances in half-day units with single conditional updates, so two approvals at once cannot overdraw.
-3. **Payroll** (`engines/payroll.ts`). Basic pay per working day employed, slice by slice, less unpaid days; percentage allowances; recurring and one-off payments; arrears for posted months whose inputs changed after they were paid; PF and TDS; net. `startRun` fixes who is in a run; `processRunBatch` calculates twenty at a time, each person's reads in one batch and writes in one atomic batch. Regular and off-cycle runs; each one-off paid exactly once. TDS projects the year from what has been paid, subtracts what was deducted, spreads the rest, and takes tax on a one-off in the month it is paid. Missing bank details produce the error row PY-03 shows.
-4. **Tax** (`engines/tax.ts`). Slabs by regime and year, standard deduction, 87A rebate with the new regime's marginal relief, 4% cess. Feeds monthly TDS and Form 16 Part B, so Part B reconciles with Part A.
-5. **Time evaluation** (`engines/time-evaluation.ts`). Turns absences and attendance into a period's paid days and overtime for payroll.
+2. **Quotas** (`engines/quota.ts`). Working days against each employee's own holiday calendar, resolved by their personnel area; balances in half-day units, moved by `postLedger` — the one place either the ledger (`pt_quota_ledger`) or its running-total summary is written, so a balance equals its ledger's sum by construction. Single conditional updates mean two approvals at once cannot overdraw. The sandwich rule pulls in the non-working days a request abuts, where the governing policy asks for it.
+3. **Leave policy** (`engines/leave-policy.ts`). What `pt_leave_policy` turns into ledger entries: `accrueForPeriod` grants a month's or a year's entitlement, pro-rated for a joiner where the policy says to, guarded against granting the same period twice; `runYearEnd` closes a year out against the policy governing it, capped carry-forward and lapse each their own entry; `forecastBalance` projects monthly accrual to a future date; `earnCompOff`, `consumeCompOff` (oldest-expiring first, splitting a grant) and `expireCompOffs`; `encashLeave` prices a day at basic pay over the month's working days and queues an IT0015 payment.
+4. **Payroll** (`engines/payroll.ts`). Basic pay per working day employed against the employee's own calendar, slice by slice, less unpaid days; percentage allowances; recurring and one-off payments (an encashment among them); arrears for posted months whose inputs changed after they were paid; PF and TDS; net. `startRun` fixes who is in a run; `processRunBatch` calculates twenty at a time, each person's reads in one batch and writes in one atomic batch. Regular and off-cycle runs; each one-off paid exactly once. TDS projects the year from what has been paid, subtracts what was deducted, spreads the rest, and takes tax on a one-off in the month it is paid. Missing bank details produce the error row PY-03 shows.
+5. **Tax** (`engines/tax.ts`). Slabs by regime and year, standard deduction, 87A rebate with the new regime's marginal relief, 4% cess. Feeds monthly TDS and Form 16 Part B, so Part B reconciles with Part A.
+6. **Time evaluation** (`engines/time-evaluation.ts`). Turns absences and attendance into a period's paid days and overtime for payroll, against each employee's own holiday calendar.
 
 ### 5.6 Platform services
 
@@ -1453,19 +1455,18 @@ Technical choices that need nobody's input, taken here so Part A can proceed wit
 | Attendance devices until a vendor is chosen | CSV upload and a generic punch endpoint | Every device can export CSV, and any middleware can call an endpoint. |
 | Continuous integration | GitHub Actions running typecheck, lint, tests, build, the UI audit and the mock ERP against a local database | Needs no secrets, because tests never touch Turso. |
 
-### 9.5 Part A — phases 16 to 24
+### 9.5 Part A — phases 17 to 24
 
 | # | Phase | Roadmap features | Depends on |
 |---|---|---|---|
-| 16 | Leave policies | Policies by grade, regional holiday calendars, accrual with carry-forward and lapse, leave balance forecast, compensatory off, leave encashment | 11, 12 |
-| 17 | Attendance and shifts | Shift rosters, attendance devices (CSV and a generic endpoint), team attendance regularisation | 12, 16 |
+| 17 | Attendance and shifts | Shift rosters, attendance devices (CSV and a generic endpoint), team attendance regularisation | 12 |
 | 18 | Salary structures and statutory payroll | Salary structures and CTC; ESI, professional tax, LWF and employer PF; ECR file; split cost centres; accounting export | 11, 12 |
 | 19 | Loans and reimbursements | Loans and advances, reimbursement claims | 18 |
-| 20 | Exit and full and final settlement | Exit management, full and final settlement | 14, 16, 18, 19 |
+| 20 | Exit and full and final settlement | Exit management, full and final settlement | 14, 18, 19 |
 | 21 | Tax completeness | Investment proofs (12BB), HRA from rent, tax regime comparison, Form 12BA, section 89 relief, 24Q return file | 18, 19 |
 | 22 | Recruitment | Careers page, interview scheduling, structured scorecards, offer letters (all but e-signature), referral tracking, recruitment analytics | 14, 18 |
 | 23 | Performance and learning | Goal check-ins, 360-degree feedback, calibration distribution, improvement plans, training catalogue and nominations, certification expiry | 11, 12 |
-| 24 | Analytics | Trends over time, leave liability, scheduled reports (all but email delivery) | 16, 18 |
+| 24 | Analytics | Trends over time, leave liability, scheduled reports (all but email delivery) | 18 |
 
 ```mermaid
 flowchart LR
@@ -1474,19 +1475,16 @@ flowchart LR
   P12 --> P13["13 Self-service and payslips"]
   P13 --> P14["14 Joining, moving, letters"]
   P12 --> P15["15 Org and data tools"]
-  P12 --> P16["16 Leave policies"]
-  P16 --> P17["17 Attendance and shifts"]
+  P12 --> P17["17 Attendance and shifts"]
   P12 --> P18["18 Structures and statutory"]
   P18 --> P19["19 Loans and claims"]
   P14 --> P20["20 Exit and F&F"]
-  P16 --> P20
   P19 --> P20
   P19 --> P21["21 Tax completeness"]
   P14 --> P22["22 Recruitment"]
   P18 --> P22
   P12 --> P23["23 Performance and learning"]
-  P16 --> P24["24 Analytics"]
-  P18 --> P24
+  P18 --> P24["24 Analytics"]
   P24 --> P25["25 Outside input"]
   P21 --> P25
   P22 --> P25
@@ -1494,29 +1492,8 @@ flowchart LR
   P17 --> P25
   P23 --> P25
   P15 --> P25
+  P16 --> P25
 ```
-
-#### Phase 16 — Leave policies
-
-**Goal.** Leave behaves the way Indian companies actually run it: by grade, by state, earned monthly, carried and lapsed.
-
-**Features.** Policies by grade · Regional holiday calendars · Leave accrual, carry-forward and lapse · Leave balance forecast · Compensatory off · Leave encashment.
-
-**Build**
-
-| Part | What |
-|---|---|
-| Data | `pt_leave_policy` (quota type; applies to grade, area or employment type; entitlement; accrual monthly or yearly; pro-rata for joiners; carry-forward cap; lapse date; encashable days; request limits; sandwich rule) · `pt_holiday_calendar`, with each personnel area on a calendar and optional holidays · `pt_quota_ledger` — every credit and debit (accrual, use, carry-forward, lapse, encashment, adjustment); the balance is the sum, and IT2006 becomes a summary of it · `pt_comp_off` (earned on, expires on, status) |
-| Logic | Monthly accrual and year-end jobs on the job table. **Working days use the employee's own calendar** everywhere: the quota engine, time evaluation and the payroll engine, which today uses one national list. The forecast is balance plus future accrual less approved future leave, to a date. Holiday or weekend work, once approved, earns compensatory off, which expires. Encashment — on request, at year end, or on exit — creates a one-off payment at the policy's daily rate, which payroll already knows how to pay. |
-| Screens | Leave policies · holiday calendars per area · the ledger behind a balance ("why do I have 11.5 days") · "On 31 Dec you will have 14 days" on My leave · compensatory off on My leave |
-| API and events | `/v1/leave-policies` · `/v1/holiday-calendars` · `/v1/leave-balances?as_of=` · `/v1/leave-ledger` · leave requests writable, so the ERP's own portal can apply for leave · `leave.requested`, `leave_balance.changed`, `leave.encashed` |
-
-**Done when**
-- Employees in Karnataka and Maharashtra get different holidays, and payroll prorates each against its own.
-- A joiner on 1 July gets a pro-rated entitlement.
-- Year end carries forward up to the cap and lapses the rest, each as a ledger entry.
-- A balance always equals its ledger sum (test).
-- Encashing five days pays through the next run.
 
 #### Phase 17 — Attendance and shifts
 
@@ -1984,6 +1961,17 @@ The engine handles provident fund (the employee's share) and income tax. A real 
 ## 11. History
 
 What each phase delivered, newest first, and where the build differed from its plan. When a phase in §9 is finished, it moves here.
+
+### Phase 16 — Leave policies
+
+- **Regional holiday calendars**: `pt_holiday_calendar` replaces the single national list; every personnel area sits on one (seeded: National, Karnataka, Maharashtra), and a holiday belongs to exactly one calendar rather than a free-text region. The quota engine, time evaluation and the payroll engine all resolve an employee's own calendar — by their personnel area, as of the date in question — so Karnataka and Maharashtra genuinely see different holidays and payroll prorates each against its own, in the same batched read each engine already did.
+- **The quota engine is now ledger-backed**: `pt_quota_ledger` holds every credit and debit — accrual, use, restore, carry-forward, lapse, encashment, a manual adjustment — and `pt_it2006_absence_quota` is a running total kept in the same statement as the ledger row that explains it, through one function (`postLedger`) that is the only place either table is written. A balance equalling its ledger's sum is true by construction, not convention, and is covered by its own test.
+- **Leave policies** (`pt_leave_policy`) say what a quota type actually grants: how much a year, to whom (by grade and personnel area, the most specific policy winning), accrued monthly or yearly, pro-rated for a joiner or not, a carry-forward cap, a lapse date, how much is encashable, an optional per-request cap, and whether the sandwich rule applies. A daily job accrues whatever period is due and, on each policy's own lapse date, closes last year's balance: up to the cap moves into the new year as its own ledger entry, the rest lapses as another — both dated, both explained, safe to run daily since each is checked against the ledger before it posts.
+- **Compensatory off**: recording attendance on a holiday or a weekend (HR's own screen, the direct action this codebase already used for a similar case) earns a comp-off, expiring in 90 days by default. Spending one, on a leave request against the new "Compensatory off" absence type, draws the earliest-expiring grant first and splits one across a partial use rather than wasting or double-spending it; a daily job expires whatever is still unspent past its date.
+- **Encashment**: paid at the current daily rate (basic pay over the month's own working days, by calendar) and queued as an IT0015 one-off payment — the same table an off-cycle bonus already uses — so the very next payroll run pays it without any encashment-specific code in the payroll engine itself. Capped by what the governing policy allows for the year, checked against what has already been encashed.
+- **Screens**: **Holiday calendars** and **Leave policies** (both plain master-data screens), a calendar picker on Personnel areas, and My leave gained a comp-off figure, a forecast ("on 31 Dec you will have —"), and a ledger detail table answering "why do I have what I have" from the same entries the balance is built from.
+- **API and events**: `GET /v1/leave-policies`, `GET /v1/holiday-calendars`, `GET /v1/leave-ledger`, `GET /v1/leave-balances?as_of=` (adds a `forecast_days` projection), and `POST /v1/leave-requests` — writable, so the ERP's own portal can apply for leave exactly as My leave does, provided the employee has a linked sign-in to route the approval to. New events `leave_balance.changed` and `leave.encashed`.
+- **Where it differs from the plan**: a policy matches by grade and personnel area only, not employment type — there is no employee-level field for it yet. A comp-off spent against a leave request that is later deleted is not restored, unlike quota-backed leave, which the deletion path already puts back; comp-off's per-grant expiry makes an "unspend" more than a balance nudge, and nothing in this phase's "done when" needed it. The forecast projects monthly accrual only; a yearly grant's exact date is not pinned down, so a yearly-accrual balance forecasts as today's balance, unmoved.
 
 ### Phase 15 — Org and data tools
 

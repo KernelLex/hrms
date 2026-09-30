@@ -197,12 +197,17 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     deleteAbsence: ["time.manage"],
     saveAttendance: ["time.manage"],
     deleteAttendance: ["time.manage"],
-    generateQuotaAction: ["time.manage"],
+    adjustQuotaAction: ["time.manage"],
+    encashLeaveAction: ["time.manage"],
     runTimeEvaluation: ["time.manage"],
     saveWorkSchedule: ["time.manage"],
     deleteWorkSchedule: ["time.manage"],
     saveHoliday: ["time.manage"],
     deleteHoliday: ["time.manage"],
+    saveHolidayCalendar: ["time.manage"],
+    deleteHolidayCalendar: ["time.manage"],
+    saveLeavePolicy: ["time.manage"],
+    deleteLeavePolicy: ["time.manage"],
   },
 };
 

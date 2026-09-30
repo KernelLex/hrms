@@ -449,6 +449,8 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `letter.issued` | `employees:read` | A letter was issued to an employee from a template. `data` names it; the PDF is at /letters/{id}/pdf. |
 | `headcount_request.decided` | `org:read` | A headcount request was approved or rejected. `data` says which, and the position it opened, if any; an approval also arrives as position.changed. |
 | `import.completed` | `org:read` | A bulk import finished. `data` is its counts: written, already on record, and could not be read. |
+| `leave_balance.changed` | `time:read` | A leave balance moved — accrual, use, a carry-forward, a lapse, an encashment or a manual adjustment. `data` is the balance and what last moved it. |
+| `leave.encashed` | `time:read` | Leave was encashed at the policy's daily rate, queued as a one-off payment. `data` is the payment; the amount needs pay:read. |
 
 ### Error codes
 
@@ -511,13 +513,17 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | GET | [`/headcount-requests`](#get-headcount-requests) | `org:read` | List headcount requests |
 | POST | [`/imports`](#post-imports) | any token | Check rows for import (dry run) |
 | GET | [`/imports/{id}`](#get-imports-id) | `org:read` | Read an import's status |
-| GET | [`/imports/{id}/rows`](#get-imports-id-rows) | `org:read` | Read an import's rows |
+| GET | [`/imports/{id}/rows`](#get-imports-id-rows) | any token | Read an import's rows |
 | POST | [`/imports/{id}/confirm`](#post-imports-id-confirm) | any token | Write the rows that passed |
 | GET | [`/holidays`](#get-holidays) | `time:read` | List public holidays |
 | GET | [`/absences`](#get-absences) | `time:read` | List absences |
 | POST | [`/absences`](#post-absences) | `time:write` | Record an absence |
 | GET | [`/leave-requests`](#get-leave-requests) | `time:read` | List leave requests |
 | GET | [`/leave-balances`](#get-leave-balances) | `time:read` | Leave balances for a year |
+| GET | [`/leave-ledger`](#get-leave-ledger) | `time:read` | Leave ledger entries |
+| GET | [`/leave-policies`](#get-leave-policies) | `time:read` | List leave policies |
+| GET | [`/holiday-calendars`](#get-holiday-calendars) | `time:read` | List holiday calendars |
+| POST | [`/leave-requests`](#post-leave-requests) | `time:write` | Submit a leave request |
 | GET | [`/payroll/periods`](#get-payroll-periods) | `payroll:read` | List payroll periods |
 | GET | [`/payroll/runs`](#get-payroll-runs) | `payroll:read` | List payroll runs |
 | GET | [`/payroll/runs/{id}/results`](#get-payroll-runs-id-results) | `payroll:read` + `pay:read` | The results of a run |
@@ -1251,9 +1257,9 @@ Needs `org:read`. Answers 200.
 
 #### GET /imports/{id}/rows
 
-<a id="get-imports-id-rows"></a>**Read an import's rows.** Every row with its outcome and, for one that failed, why. Filter with `outcome`.
+<a id="get-imports-id-rows"></a>**Read an import's rows.** Every row with its outcome and, for one that failed, why. Filter with `outcome`. A row's own data — an imported employee's pay, say — needs the scope that kind of import needs to write, not just org:read: the same boundary /employees and /payroll keep.
 
-Needs `org:read`. Answers 200.
+Any valid token. Answers 200.
 
 | Path parameter | Meaning |
 | --- | --- |
@@ -1370,7 +1376,7 @@ Content-Type: application/json
 
 #### GET /holidays
 
-<a id="get-holidays"></a>**List public holidays.**
+<a id="get-holidays"></a>**List public holidays.** Filter with `calendar` for one holiday calendar's own list — see /holiday-calendars for the codes.
 
 Needs `time:read`. Answers 200.
 
@@ -1380,6 +1386,7 @@ Needs `time:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `year` | integer |  |  |
+| `calendar` | string |  |  |
 
 #### GET /absences
 
@@ -1440,7 +1447,7 @@ Needs `time:read`. Answers 200.
 
 #### GET /leave-balances
 
-<a id="get-leave-balances"></a>**Leave balances for a year.**
+<a id="get-leave-balances"></a>**Leave balances for a year.** With `as_of`, each row also carries `forecast_days`: the balance projected to that date — the same forecast My leave shows, current balance plus whatever monthly accrual falls before then.
 
 Needs `time:read`. Answers 200.
 
@@ -1448,9 +1455,81 @@ Needs `time:read`. Answers 200.
 | --- | --- | --- | --- |
 | `year` | integer | yes |  |
 | `employee_id` | integer |  |  |
+| `as_of` | string |  | A date, YYYY-MM-DD. |
 
 ```http
 GET /api/v1/leave-balances?year=2026&employee_id=3
+```
+
+#### GET /leave-ledger
+
+<a id="get-leave-ledger"></a>**Leave ledger entries.** Every credit and debit behind a balance — accrual, use, a carry-forward, a lapse, an encashment or a manual adjustment. `employee_id` is required; filter further with `quota_type` and `year`.
+
+Needs `time:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `employee_id` | integer | yes |  |
+| `quota_type` | string |  |  |
+| `year` | integer |  |  |
+
+```http
+GET /api/v1/leave-ledger?employee_id=3&year=2026
+```
+
+#### GET /leave-policies
+
+<a id="get-leave-policies"></a>**List leave policies.**
+
+Needs `time:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+
+#### GET /holiday-calendars
+
+<a id="get-holiday-calendars"></a>**List holiday calendars.** The named holiday lists personnel areas sit on — see /holidays?calendar= for one calendar's own dates.
+
+Needs `time:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+
+#### POST /leave-requests
+
+<a id="post-leave-requests"></a>**Submit a leave request.** Applies for leave exactly as My leave does: working days and the sandwich rule computed from the employee's own calendar, then routed to whoever their flow assigns. The employee needs their own sign-in for this — one behind `self.leave` or `time.manage` — so the request has a real requester to exclude from approving it. Send an Idempotency-Key.
+
+Needs `time:write`. Send an `Idempotency-Key`. Answers 201.
+
+| Body field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `employee_id` | integer | yes |  |
+| `absence_type` | string | yes | An absence type code, such as 0200 for annual leave. |
+| `from_date` | string | yes | A date, YYYY-MM-DD. |
+| `to_date` | string | yes | A date, YYYY-MM-DD. |
+| `half_day` | boolean |  | Default `false`. |
+| `reason` | string, or null |  |  |
+
+```http
+POST /api/v1/leave-requests
+Content-Type: application/json
+
+{
+  "employee_id": 3,
+  "absence_type": "0200",
+  "from_date": "2026-11-10",
+  "to_date": "2026-11-12",
+  "reason": "Family event"
+}
 ```
 
 ### Payroll endpoints

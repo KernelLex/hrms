@@ -68,8 +68,11 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ### Time and leave
 
-- Leave types, yearly entitlements and balances, down to half days.
-- Leave requests that follow the approval route you set — by default the employee's manager, with HR added for longer leave.
+- **Leave policies by grade and location**: how much a year, earned monthly or all at once, a joiner's first year pro-rated automatically, a cap on what carries into the new year, and what lapses.
+- Balances down to half days, with a running ledger behind each one — "why do I have what I have" — and a forecast of what a balance will be on a future date.
+- **State holiday calendars**: give each location its own public holidays, and leave, payroll and time evaluation all use the right one automatically.
+- Leave requests that follow the approval route you set — by default the employee's manager, with HR added for longer leave — including the sandwich rule, where a policy asks for it.
+- **Compensatory off**, earned by working a holiday or a weekend and spent like leave, and **leave encashment**, paid through the next payroll run at the going daily rate.
 - Unpaid leave flows into payroll as a deduction automatically.
 - Attendance and overtime, work schedules, public holidays.
 - A monthly time evaluation that gives payroll each person's paid days and overtime.
@@ -135,14 +138,13 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 - **Each kind of record has one owner**, so the two systems never overwrite each other.
 - **HR can see the connection at work**: what was sent, what the ERP booked, anything that could not be applied, and a reconciliation of every payroll journal against what the ERP recorded.
 - **Remove a system you no longer use**: HR can delete one that has never really connected; one that has is suspended instead, so its history stays readable.
-- **Your ERP's own employee portal can use it too**: show payslips as PDFs, and send corrections employees ask for, which HR approves as usual.
+- **Your ERP's own employee portal can use it too**: show payslips as PDFs, let someone apply for leave, and send corrections employees ask for, which HR approves as usual.
 - **A complete guide for your ERP's developers**, a live reference, and a practice environment to build against.
 
 ---
 
 ## Coming next
 
-- **Leave**: policies by grade and location, state holiday calendars, monthly accrual with carry-forward and lapse, balance forecasts, compensatory off and leave encashment.
 - **Attendance**: shift rosters, attendance devices, and approving missed punches.
 - **Payroll**: salary structures and CTC; ESI, professional tax, labour welfare fund and the employer's PF share; the EPFO file; costs split across cost centres; loans and advances; reimbursement claims.
 - **Exits**: resignation, clearance, and full and final settlement.

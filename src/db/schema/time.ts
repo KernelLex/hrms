@@ -24,6 +24,8 @@ export const ptAbsenceType = sqliteTable("pt_absence_type", {
     .notNull()
     .default(true),
   quotaTypeCode: text("quota_type_code"),
+  /** Debits pt_comp_off (FIFO by expiry) instead of a quota's ledger when taken. */
+  isCompOff: integer("is_comp_off", { mode: "boolean" }).notNull().default(false),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
 });
 
@@ -146,15 +148,129 @@ export const ptLeaveRequest = sqliteTable(
 
 /* ------------------------------------------------------ holiday calendar */
 
+/** A named set of public holidays; each personnel area sits on one (org.ts). */
+export const ptHolidayCalendar = sqliteTable("pt_holiday_calendar", {
+  code: text("code").primaryKey(),
+  name: text("name").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+});
+
 export const ptHoliday = sqliteTable(
   "pt_holiday",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     date: text("date").notNull(),
     name: text("name").notNull(),
-    region: text("region").notNull().default("National"),
+    calendarCode: text("calendar_code")
+      .notNull()
+      .references(() => ptHolidayCalendar.code)
+      .default("NATIONAL"),
   },
-  (t) => [uniqueIndex("ux_holiday_date_region").on(t.date, t.region)],
+  (t) => [uniqueIndex("ux_holiday_date_calendar").on(t.date, t.calendarCode)],
+);
+
+/* ------------------------------------------------------- leave policies */
+
+export const ACCRUAL_FREQUENCIES = ["Monthly", "Yearly"] as const;
+export type AccrualFrequency = (typeof ACCRUAL_FREQUENCIES)[number];
+
+/**
+ * What a quota type actually grants: how much, to whom, how it is earned,
+ * and what happens to what is left over. Several policies can name the same
+ * quota type — grade L1-L3 gets one entitlement, L4 and above another — and
+ * the one an employee falls under is resolved by their grade (basic pay's
+ * `pay_scale_group`) and personnel area, the more specific policy winning a
+ * tie. `appliesToGrade` is unenforced by a foreign key on purpose: a grade
+ * is free text on the pay record, not a master table of its own.
+ */
+export const ptLeavePolicy = sqliteTable(
+  "pt_leave_policy",
+  {
+    code: text("code").primaryKey(),
+    name: text("name").notNull(),
+    quotaTypeCode: text("quota_type_code")
+      .notNull()
+      .references(() => ptQuotaType.code),
+    /** Null means every grade. */
+    appliesToGrade: text("applies_to_grade"),
+    /** Null means every area. Soft reference, like appliesToGrade. */
+    appliesToAreaCode: text("applies_to_area_code"),
+    /** In half-day units, so 0.5-day accrual is representable. */
+    entitlementHalfDaysPerYear: integer("entitlement_half_days_per_year").notNull(),
+    accrualFrequency: text("accrual_frequency").notNull().default("Yearly"),
+    proRataForJoiners: integer("pro_rata_for_joiners", { mode: "boolean" }).notNull().default(true),
+    carryForwardCapHalfDays: integer("carry_forward_cap_half_days").notNull().default(0),
+    /** The financial year end the cap and lapse are measured against, as MM-DD. */
+    lapseOn: text("lapse_on").notNull().default("03-31"),
+    encashableHalfDaysPerYear: integer("encashable_half_days_per_year").notNull().default(0),
+    /** Null means no limit beyond the balance itself. */
+    maxRequestHalfDays: integer("max_request_half_days"),
+    /** A leave day either side of a weekend or holiday takes the days between too. */
+    sandwichRule: integer("sandwich_rule", { mode: "boolean" }).notNull().default(false),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("ix_policy_quota_type").on(t.quotaTypeCode, t.isActive)],
+);
+
+/* --------------------------------------------------------- quota ledger */
+
+export const LEDGER_ENTRY_TYPES = ["Accrual", "Use", "Restore", "CarryForward", "Lapse", "Encashment", "Adjustment"] as const;
+export type LedgerEntryType = (typeof LEDGER_ENTRY_TYPES)[number];
+
+/**
+ * Every credit and debit against a balance — accrual, use, carry-forward,
+ * lapse, encashment, a manual adjustment. `pt_it2006_absence_quota` holds
+ * the running total for a fast read; this is where it comes from, and what
+ * "why do I have 11.5 days" answers itself from.
+ */
+export const ptQuotaLedger = sqliteTable(
+  "pt_quota_ledger",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    quotaTypeCode: text("quota_type_code")
+      .notNull()
+      .references(() => ptQuotaType.code),
+    year: integer("year").notNull(),
+    entryType: text("entry_type").notNull(),
+    /** Signed: a credit is positive, a debit negative. */
+    halfDays: integer("half_days").notNull(),
+    note: text("note"),
+    /** What caused it: "pt_leave_request", "pt_comp_off_encashment", etc. */
+    refType: text("ref_type"),
+    refId: text("ref_id"),
+    createdBy: text("created_by").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("ix_ledger_employee").on(t.employeeId, t.quotaTypeCode, t.year)],
+);
+
+/* ------------------------------------------------------- compensatory off */
+
+export const COMP_OFF_STATUS = ["Available", "Used", "Expired"] as const;
+export type CompOffStatus = (typeof COMP_OFF_STATUS)[number];
+
+/** A day earned by working a holiday or a weekend, banked until it expires. */
+export const ptCompOff = sqliteTable(
+  "pt_comp_off",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    earnedOn: text("earned_on").notNull(),
+    expiresOn: text("expires_on").notNull(),
+    halfDays: integer("half_days").notNull().default(2),
+    status: text("status").notNull().default("Available"),
+    sourceAttendanceId: integer("source_attendance_id").references(() => ptAttendance.id),
+    note: text("note"),
+    createdBy: text("created_by").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("ix_compoff_employee").on(t.employeeId, t.status)],
 );
 
 /* -------------------------------------------------- time evaluation result */

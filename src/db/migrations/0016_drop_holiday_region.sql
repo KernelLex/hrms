@@ -1,0 +1,1 @@
+ALTER TABLE `pt_holiday` DROP COLUMN `region`;

@@ -7,6 +7,7 @@ import { hrUserIds, notificationStatements, notify, usersForEmployees, type Noti
 import { probationDue } from "@/lib/services/monitoring";
 import { getImport, runImportBatch } from "@/lib/services/imports";
 import { formatMonth, todayInIndia } from "@/lib/dates";
+import { accrueForPeriod, expireCompOffs, runYearEnd } from "@/lib/engines/leave-policy";
 import { enqueueJob, requeueJob } from "./queue";
 import { escalateOverdue } from "@/lib/workflow/engine";
 import { deliverWebhooks, nextWebhookRetry, wakeDeliveryStatement } from "@/lib/api/events";
@@ -88,6 +89,32 @@ async function notifyProbationDue(): Promise<number> {
     args: [new Date().toISOString(), ...due.map((d) => d.id)],
   });
   return due.length;
+}
+
+/**
+ * What the leave-policy engine needs done once a day: this month's accrual
+ * on the 1st, any year-end close whose policy's lapse date has arrived, and
+ * comp-off that has passed its expiry. One transaction, since all three are
+ * independent of each other and of everything else the daily job touches.
+ */
+async function runLeavePolicyTicks(today: string): Promise<void> {
+  const actor = systemActor("leave-policy");
+  const tx = await rawClient().transaction("write");
+  try {
+    if (today.slice(8, 10) === "01") {
+      const year = Number(today.slice(0, 4));
+      const month = Number(today.slice(5, 7));
+      await accrueForPeriod(tx, { year, month, createdBy: "system", actor });
+    }
+    await runYearEnd(tx, { year: Number(today.slice(0, 4)) - 1, asOf: today.slice(5), createdBy: "system", actor });
+    await expireCompOffs(tx, { asOf: today, actor });
+    await tx.commit();
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  } finally {
+    tx.close();
+  }
 }
 
 export const HANDLERS: Record<string, JobHandler> = {
@@ -240,6 +267,7 @@ export const HANDLERS: Record<string, JobHandler> = {
   async "daily"() {
     await notifySelfReviews(null);
     await notifyProbationDue();
+    await runLeavePolicyTicks(todayInIndia());
 
     // Approval steps that have waited longer than their flow allows.
     await escalateOverdue();

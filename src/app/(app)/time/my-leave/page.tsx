@@ -2,7 +2,8 @@ import { requirePage } from "@/lib/access";
 import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptLeaveRequest, ptAbsenceType } from "@/db/schema";
-import { balancesFor, formatDays } from "@/lib/engines/quota";
+import { balancesFor, formatDays, ledgerFor } from "@/lib/engines/quota";
+import { compOffBalance, forecastBalance } from "@/lib/engines/leave-policy";
 import {
   Card,
   PageHeader,
@@ -44,7 +45,7 @@ export default async function MyLeavePage() {
   const employeeId = session.employeeId;
   const year = new Date().getUTCFullYear();
 
-  const [balances, types, requests] = await Promise.all([
+  const [balances, types, requests, compOff, yearEndForecast, ledger] = await Promise.all([
     balancesFor(employeeId, year),
     db
       .select()
@@ -67,12 +68,25 @@ export default async function MyLeavePage() {
       .innerJoin(ptAbsenceType, eq(ptAbsenceType.code, ptLeaveRequest.absenceTypeCode))
       .where(eq(ptLeaveRequest.employeeId, employeeId))
       .orderBy(desc(ptLeaveRequest.submittedAt)),
+    compOffBalance(employeeId),
+    forecastBalance(employeeId, "ANNUAL", `${year}-12-31`),
+    Promise.all(
+      (["ANNUAL", "SICK", "CASUAL"] as const).map(async (code) => ({
+        code,
+        entries: await ledgerFor(employeeId, code, year),
+      })),
+    ),
   ]);
 
   const annual = balances.find((b) => b.quotaTypeCode === "ANNUAL");
   const sick = balances.find((b) => b.quotaTypeCode === "SICK");
   const casual = balances.find((b) => b.quotaTypeCode === "CASUAL");
   const pendingCount = requests.filter((r) => r.status === "Pending").length;
+  const quotaTypeNameOf = new Map(balances.map((b) => [b.quotaTypeCode, b.quotaTypeName]));
+  const ledgerEntries = ledger
+    .flatMap((l) => l.entries.map((e) => ({ ...e, quotaTypeName: quotaTypeNameOf.get(l.code) ?? l.code })))
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .slice(0, 15);
 
   return (
     <>
@@ -85,7 +99,7 @@ export default async function MyLeavePage() {
         <Figure
           label="Annual leave left"
           value={annual ? formatDays(annual.balanceUnits) : "—"}
-          hint={annual ? `of ${formatDays(annual.entitledUnits)} days` : "no quota yet"}
+          hint={annual ? `of ${formatDays(annual.entitledUnits)} days · ${formatDays(yearEndForecast)} on 31 Dec` : "no quota yet"}
         />
         <Figure
           label="Sick leave left"
@@ -96,6 +110,11 @@ export default async function MyLeavePage() {
           label="Casual leave left"
           value={casual ? formatDays(casual.balanceUnits) : "—"}
           hint={casual ? `of ${formatDays(casual.entitledUnits)} days` : "no quota yet"}
+        />
+        <Figure
+          label="Comp-off available"
+          value={formatDays(compOff.availableHalfDays)}
+          hint={compOff.expiringSoon.length > 0 ? `${formatDays(compOff.expiringSoon.reduce((s, x) => s + x.halfDays, 0))} expiring within 2 weeks` : "earned by working a holiday"}
         />
         <Figure
           label="Awaiting a decision"
@@ -173,6 +192,54 @@ export default async function MyLeavePage() {
                     </Td>
                     <Td className="text-right">
                       {r.status === "Pending" ? <CancelRequest id={r.id} /> : null}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card>
+      </div>
+
+      <div className="mt-6">
+        <Card>
+          <div className="px-6 pt-5 pb-3">
+            <h2 className="text-[15px] font-semibold text-ink">Why I have what I have</h2>
+            <p className="mt-1 text-[13px] text-secondary">
+              Every credit and debit behind this year&apos;s balances — accrual, leave taken, a carry-forward, a lapse, an encashment or a manual adjustment.
+            </p>
+          </div>
+          {ledgerEntries.length === 0 ? (
+            <EmptyState icon={<CalendarCheck />} title="Nothing posted yet">
+              Entries appear once entitlement accrues or leave is approved.
+            </EmptyState>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>When</Th>
+                  <Th>Quota</Th>
+                  <Th>What</Th>
+                  <Th numeric>Days</Th>
+                  <Th>Note</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledgerEntries.map((e) => (
+                  <Tr key={e.id}>
+                    <Td>
+                      <span className="tabular text-secondary">{e.createdAt.slice(0, 10)}</span>
+                    </Td>
+                    <Td>{e.quotaTypeName}</Td>
+                    <Td>{e.entryType}</Td>
+                    <Td numeric>
+                      <span className={`tabular font-medium ${e.halfDays >= 0 ? "text-ink" : "text-secondary"}`}>
+                        {e.halfDays >= 0 ? "+" : ""}
+                        {formatDays(e.halfDays)}
+                      </span>
+                    </Td>
+                    <Td>
+                      <span className="text-secondary">{e.note ?? <span className="text-decor">&mdash;</span>}</span>
                     </Td>
                   </Tr>
                 ))}

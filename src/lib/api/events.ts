@@ -57,6 +57,11 @@ export const EVENT_TYPES = {
     description: "A headcount request was approved or rejected. `data` says which, and the position it opened, if any; an approval also arrives as position.changed.",
   },
   "import.completed": { scope: "org:read", description: "A bulk import finished. `data` is its counts: written, already on record, and could not be read." },
+  "leave_balance.changed": {
+    scope: "time:read",
+    description: "A leave balance moved — accrual, use, a carry-forward, a lapse, an encashment or a manual adjustment. `data` is the balance and what last moved it.",
+  },
+  "leave.encashed": { scope: "time:read", description: "Leave was encashed at the policy's daily rate, queued as a one-off payment. `data` is the payment; the amount needs pay:read." },
 } as const satisfies Record<string, { scope: Scope; description: string }>;
 
 export type EventType = keyof typeof EVENT_TYPES;
@@ -113,6 +118,15 @@ export function eventFor(c: ChangeRow): Derived | null {
   }
   if (c.entity === "app_import" && after.status === "Completed") {
     return { type: "import.completed", subject: `imports/${c.entity_id}`, key: `import:${c.entity_id}` };
+  }
+  // A bulk import seeds an opening balance with a composite "employee:type:year"
+  // id rather than the row's own — silent, like py_opening_balance, which has
+  // no event either.
+  if (c.entity === "pt_it2006_absence_quota" && /^\d+$/.test(c.entity_id)) {
+    return { type: "leave_balance.changed", subject: `leave-balances/${c.entity_id}`, key: `bal:${c.entity_id}` };
+  }
+  if (c.entity === "py_it0015_additional_payment" && c.action === "create" && after.wage_type_code === "LENC") {
+    return { type: "leave.encashed", subject: `payments/${c.entity_id}`, key: `lenc:${c.entity_id}` };
   }
   if (c.entity.startsWith("pa_it") && c.subject_employee_id) return emp("employee.updated", c.subject_employee_id);
   if (c.entity in ORG_KINDS) {
@@ -339,6 +353,34 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
           }
         : null;
     }
+    case "leave_balance.changed": {
+      const r = await one("SELECT * FROM pt_it2006_absence_quota WHERE id = ?", [Number(id)]);
+      if (!r) return null;
+      const last = await one(
+        "SELECT entry_type, half_days, note FROM pt_quota_ledger WHERE employee_id = ? AND quota_type_code = ? AND year = ? ORDER BY id DESC LIMIT 1",
+        [Number(r.employee_id), String(r.quota_type_code), Number(r.year)],
+      );
+      return {
+        employee_id: Number(r.employee_id),
+        quota_type: String(r.quota_type_code),
+        year: Number(r.year),
+        entitled_days: Number(r.entitled_half_days) / 2,
+        used_days: Number(r.used_half_days) / 2,
+        remaining_days: (Number(r.entitled_half_days) - Number(r.used_half_days)) / 2,
+        last_change: last ? { type: String(last.entry_type), days: Number(last.half_days) / 2, note: last.note ?? null } : null,
+      };
+    }
+    case "leave.encashed": {
+      const r = await one("SELECT * FROM py_it0015_additional_payment WHERE id = ?", [Number(id)]);
+      if (!r) return null;
+      const { money } = await import("./format");
+      return {
+        id: Number(r.id),
+        employee_id: Number(r.employee_id),
+        payment_date: String(r.payment_date),
+        amount: money(Number(r.amount_paise)),
+      };
+    }
   }
 }
 
@@ -351,6 +393,7 @@ export function shapeFor(type: EventType, data: Record<string, unknown>, scopes:
     if (!has("bank:read")) delete out.bank_account;
   }
   if (type === "payslip.published" && !has("pay:read")) delete out.net_pay;
+  if (type === "leave.encashed" && !has("pay:read")) delete out.amount;
   if (type === "payroll.run.completed" && !has("pay:read")) {
     delete out.gross_total;
     delete out.net_total;

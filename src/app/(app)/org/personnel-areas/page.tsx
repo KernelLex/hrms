@@ -1,6 +1,6 @@
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { omPersonnelArea, omCompany } from "@/db/schema";
+import { omPersonnelArea, omCompany, ptHolidayCalendar } from "@/db/schema";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveArea, deleteArea } from "@/app/actions/org";
 import { Status, TwoLine } from "@/components/ui";
@@ -10,16 +10,19 @@ const COLUMNS: Column[] = [
   { key: "name", label: "Area" },
   { key: "company", label: "Company" },
   { key: "location", label: "Location" },
+  { key: "calendar", label: "Holiday calendar" },
   { key: "status", label: "Status" },
 ];
 
 export default async function PersonnelAreasPage() {
-  const [rows, companies] = await Promise.all([
+  const [rows, companies, calendars] = await Promise.all([
     db.select().from(omPersonnelArea).orderBy(asc(omPersonnelArea.code)),
     db.select().from(omCompany).orderBy(asc(omCompany.code)),
+    db.select().from(ptHolidayCalendar).orderBy(asc(ptHolidayCalendar.code)),
   ]);
 
   const companyName = new Map(companies.map((c) => [c.code, c.name]));
+  const calendarName = new Map(calendars.map((c) => [c.code, c.name]));
 
   const fields: FieldDef[] = [
     { kind: "text", name: "code", label: "Area code", required: true, placeholder: "PA01", uppercase: true },
@@ -33,13 +36,20 @@ export default async function PersonnelAreasPage() {
     },
     { kind: "text", name: "name", label: "Area name", required: true, placeholder: "Head office" },
     { kind: "text", name: "location", label: "Location", full: true, placeholder: "Bengaluru campus" },
+    {
+      kind: "select",
+      name: "calendarCode",
+      label: "Holiday calendar",
+      required: true,
+      options: calendars.map((c) => ({ value: c.code, label: c.name })),
+    },
     { kind: "checkbox", name: "isActive", label: "Active" },
   ];
 
   return (
     <MasterScreen
       title="Personnel areas"
-      subtitle="Locations and plants under a company. Payroll periods are released per area."
+      subtitle="Locations and plants under a company. Payroll periods are released per area, and each has its own public holidays through the calendar it sits on."
       entity="personnel area"
       columns={COLUMNS}
       idField="code"
@@ -57,6 +67,7 @@ export default async function PersonnelAreasPage() {
             <TwoLine value={r.companyCode} sub={companyName.get(r.companyCode)} />
           ),
           location: r.location ?? <span className="text-decor">&mdash;</span>,
+          calendar: <span className="text-secondary">{calendarName.get(r.calendarCode) ?? r.calendarCode}</span>,
           status: (
             <Status tone={r.isActive ? "done" : "neutral"}>
               {r.isActive ? "Active" : "Inactive"}
@@ -68,6 +79,7 @@ export default async function PersonnelAreasPage() {
           companyCode: r.companyCode,
           name: r.name,
           location: r.location ?? "",
+          calendarCode: r.calendarCode,
           isActive: r.isActive,
         },
       }))}

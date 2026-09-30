@@ -132,10 +132,15 @@ type WageType = {
 /** What is loaded once per batch and shared by every employee in it. */
 type Context = {
   financialYear: string;
-  holidays: Set<string>;
+  /** Every calendar's holidays for the year, keyed by calendar code — an
+   * employee's own calendar decides which set applies to them. */
+  holidaysByCalendar: Map<string, Set<string>>;
   wageTypes: Map<string, WageType>;
   slabs: Record<TaxRegime, Slab[]>;
 };
+
+const DEFAULT_CALENDAR = "NATIONAL";
+const holidaysFor = (ctx: Context, calendarCode: string): Set<string> => ctx.holidaysByCalendar.get(calendarCode) ?? new Set();
 
 type Dated = { valid_from: string; valid_to: string; created_at: string };
 
@@ -143,6 +148,8 @@ type Dated = { valid_from: string; valid_to: string; created_at: string };
 type Facts = {
   hireDate: string;
   terminationDate: string | null;
+  /** Which holidays are theirs, from their personnel area. */
+  calendarCode: string;
   basic: (Dated & { amount_paise: number })[];
   bank: Dated[];
   recurring: {
@@ -193,7 +200,7 @@ async function loadContext(financialYear: string): Promise<Context> {
   const client = rawClient();
   const [holidays, wageTypes] = await client.batch(
     [
-      { sql: "SELECT date FROM pt_holiday WHERE date BETWEEN ? AND ?", args: [from, to] },
+      { sql: "SELECT date, calendar_code FROM pt_holiday WHERE date BETWEEN ? AND ?", args: [from, to] },
       {
         sql: `SELECT code, name, kind, amount_type, percent_basis_points, formula_key,
                      is_taxable, is_automatic, sort_order
@@ -203,9 +210,15 @@ async function loadContext(financialYear: string): Promise<Context> {
     ],
     "read",
   );
+  const holidaysByCalendar = new Map<string, Set<string>>();
+  for (const h of holidays.rows) {
+    const code = String(h.calendar_code);
+    if (!holidaysByCalendar.has(code)) holidaysByCalendar.set(code, new Set());
+    holidaysByCalendar.get(code)!.add(String(h.date));
+  }
   return {
     financialYear,
-    holidays: new Set(holidays.rows.map((r) => String(r.date))),
+    holidaysByCalendar,
     wageTypes: new Map(
       wageTypes.rows.map((r) => [
         String(r.code),
@@ -295,11 +308,18 @@ async function loadFacts(
               WHERE employee_id = ? AND financial_year = ?`,
         args: [e, financialYear],
       },
+      {
+        sql: `SELECT a.calendar_code FROM pa_it0001_org_assignment o
+              JOIN om_personnel_area a ON a.code = o.area_code
+              WHERE o.employee_id = ? AND o.valid_from <= ? AND o.valid_to >= ?
+              ORDER BY o.valid_from DESC LIMIT 1`,
+        args: [e, to, to],
+      },
     ],
     "read",
   );
 
-  const [emp, basic, bank, recurring, absences, oneOffs, declaration, history, lines, openingBalance] = rs;
+  const [emp, basic, bank, recurring, absences, oneOffs, declaration, history, lines, openingBalance, calendar] = rs;
   if (emp.rows.length === 0) return null;
   const d = declaration.rows[0];
   const rows = <T>(r: (typeof rs)[number]) => r.rows as unknown as T[];
@@ -315,6 +335,7 @@ async function loadFacts(
   return {
     hireDate: String(emp.rows[0].hire_date),
     terminationDate: emp.rows[0].termination_date ? String(emp.rows[0].termination_date) : null,
+    calendarCode: calendar.rows[0] ? String(calendar.rows[0].calendar_code) : DEFAULT_CALENDAR,
     basic: rows<Facts["basic"][number]>(basic).map((b) => ({ ...b, amount_paise: Number(b.amount_paise) })),
     bank: rows(bank),
     recurring: rows<Facts["recurring"][number]>(recurring).map((r) => ({
@@ -400,7 +421,7 @@ function regularPart(
   const windowTo = f.terminationDate && f.terminationDate < to ? f.terminationDate : to;
   if (windowTo < windowFrom) return { notEmployed: true };
 
-  const periodDates = workingDates(from, to, ctx.holidays);
+  const periodDates = workingDates(from, to, holidaysFor(ctx, f.calendarCode));
   const W = periodDates.length;
   if (W === 0) return { error: "The period has no working days." };
   const employed = periodDates.filter((d) => d >= windowFrom && d <= windowTo);

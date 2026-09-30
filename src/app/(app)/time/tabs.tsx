@@ -11,6 +11,8 @@ const ITEMS = [
   { href: "/time/evaluation", label: "Time evaluation" },
   { href: "/time/schedules", label: "Work schedules" },
   { href: "/time/holidays", label: "Holidays" },
+  { href: "/time/holiday-calendars", label: "Holiday calendars" },
+  { href: "/time/leave-policies", label: "Leave policies" },
 ];
 
 export function TimeTabs({ counts }: { counts?: Record<string, number> }) {

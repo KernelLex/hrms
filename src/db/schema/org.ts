@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { ptHolidayCalendar } from "./time";
 
 /**
  * Org management — the backbone every other module foreign-keys into.
@@ -29,6 +30,11 @@ export const omPersonnelArea = sqliteTable(
       .references(() => omCompany.code),
     name: text("name").notNull(),
     location: text("location"),
+    /** Which public holidays this area's employees get. Every area has one. */
+    calendarCode: text("calendar_code")
+      .notNull()
+      .default("NATIONAL")
+      .references(() => ptHolidayCalendar.code),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   },
   (t) => [index("ix_area_company").on(t.companyCode)],

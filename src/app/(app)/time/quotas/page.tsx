@@ -18,7 +18,7 @@ import {
 } from "@/components/ui";
 import { CalendarDays } from "lucide-react";
 import { TimeTabs } from "../tabs";
-import { GenerateQuotaForm } from "./form";
+import { AdjustQuotaForm } from "./form";
 
 /** TM-03 — leave entitlement and balances. */
 export default async function QuotasPage(props: {
@@ -76,13 +76,10 @@ export default async function QuotasPage(props: {
       </FigureRow>
 
       <div className="mt-6">
-        <GenerateQuotaForm
+        <AdjustQuotaForm
           year={year}
-          types={types.map((t) => ({
-            value: t.code,
-            label: t.name,
-            defaultDays: t.defaultEntitlementDays,
-          }))}
+          types={types.map((t) => ({ value: t.code, label: t.name }))}
+          employees={employees.map((e) => ({ value: String(e.id), label: `${fullName(e)} (${e.employee_number})` }))}
         />
       </div>
 

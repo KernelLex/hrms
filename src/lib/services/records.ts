@@ -1,8 +1,12 @@
 import "server-only";
 import { rawClient } from "@/lib/db";
 import { now } from "@/db/schema";
-import { recordChanges, type Actor } from "@/lib/change-log";
-import { calendarDaysBetween, workingDaysBetween } from "@/lib/engines/quota";
+import { changeStatement, recordChanges, type Actor } from "@/lib/change-log";
+import { calendarDaysBetween, calendarFor, sandwichDays, workingDaysBetween } from "@/lib/engines/quota";
+import { notificationStatements, type NotificationItem } from "@/lib/notifications";
+import { planRequest, writeRequest, type Actor as RequesterActor } from "@/lib/workflow/engine";
+import { formatDateRange } from "@/lib/dates";
+import { getEmployee, fullName } from "@/lib/repositories/employees";
 import type { Result } from "./result";
 
 /**
@@ -33,7 +37,8 @@ export async function recordAbsence(
   if (!employee) return { error: "That employee does not exist.", code: "not_found" };
   if (!type) return { error: `There is no active absence type ${absenceTypeCode}.` };
 
-  const payrollDays = await workingDaysBetween(startDate, endDate);
+  const calendar = await calendarFor(employeeId, startDate);
+  const payrollDays = await workingDaysBetween(startDate, endDate, calendar);
   if (payrollDays === 0) return { error: "That range has no working days in it." };
 
   const r = await rawClient().execute({
@@ -45,6 +50,100 @@ export async function recordAbsence(
   const row = r.rows[0] as unknown as Record<string, unknown>;
   await recordChanges(actor, [{ entity: "pt_it2001_absence", entityId: Number(row.id), subjectEmployeeId: employeeId, action: "create", after: row }]);
   return { ok: true, value: row };
+}
+
+/* --------------------------------------------------------- leave requests */
+
+/**
+ * Submits a leave request through the same approval flow My leave uses:
+ * working days and the sandwich rule computed from the employee's own
+ * calendar, then the flow's first step read and written in one transaction
+ * with the request itself, so nobody is notified about a request that did
+ * not save. Shared by the self-service form and the API, so an ERP-side
+ * portal applies for leave exactly the way an employee does here.
+ */
+export async function submitLeave(
+  requester: RequesterActor,
+  input: { employeeId: number; absenceTypeCode: string; fromDate: string; toDate: string; isHalfDay: boolean; reason: string | null },
+): Promise<Result<Record<string, unknown>>> {
+  const { employeeId, absenceTypeCode, fromDate, toDate, isHalfDay, reason } = input;
+  if (!employeeId) return { error: "Choose an employee." };
+  if (!isDate(fromDate)) return { error: "Enter a start date." };
+  if (!isDate(toDate)) return { error: "Enter an end date." };
+  if (toDate < fromDate) return { error: "The end date falls before the start date." };
+  if (isHalfDay && fromDate !== toDate) return { error: "A half day covers a single date." };
+
+  const [employee, type] = await Promise.all([
+    getEmployee(employeeId),
+    one("SELECT code, name FROM pt_absence_type WHERE code = ? AND is_active = 1", [absenceTypeCode]),
+  ]);
+  if (!employee) return { error: "That employee does not exist.", code: "not_found" };
+  if (!type) return { error: `There is no active leave type ${absenceTypeCode}.` };
+
+  const calendar = await calendarFor(employeeId, fromDate);
+  const workingDays = await workingDaysBetween(fromDate, toDate, calendar);
+  if (workingDays === 0) return { error: "That range has no working days in it — it falls on weekends or holidays." };
+  const sandwichExtra = await sandwichDays(employeeId, absenceTypeCode, fromDate, toDate, calendar);
+  const payrollDays = Math.round((isHalfDay ? 0.5 : workingDays + sandwichExtra) * 2) / 2;
+
+  const who = fullName(employee);
+  const range = formatDateRange(fromDate, toDate);
+  const what = `${payrollDays} working ${payrollDays === 1 ? "day" : "days"} of ${String(type.name).toLowerCase()}`;
+  const approval = {
+    process: "leave" as const,
+    subjectType: "pt_leave_request",
+    subjectEmployeeId: employeeId,
+    requester,
+    summary: `${who}: ${what}, ${range}`,
+    facts: { days: payrollDays },
+  };
+
+  let plan;
+  try {
+    plan = await planRequest({ ...approval, subjectId: 0 });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Leave approval is not set up." };
+  }
+
+  const tx = await rawClient().transaction("write");
+  try {
+    const inserted = await tx.execute({
+      sql: `INSERT INTO pt_leave_request
+              (employee_id, absence_type_code, from_date, to_date, is_half_day, payroll_days, reason, status, submitted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?) RETURNING *`,
+      args: [employeeId, absenceTypeCode, fromDate, toDate, isHalfDay ? 1 : 0, payrollDays, reason, now()],
+    });
+    const request = inserted.rows[0] as unknown as Record<string, unknown>;
+    const requestId = Number(request.id);
+    await writeRequest(tx, { ...approval, subjectId: requestId }, plan);
+
+    const items: NotificationItem[] = plan.recipients.map((userId) => ({
+      userId,
+      kind: "leave.submitted" as const,
+      title: `${who} asked for leave: ${range}`,
+      body: `${what.charAt(0).toUpperCase()}${what.slice(1)}` + (reason ? `. "${reason}"` : "."),
+      link: "/approvals?process=leave",
+      dedupeKey: `leave.submitted:${requestId}:${userId}`,
+    }));
+
+    const logActor: Actor = { type: "user", id: requester.userId, name: requester.username };
+    const logged = changeStatement(logActor, {
+      entity: "pt_leave_request",
+      entityId: requestId,
+      subjectEmployeeId: employeeId,
+      action: "create",
+      after: request,
+    });
+    if (logged) await tx.execute(logged);
+    for (const st of await notificationStatements(items)) await tx.execute(st);
+    await tx.commit();
+    return { ok: true, value: request };
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  } finally {
+    tx.close();
+  }
 }
 
 /* -------------------------------------------------------------- payments */
