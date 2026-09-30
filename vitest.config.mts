@@ -34,7 +34,11 @@ export default defineConfig({
     // One file at a time: they share one SQLite file, and SQLite takes one
     // writer. Parallel files would only queue on the lock or trip over it.
     fileParallelism: false,
-    testTimeout: 30_000,
+    // 90s, not 30s: the 5,000-row import test (its own 180s override) does
+    // thousands of small commits back to back, and whichever test happens to
+    // run right after it can catch the tail of that disk contention. A
+    // generous shared ceiling absorbs that without hiding a real hang.
+    testTimeout: 90_000,
     hookTimeout: 60_000,
   },
 });
