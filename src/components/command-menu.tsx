@@ -35,6 +35,7 @@ import {
   Globe,
   ListChecks,
   Users2,
+  Fingerprint,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -81,6 +82,7 @@ const ICONS: Record<string, LucideIcon> = {
   Globe,
   ListChecks,
   Users2,
+  Fingerprint,
 };
 
 type Item = {

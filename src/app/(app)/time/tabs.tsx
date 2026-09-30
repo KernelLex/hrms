@@ -13,6 +13,11 @@ const ITEMS = [
   { href: "/time/holidays", label: "Holidays" },
   { href: "/time/holiday-calendars", label: "Holiday calendars" },
   { href: "/time/leave-policies", label: "Leave policies" },
+  { href: "/time/shifts", label: "Shifts" },
+  { href: "/time/roster-patterns", label: "Roster patterns" },
+  { href: "/time/roster", label: "Roster" },
+  { href: "/time/attendance-board", label: "Today's board" },
+  { href: "/time/devices", label: "Devices" },
 ];
 
 export function TimeTabs({ counts }: { counts?: Record<string, number> }) {

@@ -133,8 +133,9 @@ The value is in the seams:
 | 14 | Joining, moving and letters | done |
 | 15 | Org and data tools | done |
 | 16 | Leave policies | done |
-| 17 | Attendance and shifts | **next** |
-| 18–24 | Statutory payroll, loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
+| 17 | Attendance and shifts | done |
+| 18 | Salary structures and statutory payroll | **next** |
+| 19–24 | Loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
 | 25 | Outside input: the ERP go-live, email, R2, e-signature and the rest | waits on you and the client (§9.6) |
 
 ### 3.3 Infrastructure
@@ -370,13 +371,13 @@ Turso is SQLite. Getting any of these wrong produces wrong numbers or a schema t
 
 ### 5.4 Data model
 
-107 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
+115 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
 
 | Prefix | Tables |
 |---|---|
 | `om_` | company, personnel_area, personnel_sub_area, job, org_unit, position, reporting_line, cost_centre (sent by the ERP), headcount_request |
 | `pa_` | employee; change_request (a correction an employee asked for, and its approval); checklist, checklist_item, checklist_template, task, letter, letter_template; infotypes it0000_action, it0001_org_assignment, it0002_personal_data, it0006_address, it0007_planned_working_time, it0008_basic_pay, it0009_bank_details, it0019_monitoring (probation), it0021_family_member, it0105_communication |
-| `pt_` | absence_type, attendance_type, quota_type, it2001_absence, it2002_attendance, it2006_absence_quota (a running total; `quota_ledger` is the source of truth), leave_request, leave_policy, quota_ledger, comp_off, work_schedule_rule, holiday, holiday_calendar, time_evaluation_result |
+| `pt_` | absence_type, attendance_type, quota_type, it2001_absence, it2002_attendance, it2006_absence_quota (a running total; `quota_ledger` is the source of truth), leave_request, leave_policy, quota_ledger, comp_off, work_schedule_rule, holiday, holiday_calendar, time_evaluation_result, shift, roster_pattern, roster_pattern_day, roster, device, punch, attendance_day, regularisation |
 | `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, opening_balance, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line (with the ERP's payment confirmation), gl_posting, gl_posting_line, statutory_remittance, gl_account (sent by the ERP) |
 | `rc_` | requisition (the role as candidates read it, and whether it is published), candidate, application (channel, screening, the decision and the offer), application_stage_history, interview (each round: interviewer, time, place, status, rating, recommendation, notes), hire_conversion |
 | `pm_` | appraisal_template, appraisal_cycle, goal, appraisal, calibration, increment_recommendation |
@@ -400,6 +401,7 @@ The line between a prototype and a clickable mockup; everything else is forms ov
 4. **Payroll** (`engines/payroll.ts`). Basic pay per working day employed against the employee's own calendar, slice by slice, less unpaid days; percentage allowances; recurring and one-off payments (an encashment among them); arrears for posted months whose inputs changed after they were paid; PF and TDS; net. `startRun` fixes who is in a run; `processRunBatch` calculates twenty at a time, each person's reads in one batch and writes in one atomic batch. Regular and off-cycle runs; each one-off paid exactly once. TDS projects the year from what has been paid, subtracts what was deducted, spreads the rest, and takes tax on a one-off in the month it is paid. Missing bank details produce the error row PY-03 shows.
 5. **Tax** (`engines/tax.ts`). Slabs by regime and year, standard deduction, 87A rebate with the new regime's marginal relief, 4% cess. Feeds monthly TDS and Form 16 Part B, so Part B reconciles with Part A.
 6. **Time evaluation** (`engines/time-evaluation.ts`). Turns absences and attendance into a period's paid days and overtime for payroll, against each employee's own holiday calendar.
+7. **Attendance** (`engines/attendance.ts`). `generateRoster` applies a pattern to a team from a chosen start date; `runDailyAttendance` turns a batch of rostered days' punches into `pt_attendance_day` rows — first in, last out, a late mark past the shift's grace period, overtime past its length, a night shift read from its own start to its own end rather than one calendar day — everything read once for the whole batch. Overtime is paid at double the hourly rate as an IT0015 payment, the same table leave encashment uses. `finalizeAttendanceDay` re-runs the same logic for one employee's one day, reading and writing through the caller's own transaction so an approved regularisation's punches are visible to it immediately.
 
 ### 5.6 Platform services
 
@@ -425,7 +427,7 @@ The catalogue (`src/lib/permissions.ts`; the migration keeps `sec_permission` id
 | Performance | `performance.manage`*, `performance.rate_team`, `performance.rate_any` | manage, rate_any | rate_team | — | — |
 | Reports and records | `reports.view`*, `audit.view` | both | — | — | — |
 | Administration | `access.manage`, `integrations.manage`* | both | — | — | — |
-| Self-service | `self.profile`, `self.leave`, `self.pay`, `self.tax`, `self.appraisal` | all | all | all | — |
+| Self-service | `self.profile`, `self.leave`, `self.pay`, `self.tax`, `self.appraisal`, `self.attendance` | all | all | all | — |
 
 Deciding leave is not a permission: it follows the approval flow.
 
@@ -1455,11 +1457,10 @@ Technical choices that need nobody's input, taken here so Part A can proceed wit
 | Attendance devices until a vendor is chosen | CSV upload and a generic punch endpoint | Every device can export CSV, and any middleware can call an endpoint. |
 | Continuous integration | GitHub Actions running typecheck, lint, tests, build, the UI audit and the mock ERP against a local database | Needs no secrets, because tests never touch Turso. |
 
-### 9.5 Part A — phases 17 to 24
+### 9.5 Part A — phases 18 to 24
 
 | # | Phase | Roadmap features | Depends on |
 |---|---|---|---|
-| 17 | Attendance and shifts | Shift rosters, attendance devices (CSV and a generic endpoint), team attendance regularisation | 12 |
 | 18 | Salary structures and statutory payroll | Salary structures and CTC; ESI, professional tax, LWF and employer PF; ECR file; split cost centres; accounting export | 11, 12 |
 | 19 | Loans and reimbursements | Loans and advances, reimbursement claims | 18 |
 | 20 | Exit and full and final settlement | Exit management, full and final settlement | 14, 18, 19 |
@@ -1475,7 +1476,6 @@ flowchart LR
   P12 --> P13["13 Self-service and payslips"]
   P13 --> P14["14 Joining, moving, letters"]
   P12 --> P15["15 Org and data tools"]
-  P12 --> P17["17 Attendance and shifts"]
   P12 --> P18["18 Structures and statutory"]
   P18 --> P19["19 Loans and claims"]
   P14 --> P20["20 Exit and F&F"]
@@ -1489,33 +1489,11 @@ flowchart LR
   P21 --> P25
   P22 --> P25
   P20 --> P25
-  P17 --> P25
   P23 --> P25
   P15 --> P25
   P16 --> P25
+  P17 --> P25
 ```
-
-#### Phase 17 — Attendance and shifts
-
-**Goal.** Plants and support teams run on rosters and punches, not hand-entered attendance.
-
-**Features.** Shift rosters · Attendance devices (CSV and a generic endpoint; vendor adapters in phase 25) · Team attendance regularisation.
-
-**Build**
-
-| Part | What |
-|---|---|
-| Data | `pt_shift` (start, end, break, night, grace minutes) · `pt_roster_pattern` (a weekly rotation) · `pt_roster` (employee, date, shift) · `pt_device` (location, its phase 12 client) · `pt_punch` (employee, device, time, direction, source) · `pt_regularisation` (date, claimed in and out, reason, approval request) |
-| Logic | Rosters are generated from patterns and edited by exception. A daily job turns punches into attendance: first in, last out, hours against the shift, late, half day, absent — **night shifts that cross midnight belong to the day they started**. Results feed time evaluation and payroll (overtime hours as an OT wage type, a night-shift allowance). Devices, and any middleware in front of them, are **phase 12 clients limited to punches**, sending batches to `/v1/punches`; CSV upload covers everything else. Punches are unique on device, time and employee, so a re-sent batch does nothing. A regularisation, once approved, changes that day's attendance, and the change log keeps the original. |
-| Screens | A roster planner (team by day, in the calendar grid's style, assign a pattern in bulk) · today's attendance board (in, late, absent) · My attendance, with punches and "Regularise" · devices |
-| API and events | `POST /v1/punches` in batches · `POST /v1/timesheets`, for hours recorded in the ERP's projects · `/v1/rosters` · `/v1/attendance-days` · `attendance.day_finalised`, `regularisation.decided` |
-
-**Done when**
-- A rotating three-shift pattern generates a month's roster.
-- Punches sent to the endpoint become daily attendance with late marks.
-- Overtime reaches payroll as its own line.
-- A missed punch, regularised and approved, corrects the day.
-- A duplicate upload creates no duplicate punches (test).
 
 #### Phase 18 — Salary structures and statutory payroll
 
@@ -1961,6 +1939,16 @@ The engine handles provident fund (the employee's share) and income tax. A real 
 ## 11. History
 
 What each phase delivered, newest first, and where the build differed from its plan. When a phase in §9 is finished, it moves here.
+
+### Phase 17 — Attendance and shifts
+
+- **Shifts and rosters**: `pt_shift` (start, end, a break, a grace period, and a night flag for one whose end is earlier than its start — it crosses midnight and belongs to the day it started) and `pt_roster_pattern`, a repeating cycle of shifts (`pt_roster_pattern_day`, one row per day of it). Assigning a pattern to a team and a date range writes `pt_roster` — day 0 of the cycle is the date it was assigned from, so assigning the same team, pattern and start date again writes the same roster, safe to repeat. A single day is then edited by exception without touching the rest.
+- **Punches into attendance**: a daily job (`engines/attendance.ts`) turns a rostered day's punches into one `pt_attendance_day` row — first in, last out, worked minutes, a late mark past the shift's own grace period, and overtime past its own length — everything it needs (the roster, the shifts, the punches) read once for the whole batch, the same shape as time evaluation and payroll. A night shift's punches are read from its own start to its own end, not one calendar day. Overtime is logged as an attendance entry for the record, and paid at double the hourly rate (basic pay over the month's own working days, over an 8-hour day) as an IT0015 one-off payment — the same table leave encashment uses, so payroll pays it through the next run with no overtime-specific code of its own.
+- **Devices and punches**: `pt_device`, optionally tied to a phase-12 API client — a physical clock, or any middleware in front of one. `POST /v1/punches` takes a batch; a punch missing its own device uses the one the calling client is registered as. Punches are unique on device, time and employee, so a re-sent batch, or a re-uploaded CSV, writes nothing twice.
+- **Regularisation**: an employee's own account of a day — claimed in and out, and why — through a new one-step approval (their reporting manager, falling back to HR exactly as any step with nobody to fill it does). Approved, it adds the claimed times as punches from a "Regularised" pseudo-device and re-runs the same finalising logic a real punch would have triggered, so the day is corrected exactly as if the punch had never been missed; rejected, the day stands as its real punches show it.
+- **Screens**: **Shifts**, **Roster patterns** (with each pattern's own day-by-day grid on its own page), **Roster** (a bulk assignment form and the week ahead, by employee and day), **Today's board** (in, late, absent, with a "run it now" for a day already past), **Devices**, and **My attendance** (punches, history and "ask for a correction") — all new tabs under Time, alongside a **My attendance** entry in Self-service.
+- **API and events**: `POST /v1/punches`, `POST /v1/timesheets` (hours against the ERP's own projects, recorded as attendance), `GET /v1/rosters`, `GET /v1/attendance-days`; `attendance.day_finalised`, `regularisation.decided`.
+- **Where it differs from the plan**: the roster planner is a bulk-assign form and a plain week-ahead table, not a drag-and-drop calendar grid — the same information, without the added interactivity a prototype does not need. Overtime's rate is a flat double time, not a configurable multiple by shift or day type (a Sunday or holiday premium is not modelled). A day's "working days" for time evaluation and payroll still comes from the calendar, not the roster — a roster decides a shift, lateness and overtime, not whether the day counts as one of the month's paid working days, which would need a larger change to how those two engines define that count for a rostered employee.
 
 ### Phase 16 — Leave policies
 

@@ -74,7 +74,10 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 - Leave requests that follow the approval route you set — by default the employee's manager, with HR added for longer leave — including the sandwich rule, where a policy asks for it.
 - **Compensatory off**, earned by working a holiday or a weekend and spent like leave, and **leave encashment**, paid through the next payroll run at the going daily rate.
 - Unpaid leave flows into payroll as a deduction automatically.
-- Attendance and overtime, work schedules, public holidays.
+- **Shift rosters**: build a rotation once — a three-shift pattern, say — and assign it to a team for a date range; a single day is swapped by exception without touching the rest.
+- **Attendance devices**: a punch clock, or anything sending punches to the generic endpoint in front of one, turns into daily attendance automatically — first in, last out, a late mark, overtime, paid at double the hourly rate through the very next payroll run. Sending the same punches twice changes nothing the second time.
+- **Ask for a correction**: a missed or wrong punch, explained and sent to a manager to approve; approved, the day is corrected exactly as if the punch had never been missed.
+- Work schedules, public holidays.
 - A monthly time evaluation that gives payroll each person's paid days and overtime.
 
 ### Payroll
@@ -134,7 +137,7 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ### Connection to your ERP
 
-- **Two-way exchange through a secure API.** The HRMS sends people, organisation, time and payroll as they change, including the payroll journal and the salaries to pay. Your ERP sends back what it owns — cost centres, accounts, payments made — and confirms what it booked.
+- **Two-way exchange through a secure API.** The HRMS sends people, organisation, time and payroll as they change, including the payroll journal and the salaries to pay. Your ERP sends back what it owns — cost centres, accounts, payments made, punches from a device or a badge system, hours from your own project tracker — and confirms what it booked.
 - **Each kind of record has one owner**, so the two systems never overwrite each other.
 - **HR can see the connection at work**: what was sent, what the ERP booked, anything that could not be applied, and a reconciliation of every payroll journal against what the ERP recorded.
 - **Remove a system you no longer use**: HR can delete one that has never really connected; one that has is suspended instead, so its history stays readable.
@@ -145,7 +148,6 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ## Coming next
 
-- **Attendance**: shift rosters, attendance devices, and approving missed punches.
 - **Payroll**: salary structures and CTC; ESI, professional tax, labour welfare fund and the employer's PF share; the EPFO file; costs split across cost centres; loans and advances; reimbursement claims.
 - **Exits**: resignation, clearance, and full and final settlement.
 - **Tax**: investment proofs, HRA worked out from rent, a comparison of the two regimes, Form 12BA, relief on arrears, and the quarterly TDS return file.

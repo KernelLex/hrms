@@ -24,7 +24,7 @@ export type ProcessDef = {
   link: string;
 };
 
-export const PROCESSES: { leave: ProcessDef; correction: ProcessDef; headcount: ProcessDef } = {
+export const PROCESSES: { leave: ProcessDef; correction: ProcessDef; headcount: ProcessDef; regularisation: ProcessDef } = {
   leave: {
     label: "Leave",
     overridePermission: "leave.decide_any",
@@ -45,6 +45,12 @@ export const PROCESSES: { leave: ProcessDef; correction: ProcessDef; headcount: 
     overridePermission: "org.edit",
     facts: {},
     link: "/approvals?process=headcount",
+  },
+  regularisation: {
+    label: "Attendance regularisations",
+    overridePermission: "time.manage",
+    facts: {},
+    link: "/approvals?process=regularisation",
   },
 };
 

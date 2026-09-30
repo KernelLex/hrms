@@ -49,7 +49,7 @@ export const PERMISSIONS = {
   "pay.view": { group: "People", can: "see salaries and pay", sensitive: true },
   "bank.view": { group: "People", can: "see bank account details", sensitive: true },
 
-  "time.manage": { group: "Time and leave", can: "record absences and attendance, generate quotas, run time evaluation, and keep schedules and holidays" },
+  "time.manage": { group: "Time and leave", can: "record absences and attendance, generate quotas, run time evaluation, and keep schedules, holidays, shifts, rosters and devices" },
   "time.team_calendar": { group: "Time and leave", can: "see who is away across their team" },
   "leave.decide_any": { group: "Time and leave", can: "decide any leave request, whoever it is waiting for" },
 
@@ -79,13 +79,14 @@ export const PERMISSIONS = {
   "self.pay": { group: "Self-service", can: "read their own payslips" },
   "self.tax": { group: "Self-service", can: "make their own tax declaration and download their Form 16" },
   "self.appraisal": { group: "Self-service", can: "write their own self review" },
+  "self.attendance": { group: "Self-service", can: "see their own roster and attendance, and ask for a day to be corrected" },
 } as const satisfies Record<string, Def>;
 
 export type Permission = keyof typeof PERMISSIONS;
 
 export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[];
 
-const SELF: Permission[] = ["self.profile", "self.leave", "self.pay", "self.tax", "self.appraisal"];
+const SELF: Permission[] = ["self.profile", "self.leave", "self.pay", "self.tax", "self.appraisal", "self.attendance"];
 
 /**
  * The built-in roles, exactly as they behaved before permissions existed:

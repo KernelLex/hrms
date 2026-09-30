@@ -10,6 +10,7 @@ import { orgEndpoints } from "./resources/org";
 import { headcountEndpoints } from "./resources/headcount";
 import { importEndpoints } from "./resources/imports";
 import { timeEndpoints } from "./resources/time";
+import { attendanceEndpoints } from "./resources/attendance";
 import { payrollEndpoints } from "./resources/payroll";
 import { otherEndpoints } from "./resources/other";
 
@@ -28,6 +29,7 @@ const RESOURCES: Endpoint[] = [
   ...headcountEndpoints,
   ...importEndpoints,
   ...timeEndpoints,
+  ...attendanceEndpoints,
   ...payrollEndpoints,
   ...otherEndpoints,
 ];

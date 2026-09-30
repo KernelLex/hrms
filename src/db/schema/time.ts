@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { paEmployee } from "./personnel";
+import { intClient } from "./integration";
 
 /**
  * Time management and absence.
@@ -295,4 +296,144 @@ export const ptTimeEvaluation = sqliteTable(
   (t) => [
     uniqueIndex("ux_timeeval_period").on(t.employeeId, t.periodYear, t.periodMonth),
   ],
+);
+
+/* ----------------------------------------------------------- shifts and rosters */
+
+export const PUNCH_DIRECTIONS = ["In", "Out"] as const;
+export type PunchDirection = (typeof PUNCH_DIRECTIONS)[number];
+
+export const PUNCH_SOURCES = ["Device", "Csv", "Regularised"] as const;
+export type PunchSource = (typeof PUNCH_SOURCES)[number];
+
+export const ATTENDANCE_DAY_STATUS = ["Present", "Late", "HalfDay", "Absent"] as const;
+export type AttendanceDayStatus = (typeof ATTENDANCE_DAY_STATUS)[number];
+
+export const REGULARISATION_STATUS = ["Pending", "Approved", "Rejected", "Cancelled"] as const;
+export type RegularisationStatus = (typeof REGULARISATION_STATUS)[number];
+
+/** A shift's clock times, "HH:MM". A night shift's end is earlier than its start — it crosses midnight, and belongs to the day it started. */
+export const ptShift = sqliteTable("pt_shift", {
+  code: text("code").primaryKey(),
+  name: text("name").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  breakMinutes: integer("break_minutes").notNull().default(0),
+  isNight: integer("is_night", { mode: "boolean" }).notNull().default(false),
+  /** Minutes late before a punch counts as late, not just imprecise. */
+  graceMinutes: integer("grace_minutes").notNull().default(0),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+});
+
+/** A repeating rotation — a 21-day three-shift cycle, say. pt_roster_pattern_day names each day's shift. */
+export const ptRosterPattern = sqliteTable("pt_roster_pattern", {
+  code: text("code").primaryKey(),
+  name: text("name").notNull(),
+  cycleLengthDays: integer("cycle_length_days").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+});
+
+export const ptRosterPatternDay = sqliteTable(
+  "pt_roster_pattern_day",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    patternCode: text("pattern_code")
+      .notNull()
+      .references(() => ptRosterPattern.code, { onDelete: "cascade" }),
+    dayIndex: integer("day_index").notNull(),
+    /** Null: a day off in the pattern. */
+    shiftCode: text("shift_code").references(() => ptShift.code),
+  },
+  (t) => [uniqueIndex("ux_pattern_day").on(t.patternCode, t.dayIndex)],
+);
+
+/** One employee's shift on one date — generated from a pattern, edited by exception. */
+export const ptRoster = sqliteTable(
+  "pt_roster",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    /** Null: a day off. */
+    shiftCode: text("shift_code").references(() => ptShift.code),
+    patternCode: text("pattern_code").references(() => ptRosterPattern.code),
+    createdBy: text("created_by").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("ux_roster_employee_date").on(t.employeeId, t.date), index("ix_roster_date").on(t.date)],
+);
+
+/** A punch clock, or the generic endpoint any middleware in front of one calls — a phase-12 client limited to punches. */
+export const ptDevice = sqliteTable("pt_device", {
+  code: text("code").primaryKey(),
+  name: text("name").notNull(),
+  location: text("location"),
+  clientPk: integer("client_pk").references(() => intClient.id),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+});
+
+export const ptPunch = sqliteTable(
+  "pt_punch",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    deviceCode: text("device_code")
+      .notNull()
+      .references(() => ptDevice.code),
+    at: text("at").notNull(),
+    direction: text("direction").notNull(),
+    source: text("source").notNull().default("Device"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [
+    // A re-sent batch does nothing: the same device, time and employee already exists.
+    uniqueIndex("ux_punch_device_at_employee").on(t.deviceCode, t.at, t.employeeId),
+    index("ix_punch_employee").on(t.employeeId, t.at),
+  ],
+);
+
+/** What a day's punches, against the roster, add up to — the daily job's output. */
+export const ptAttendanceDay = sqliteTable(
+  "pt_attendance_day",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    shiftCode: text("shift_code").references(() => ptShift.code),
+    firstIn: text("first_in"),
+    lastOut: text("last_out"),
+    workedMinutes: integer("worked_minutes").notNull().default(0),
+    lateMinutes: integer("late_minutes").notNull().default(0),
+    overtimeMinutes: integer("overtime_minutes").notNull().default(0),
+    status: text("status").notNull(),
+    finalisedAt: text("finalised_at").notNull(),
+  },
+  (t) => [uniqueIndex("ux_attendanceday_employee_date").on(t.employeeId, t.date), index("ix_attendanceday_date").on(t.date)],
+);
+
+/** An employee's own account of a day — claimed in and out — against what punches or the roster show. */
+export const ptRegularisation = sqliteTable(
+  "pt_regularisation",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    claimedIn: text("claimed_in"),
+    claimedOut: text("claimed_out"),
+    reason: text("reason").notNull(),
+    status: text("status").notNull().default("Pending"),
+    submittedAt: text("submitted_at").notNull(),
+    decidedByEmployeeId: integer("decided_by_employee_id"),
+    decidedAt: text("decided_at"),
+    decisionNote: text("decision_note"),
+  },
+  (t) => [index("ix_regularisation_employee").on(t.employeeId, t.status), index("ix_regularisation_status").on(t.status)],
 );

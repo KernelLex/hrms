@@ -8,6 +8,7 @@ import { probationDue } from "@/lib/services/monitoring";
 import { getImport, runImportBatch } from "@/lib/services/imports";
 import { formatMonth, todayInIndia } from "@/lib/dates";
 import { accrueForPeriod, expireCompOffs, runYearEnd } from "@/lib/engines/leave-policy";
+import { runDailyAttendance } from "@/lib/engines/attendance";
 import { enqueueJob, requeueJob } from "./queue";
 import { escalateOverdue } from "@/lib/workflow/engine";
 import { deliverWebhooks, nextWebhookRetry, wakeDeliveryStatement } from "@/lib/api/events";
@@ -108,6 +109,22 @@ async function runLeavePolicyTicks(today: string): Promise<void> {
     }
     await runYearEnd(tx, { year: Number(today.slice(0, 4)) - 1, asOf: today.slice(5), createdBy: "system", actor });
     await expireCompOffs(tx, { asOf: today, actor });
+    await tx.commit();
+  } catch (err) {
+    await tx.rollback();
+    throw err;
+  } finally {
+    tx.close();
+  }
+}
+
+/** Yesterday's rosters, turned into attendance — a night shift's punches keep coming in past midnight, so today's are still open. */
+async function runDailyAttendanceTick(today: string): Promise<void> {
+  const yesterday = new Date(new Date(`${today}T00:00:00.000Z`).getTime() - 86_400_000).toISOString().slice(0, 10);
+  const actor = systemActor("attendance");
+  const tx = await rawClient().transaction("write");
+  try {
+    await runDailyAttendance(tx, { date: yesterday, actor });
     await tx.commit();
   } catch (err) {
     await tx.rollback();
@@ -268,6 +285,7 @@ export const HANDLERS: Record<string, JobHandler> = {
     await notifySelfReviews(null);
     await notifyProbationDue();
     await runLeavePolicyTicks(todayInIndia());
+    await runDailyAttendanceTick(todayInIndia());
 
     // Approval steps that have waited longer than their flow allows.
     await escalateOverdue();

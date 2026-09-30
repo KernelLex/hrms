@@ -406,8 +406,8 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `pay:read` | See salaries and every amount of pay: basic pay, pay results, payment amounts |
 | `bank:read` | See bank account numbers |
 | `tax_ids:read` | See tax identifiers such as PAN, where they are held (none are held yet) |
-| `time:read` | Read holidays, absences, leave requests and leave balances |
-| `time:write` | Record absences |
+| `time:read` | Read holidays, absences, leave requests, leave balances, rosters and attendance days |
+| `time:write` | Record absences and leave requests, and send device punches and timesheets |
 | `payroll:read` | Read payroll periods, runs, payment batches and statutory remittances |
 | `payroll:write` | Send one-off and recurring payments, and confirm salary and remittance payments |
 | `gl:read` | Read the payroll journal (GL postings) and the chart of accounts |
@@ -451,6 +451,8 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `import.completed` | `org:read` | A bulk import finished. `data` is its counts: written, already on record, and could not be read. |
 | `leave_balance.changed` | `time:read` | A leave balance moved — accrual, use, a carry-forward, a lapse, an encashment or a manual adjustment. `data` is the balance and what last moved it. |
 | `leave.encashed` | `time:read` | Leave was encashed at the policy's daily rate, queued as a one-off payment. `data` is the payment; the amount needs pay:read. |
+| `attendance.day_finalised` | `time:read` | A rostered day's punches were turned into worked minutes, a late mark, and overtime if any. `data` is the attendance day. |
+| `regularisation.decided` | `time:read` | An attendance correction was approved or rejected. `data` says which; an approval also arrives as attendance.day_finalised. |
 
 ### Error codes
 
@@ -524,6 +526,10 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | GET | [`/leave-policies`](#get-leave-policies) | `time:read` | List leave policies |
 | GET | [`/holiday-calendars`](#get-holiday-calendars) | `time:read` | List holiday calendars |
 | POST | [`/leave-requests`](#post-leave-requests) | `time:write` | Submit a leave request |
+| GET | [`/rosters`](#get-rosters) | `time:read` | List roster assignments |
+| GET | [`/attendance-days`](#get-attendance-days) | `time:read` | List finalised attendance days |
+| POST | [`/punches`](#post-punches) | `time:write` | Record punches |
+| POST | [`/timesheets`](#post-timesheets) | `time:write` | Record timesheet hours |
 | GET | [`/payroll/periods`](#get-payroll-periods) | `payroll:read` | List payroll periods |
 | GET | [`/payroll/runs`](#get-payroll-runs) | `payroll:read` | List payroll runs |
 | GET | [`/payroll/runs/{id}/results`](#get-payroll-runs-id-results) | `payroll:read` + `pay:read` | The results of a run |
@@ -1529,6 +1535,95 @@ Content-Type: application/json
   "from_date": "2026-11-10",
   "to_date": "2026-11-12",
   "reason": "Family event"
+}
+```
+
+#### GET /rosters
+
+<a id="get-rosters"></a>**List roster assignments.** One row per employee per rostered date. A null shift is a day off the roster names explicitly.
+
+Needs `time:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `employee_id` | integer |  |  |
+| `from` | string |  | A date, YYYY-MM-DD. |
+| `to` | string |  | A date, YYYY-MM-DD. |
+
+```http
+GET /api/v1/rosters?employee_id=3&from=2026-10-01&to=2026-10-31
+```
+
+#### GET /attendance-days
+
+<a id="get-attendance-days"></a>**List finalised attendance days.** What a day's punches, against the roster, added up to — written once the daily job (or 'run now') finalises it.
+
+Needs `time:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `employee_id` | integer |  |  |
+| `from` | string |  | A date, YYYY-MM-DD. |
+| `to` | string |  | A date, YYYY-MM-DD. |
+
+```http
+GET /api/v1/attendance-days?employee_id=3&from=2026-10-01&to=2026-10-31
+```
+
+#### POST /punches
+
+<a id="post-punches"></a>**Record punches.** Batched punches from a device, or the generic endpoint any middleware in front of one calls. Each is unique on its device, time and employee, so a re-sent batch writes nothing twice. A punch with no `device` of its own uses the device this client is registered as; a client registered to no device must name one on every punch. Send an Idempotency-Key.
+
+Needs `time:write`. Send an `Idempotency-Key`. Answers 201.
+
+| Body field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `punches` | array of object | yes |  |
+
+```http
+POST /api/v1/punches
+Content-Type: application/json
+
+{
+  "punches": [
+    {
+      "employee_id": 3,
+      "at": "2026-10-05T09:02:00Z",
+      "direction": "In"
+    }
+  ]
+}
+```
+
+#### POST /timesheets
+
+<a id="post-timesheets"></a>**Record timesheet hours.** Hours worked against the ERP's own projects, recorded the same way a person's own attendance entry would be — time evaluation and payroll read it the same. Send an Idempotency-Key.
+
+Needs `time:write`. Send an `Idempotency-Key`. Answers 201.
+
+| Body field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `employee_id` | integer | yes |  |
+| `date` | string | yes | A date, YYYY-MM-DD. |
+| `hours` | number | yes |  |
+| `attendance_type` | string |  | An attendance type code; defaults to on-duty / business travel. Default `"0810"`. |
+| `remarks` | string, or null |  |  |
+
+```http
+POST /api/v1/timesheets
+Content-Type: application/json
+
+{
+  "employee_id": 3,
+  "date": "2026-10-05",
+  "hours": 6,
+  "remarks": "Client site visit"
 }
 ```
 

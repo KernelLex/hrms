@@ -13,11 +13,11 @@ import { codeList } from "./org";
 
 /** Time: holidays, absences, leave requests and balances. */
 
-const rows = async (sql: string, args: InValue[] = []) => (await rawClient().execute({ sql, args })).rows as unknown as Record<string, unknown>[];
-const s = (v: unknown) => (v === null || v === undefined ? null : String(v));
+export const rows = async (sql: string, args: InValue[] = []) => (await rawClient().execute({ sql, args })).rows as unknown as Record<string, unknown>[];
+export const s = (v: unknown) => (v === null || v === undefined ? null : String(v));
 
 /** Rows about employees the client may see: joins the latest org assignment. */
-function visibleEmployees(ctx: ApiContext, employeeColumn: string) {
+export function visibleEmployees(ctx: ApiContext, employeeColumn: string) {
   if (!ctx.client.companies) return { sql: "1 = 1", args: [] as string[] };
   const c = companyClause(ctx, "vo.company_code");
   return {
@@ -113,7 +113,7 @@ export const absenceOf = (r: Record<string, unknown>) => ({
   created_at: String(r.created_at),
 });
 
-const idPage = async <T extends { id: number }>(ctx: ApiContext, sql: string, args: InValue[], map: (r: Record<string, unknown>) => T) => {
+export const idPage = async <T extends { id: number }>(ctx: ApiContext, sql: string, args: InValue[], map: (r: Record<string, unknown>) => T) => {
   const q = ctx.query as { limit?: number; cursor?: string; fields?: string };
   const limit = q.limit ?? DEFAULT_LIMIT;
   const found = await rows(`${sql} AND id > ? ORDER BY id LIMIT ?`, [...args, decodeCursor(q.cursor), limit + 1]);

@@ -3,6 +3,7 @@ import { PERMISSION_DENIED, accessFor } from "@/lib/access";
 import type { Permission } from "@/lib/permissions";
 import * as accessActions from "@/app/actions/access";
 import * as approvals from "@/app/actions/approvals";
+import * as attendance from "@/app/actions/attendance";
 import * as auth from "@/app/actions/auth";
 import * as careers from "@/app/actions/careers";
 import * as coreHr from "@/app/actions/core-hr";
@@ -44,6 +45,7 @@ type Rule = Permission[] | "signed-in" | "public";
 const MODULES = {
   access: accessActions,
   approvals,
+  attendance,
   auth,
   careers,
   "core-hr": coreHr,
@@ -74,6 +76,21 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     saveFlow: ["access.manage"],
   },
   approvals: { decideApproval: "signed-in", saveDelegation: "signed-in", endDelegation: "signed-in" },
+  attendance: {
+    saveShift: ["time.manage"],
+    deleteShift: ["time.manage"],
+    saveRosterPattern: ["time.manage"],
+    deleteRosterPattern: ["time.manage"],
+    savePatternDays: ["time.manage"],
+    assignRosterAction: ["time.manage"],
+    setRosterDayAction: ["time.manage"],
+    saveDevice: ["time.manage"],
+    deleteDevice: ["time.manage"],
+    uploadPunchesAction: ["time.manage"],
+    runDailyAttendanceAction: ["time.manage"],
+    submitRegularisation: ["self.attendance", "time.manage"],
+    cancelRegularisation: "signed-in",
+  },
   auth: { signInAction: "public", demoSignInAction: "public", signOutAction: "public" },
   // The careers page: anyone, signed in or not, may apply.
   careers: { applyForJob: "public" },

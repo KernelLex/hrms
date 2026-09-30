@@ -62,6 +62,11 @@ export const EVENT_TYPES = {
     description: "A leave balance moved — accrual, use, a carry-forward, a lapse, an encashment or a manual adjustment. `data` is the balance and what last moved it.",
   },
   "leave.encashed": { scope: "time:read", description: "Leave was encashed at the policy's daily rate, queued as a one-off payment. `data` is the payment; the amount needs pay:read." },
+  "attendance.day_finalised": {
+    scope: "time:read",
+    description: "A rostered day's punches were turned into worked minutes, a late mark, and overtime if any. `data` is the attendance day.",
+  },
+  "regularisation.decided": { scope: "time:read", description: "An attendance correction was approved or rejected. `data` says which; an approval also arrives as attendance.day_finalised." },
 } as const satisfies Record<string, { scope: Scope; description: string }>;
 
 export type EventType = keyof typeof EVENT_TYPES;
@@ -127,6 +132,12 @@ export function eventFor(c: ChangeRow): Derived | null {
   }
   if (c.entity === "py_it0015_additional_payment" && c.action === "create" && after.wage_type_code === "LENC") {
     return { type: "leave.encashed", subject: `payments/${c.entity_id}`, key: `lenc:${c.entity_id}` };
+  }
+  if (c.entity === "pt_attendance_day") {
+    return { type: "attendance.day_finalised", subject: `attendance-days/${c.entity_id}`, key: `attday:${c.entity_id}` };
+  }
+  if (c.entity === "pt_regularisation" && (after.status === "Approved" || after.status === "Rejected")) {
+    return { type: "regularisation.decided", subject: `regularisations/${c.entity_id}`, key: `reg:${c.entity_id}` };
   }
   if (c.entity.startsWith("pa_it") && c.subject_employee_id) return emp("employee.updated", c.subject_employee_id);
   if (c.entity in ORG_KINDS) {
@@ -379,6 +390,33 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
         employee_id: Number(r.employee_id),
         payment_date: String(r.payment_date),
         amount: money(Number(r.amount_paise)),
+      };
+    }
+    case "attendance.day_finalised": {
+      const r = await one("SELECT * FROM pt_attendance_day WHERE id = ?", [Number(id)]);
+      if (!r) return null;
+      return {
+        id: Number(r.id),
+        employee_id: Number(r.employee_id),
+        date: String(r.date),
+        shift: r.shift_code === null ? null : String(r.shift_code),
+        first_in: r.first_in === null ? null : String(r.first_in),
+        last_out: r.last_out === null ? null : String(r.last_out),
+        worked_minutes: Number(r.worked_minutes),
+        late_minutes: Number(r.late_minutes),
+        overtime_minutes: Number(r.overtime_minutes),
+        status: String(r.status),
+      };
+    }
+    case "regularisation.decided": {
+      const r = await one("SELECT * FROM pt_regularisation WHERE id = ?", [Number(id)]);
+      if (!r) return null;
+      return {
+        id: Number(r.id),
+        employee_id: Number(r.employee_id),
+        date: String(r.date),
+        status: String(r.status),
+        decided_at: r.decided_at ?? null,
       };
     }
   }

@@ -65,6 +65,14 @@ export const NOTIFICATION_KINDS = {
     label: "Imports I started",
     description: "When a bulk import you confirmed finishes, with what was written and what failed.",
   },
+  "regularisation.submitted": {
+    label: "Regularisations from my team",
+    description: "When someone who reports to you asks for a day's attendance to be corrected.",
+  },
+  "regularisation.decided": {
+    label: "Decisions on my regularisations",
+    description: "When your manager approves or rejects a correction you asked for.",
+  },
 } as const;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

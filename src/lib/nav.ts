@@ -46,6 +46,7 @@ export const NAV: NavGroup[] = [
       { label: "Approvals", href: "/approvals", icon: "Inbox", anyOf: ["employee.view_team", "leave.decide_any"] },
       { label: "Team calendar", href: "/time/calendar", icon: "CalendarRange", anyOf: ["time.team_calendar"], hideWith: "time.manage" },
       { label: "My leave", href: "/time/my-leave", icon: "CalendarCheck", anyOf: ["self.leave"] },
+      { label: "My attendance", href: "/time/my-attendance", icon: "Fingerprint", anyOf: ["self.attendance"] },
     ],
   },
   {

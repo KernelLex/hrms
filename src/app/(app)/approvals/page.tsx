@@ -22,6 +22,7 @@ import {
 import { DecisionButtons } from "@/app/(app)/time/approvals/decision";
 import { CorrectionList } from "./corrections";
 import { HeadcountList } from "./headcount";
+import { RegularisationList } from "./regularisation";
 
 /**
  * One inbox for everything waiting on this person, across processes, with a
@@ -137,6 +138,8 @@ export default async function ApprovalsPage(props: { searchParams: Promise<{ pro
           />
         ) : process === "headcount" ? (
           <HeadcountList rows={rows} steps={steps} />
+        ) : process === "regularisation" ? (
+          <RegularisationList rows={rows} steps={steps} />
         ) : (
           <Table>
             <thead>
