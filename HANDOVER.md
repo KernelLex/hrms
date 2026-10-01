@@ -148,7 +148,7 @@ The value is in the seams:
 | Service | Status | Detail |
 |---|---|---|
 | GitHub | working | `KernelLex/hrms`; Actions runs CI on every push and pull request |
-| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0021 and seeded. One database: production and the demo are the same (§10). |
+| Turso | working | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0022 and seeded. One database: production and the demo are the same (§10). |
 | Vercel | working | Project `amogh24/hrms`; deploys `main` on push; Vercel Cron calls `/api/cron/tick` daily |
 | Email | recording only | No provider connected: every email is written to the outbox and readable on the Outbox screen, not sent |
 | Cloudflare R2 | pending | Not enabled on the Cloudflare account (API error 10042). Documents are stored in the database until it is (§5.8). |
