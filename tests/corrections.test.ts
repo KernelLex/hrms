@@ -4,6 +4,7 @@ import { cancelChange, requestChange } from "@/app/actions/corrections";
 import { decideApproval } from "@/app/actions/approvals";
 import { requestFor } from "@/lib/workflow/engine";
 import { readAsOf } from "@/lib/engines/timeslice";
+import { todayInIndia } from "@/lib/dates";
 import { form } from "./support/fixtures";
 import { actAs, createPerson, type Person } from "./support/people";
 import { apiClient, call } from "./support/api";
@@ -14,7 +15,13 @@ import { apiClient, call } from "./support/api";
  * and two different people.
  */
 
-const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+// Offset from India's own today, not the runner's UTC one — the two disagree
+// for part of every day, and this file asserts right on that boundary.
+const day = (offset: number) => {
+  const d = new Date(`${todayInIndia()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + offset);
+  return d.toISOString().slice(0, 10);
+};
 const proof = () => new File([new TextEncoder().encode("%PDF-1.4\n% cheque\n%%EOF")], "cheque.pdf", { type: "application/pdf" });
 
 let manager: Person;
