@@ -31,7 +31,11 @@ function connect(): Database {
     );
   }
 
-  _client = createClient({ url, authToken: readEnv("TURSO_AUTH_TOKEN") });
+  // A local SQLite file otherwise fails SQLITE_BUSY the instant another
+  // connection briefly holds the write lock, rather than waiting for it —
+  // the sequential test suite's own worker-to-worker handoffs are enough to
+  // trigger that. Turso's remote connections ignore this option.
+  _client = createClient({ url, authToken: readEnv("TURSO_AUTH_TOKEN"), timeout: 5000 });
   _db = drizzle(_client, { schema });
   return _db;
 }

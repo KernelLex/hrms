@@ -26,7 +26,7 @@ export default async function setup() {
   process.env.TURSO_DATABASE_URL = `file:${file}`;
   process.env.TURSO_AUTH_TOKEN = "";
 
-  const client = createClient({ url: `file:${file}` });
+  const client = createClient({ url: `file:${file}`, timeout: 5000 });
   await migrate(drizzle(client), {
     migrationsFolder: path.resolve(__dirname, "../../src/db/migrations"),
   });

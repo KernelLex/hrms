@@ -15,7 +15,7 @@ async function main() {
   const url = process.env.TURSO_DATABASE_URL;
   if (!url) throw new Error("TURSO_DATABASE_URL is not set.");
 
-  const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+  const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN, timeout: 5000 });
   const db = drizzle(client);
 
   console.log(`Migrating ${url}`);
