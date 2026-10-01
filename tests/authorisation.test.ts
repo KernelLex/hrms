@@ -13,6 +13,7 @@ import * as headcount from "@/app/actions/headcount";
 import * as imports from "@/app/actions/imports";
 import * as integrations from "@/app/actions/integrations";
 import * as lifecycle from "@/app/actions/lifecycle";
+import * as loansClaims from "@/app/actions/loans-claims";
 import * as notifications from "@/app/actions/notifications";
 import * as org from "@/app/actions/org";
 import * as payroll from "@/app/actions/payroll";
@@ -58,6 +59,7 @@ const MODULES = {
   imports,
   integrations,
   lifecycle,
+  "loans-claims": loansClaims,
   notifications,
   org,
   payroll,
@@ -111,6 +113,20 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   corrections: { requestChange: ["self.profile"], cancelChange: ["self.profile"] },
   documents: { uploadEmployeeDocument: ["employee.documents"], removeEmployeeDocument: ["employee.documents"] },
   headcount: { requestHeadcount: ["employee.view_team", "org.edit"] },
+  "loans-claims": {
+    submitLoan: ["self.loans"],
+    withdrawLoan: ["self.loans"],
+    prepayLoanAction: ["payroll.setup"],
+    closeLoanAction: ["payroll.setup"],
+    submitClaim: ["self.claims"],
+    withdrawClaim: ["self.claims"],
+    saveClaimCategory: ["payroll.setup"],
+    deleteClaimCategory: ["payroll.setup"],
+    saveClaimCategoryLimit: ["payroll.setup"],
+    deleteClaimCategoryLimit: ["payroll.setup"],
+    saveLoanBenchmarkRate: ["payroll.setup"],
+    deleteLoanBenchmarkRate: ["payroll.setup"],
+  },
   imports: {
     uploadImport: ["employee.edit"], // and org.edit: like hireEmployee
     confirmImportAction: ["employee.edit"], // and org.edit: like hireEmployee

@@ -36,6 +36,9 @@ import {
   ListChecks,
   Users2,
   Fingerprint,
+  HandCoins,
+  Landmark,
+  ReceiptIndianRupee,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -83,6 +86,9 @@ const ICONS: Record<string, LucideIcon> = {
   ListChecks,
   Users2,
   Fingerprint,
+  HandCoins,
+  Landmark,
+  ReceiptIndianRupee,
 };
 
 type Item = {

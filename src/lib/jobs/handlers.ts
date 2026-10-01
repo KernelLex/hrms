@@ -9,6 +9,7 @@ import { getImport, runImportBatch } from "@/lib/services/imports";
 import { formatMonth, todayInIndia } from "@/lib/dates";
 import { accrueForPeriod, expireCompOffs, runYearEnd } from "@/lib/engines/leave-policy";
 import { runDailyAttendance } from "@/lib/engines/attendance";
+import { queueDueLoanInstallments } from "@/lib/engines/loans";
 import { enqueueJob, requeueJob } from "./queue";
 import { escalateOverdue } from "@/lib/workflow/engine";
 import { deliverWebhooks, nextWebhookRetry, wakeDeliveryStatement } from "@/lib/api/events";
@@ -286,6 +287,7 @@ export const HANDLERS: Record<string, JobHandler> = {
     await notifyProbationDue();
     await runLeavePolicyTicks(todayInIndia());
     await runDailyAttendanceTick(todayInIndia());
+    await queueDueLoanInstallments(todayInIndia());
 
     // Approval steps that have waited longer than their flow allows.
     await escalateOverdue();

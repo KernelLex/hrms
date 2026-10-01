@@ -1,6 +1,6 @@
 # HRMS — handover
 
-**Last updated:** 1 Oct 2026 · **Current phase:** 18 of 25 done (salary structures and statutory payroll: CTC by structure, ESI/professional tax/LWF/employer PF, the ECR file, split cost centres, GL mapping). Next is phase 19, loans and reimbursements.
+**Last updated:** 1 Oct 2026 · **Current phase:** 19 of 25 done (loans and reimbursements: an EMI schedule recovered through payroll one instalment at a time, prepayment, the concessional-loan perquisite value, and reimbursement claims checked against their category's limit and paid as one-off payments, whether entered on screen or sent in already approved by the ERP). Next is phase 20, exit and full and final settlement.
 
 **Live:** https://hrms-amogh24.vercel.app · **Repository:** `github.com/KernelLex/hrms` (branch `main`) · **Continuous integration:** GitHub Actions on every push
 
@@ -101,13 +101,13 @@ The value is in the seams:
 
 | | |
 |---|---|
-| Phases complete | 0 to 9 (the original build), 10 to 15 of the extended plan. Part A runs to 24; Part B is 25. |
-| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page; phase 14 added 6: the Career tab, transfer and promotion wizards, My tasks, Probation due and Letter templates; phase 15 added 4: headcount requests, and the import wizard's upload, report and list screens — plus the org chart redrawn as boxes and lines, with the indented list kept beside it as the accessible view; phase 16 added Holiday calendars and Leave policies; phase 17 added 6: Shifts, Roster patterns (with each pattern's own day-grid detail), Roster, Today's board, Devices and My attendance; phase 18 added 5: Salary structures (with each structure's own components detail), Statutory rates, GL mapping, a CTC tab and a Statutory details tab on the employee record |
-| Database tables | 126, in 19 migrations (0000 to 0018) |
-| Engines | Time-slice, quota, leave policy, payroll, tax, time evaluation, attendance, statutory; plus the job runner, the approval engine and the import engine |
-| Permissions | 32, in ten groups; 3 built-in roles, and Recruiter and Finance as examples of roles HR can create |
-| Integration API | 71 endpoints under `/api/v1`, 33 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
-| Automated tests | **327 passing** in 36 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
+| Phases complete | 0 to 9 (the original build), 10 to 19 of the extended plan. Part A runs to 24; Part B is 25. |
+| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page; phase 14 added 6: the Career tab, transfer and promotion wizards, My tasks, Probation due and Letter templates; phase 15 added 4: headcount requests, and the import wizard's upload, report and list screens — plus the org chart redrawn as boxes and lines, with the indented list kept beside it as the accessible view; phase 16 added Holiday calendars and Leave policies; phase 17 added 6: Shifts, Roster patterns (with each pattern's own day-grid detail), Roster, Today's board, Devices and My attendance; phase 18 added 5: Salary structures (with each structure's own components detail), Statutory rates, GL mapping, a CTC tab and a Statutory details tab on the employee record; phase 19 added 6: Loans and claims administration (with claim categories and the benchmark rate), claim approval with bills side by side, My loans and My claims |
+| Database tables | 134, in 20 migrations (0000 to 0019) |
+| Engines | Time-slice, quota, leave policy, payroll, tax, time evaluation, attendance, statutory, loans; plus the job runner, the approval engine and the import engine |
+| Permissions | 34, in ten groups; 3 built-in roles, and Recruiter and Finance as examples of roles HR can create |
+| Integration API | 73 endpoints under `/api/v1`, 37 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
+| Automated tests | **344 passing** in 37 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
 | UI audit | **Clean** (`npm run audit:ui`): every screen, as four people at 1280 and 375 pixels |
 | CI | Typecheck, lint, tests, production build, UI audit and the mock ERP over HTTP on every push |
 | Pending on others | Cloudflare R2 (not enabled on the account), email delivery (no provider chosen), and the rest of phase 25 |
@@ -135,8 +135,9 @@ The value is in the seams:
 | 16 | Leave policies | done |
 | 17 | Attendance and shifts | done |
 | 18 | Salary structures and statutory payroll | done |
-| 19 | Loans and reimbursements | **next** |
-| 20–24 | Exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
+| 19 | Loans and reimbursements | done |
+| 20 | Exit and full and final settlement | **next** |
+| 21–24 | Tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
 | 25 | Outside input: the ERP go-live, email, R2, e-signature and the rest | waits on you and the client (§9.6) |
 
 ### 3.3 Infrastructure
@@ -166,10 +167,10 @@ The careers site, `/careers`, needs no account: the demo's HR executive role is 
 
 | Check | Result |
 |---|---|
-| `npm test` | 327 passing: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, leave policies and their ledger, compensatory off, leave encashment, shifts, rosters, attendance finalisation and regularisation, payroll, statutory PF/ESI/professional tax/LWF (including ESI's contribution-period continuation and Maharashtra's February rule), employer contributions reaching the ledger and never net pay, cost-centre splits, the CTC breakdown against a hand calculation, the ECR file's field format, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, onboarding checklists and tasks, transfers and promotions through the time-slice engine, probation confirm/extend/end, letters (merge, PDF, immutability), headcount requests through their approval to a vacant position recruitment can hire against, bulk import (dry run, confirm, batching 5,000 employees, re-importing a file writing nothing twice), opening balances reducing a projected month's TDS, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document, the guided-actions endpoint and its events, imports needing the scope that matches what is being imported), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
+| `npm test` | 344 passing: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, leave policies and their ledger, compensatory off, leave encashment, shifts, rosters, attendance finalisation and regularisation, payroll, statutory PF/ESI/professional tax/LWF (including ESI's contribution-period continuation and Maharashtra's February rule), employer contributions reaching the ledger and never net pay, cost-centre splits, the CTC breakdown against a hand calculation, the ECR file's field format, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, onboarding checklists and tasks, transfers and promotions through the time-slice engine, probation confirm/extend/end, letters (merge, PDF, immutability), headcount requests through their approval to a vacant position recruitment can hire against, bulk import (dry run, confirm, batching 5,000 employees, re-importing a file writing nothing twice), opening balances reducing a projected month's TDS, an EMI schedule closing at zero with the last instalment absorbing rounding, a prepayment rescheduling the remainder at the same EMI, the concessional-loan perquisite value, a claim refused over its category's limit and paid once approved — on screen or sent in already approved by the API, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document, the guided-actions endpoint and its events, imports needing the scope that matches what is being imported), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
 | Mutation checks | Six deliberate bugs in the payroll and tax engines each fail a test; the outbox regression test fails on the old per-minute delivery key; the authorisation matrix fails when one Server Function's check is loosened; removing ESI's contribution-period continuation check fails the statutory engine's own test |
 | `npm run audit:ui` | clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
-| `npm run sandbox` | The mock ERP's 20 steps against a running app over HTTP, receiving real signed webhooks: 20 of 20 |
+| `npm run sandbox` | The mock ERP's 21 steps against a running app over HTTP, receiving real signed webhooks: 21 of 21 |
 | `API.md` | Its reference is generated from the endpoint definitions; a test fails when it is stale |
 | `npx tsc --noEmit`, `npm run lint`, `next build` | clean |
 | CI | all of the above on GitHub Actions, on every push |
@@ -372,14 +373,14 @@ Turso is SQLite. Getting any of these wrong produces wrong numbers or a schema t
 
 ### 5.4 Data model
 
-126 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
+134 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
 
 | Prefix | Tables |
 |---|---|
 | `om_` | company, personnel_area, personnel_sub_area, job, org_unit, position, reporting_line, cost_centre (sent by the ERP), headcount_request |
 | `pa_` | employee; change_request (a correction an employee asked for, and its approval); checklist, checklist_item, checklist_template, task, letter, letter_template; infotypes it0000_action, it0001_org_assignment, it0002_personal_data, it0006_address, it0007_planned_working_time, it0008_basic_pay, it0009_bank_details, it0011_statutory_details (UAN, ESI number, professional tax state), it0019_monitoring (probation), it0021_family_member, it0105_communication |
 | `pt_` | absence_type, attendance_type, quota_type, it2001_absence, it2002_attendance, it2006_absence_quota (a running total; `quota_ledger` is the source of truth), leave_request, leave_policy, quota_ledger, comp_off, work_schedule_rule, holiday, holiday_calendar, time_evaluation_result, shift, roster_pattern, roster_pattern_day, roster, device, punch, attendance_day, regularisation |
-| `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, opening_balance, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line (with the ERP's payment confirmation), gl_posting, gl_posting_line, statutory_remittance, gl_account (sent by the ERP), salary_structure, salary_structure_component, employee_ctc, cost_split, gl_mapping, pf_rate, esi_rate, professional_tax_slab, lwf_rate, tax_constant |
+| `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, opening_balance, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line (with the ERP's payment confirmation), gl_posting, gl_posting_line, statutory_remittance, gl_account (sent by the ERP), salary_structure, salary_structure_component, employee_ctc, cost_split, gl_mapping, pf_rate, esi_rate, professional_tax_slab, lwf_rate, tax_constant, loan, loan_schedule, loan_prepayment, loan_benchmark_rate, claim_category, claim_category_limit, claim, claim_line |
 | `rc_` | requisition (the role as candidates read it, and whether it is published), candidate, application (channel, screening, the decision and the offer), application_stage_history, interview (each round: interviewer, time, place, status, rating, recommendation, notes), hire_conversion |
 | `pm_` | appraisal_template, appraisal_cycle, goal, appraisal, calibration, increment_recommendation |
 | `tds_` | section_master, tax_slab, employee_declaration, deduction_register, form16 |
@@ -404,6 +405,7 @@ The line between a prototype and a clickable mockup; everything else is forms ov
 6. **Time evaluation** (`engines/time-evaluation.ts`). Turns absences and attendance into a period's paid days and overtime for payroll, against each employee's own holiday calendar.
 7. **Attendance** (`engines/attendance.ts`). `generateRoster` applies a pattern to a team from a chosen start date; `runDailyAttendance` turns a batch of rostered days' punches into `pt_attendance_day` rows — first in, last out, a late mark past the shift's grace period, overtime past its length, a night shift read from its own start to its own end rather than one calendar day — everything read once for the whole batch. Overtime is paid at double the hourly rate as an IT0015 payment, the same table leave encashment uses. `finalizeAttendanceDay` re-runs the same logic for one employee's one day, reading and writing through the caller's own transaction so an approved regularisation's punches are visible to it immediately.
 8. **Statutory** (`engines/statutory.ts`). Dated PF, ESI, professional tax and labour welfare fund rates, each read once per payroll batch and applied per employee rather than queried per employee — `pfContribution` and `esiContribution` are pure functions over an already-loaded rate; `professionalTaxFromSlabs` and `lwfDueFromRates` the same, over every state's rows loaded once. ESI eligibility locks in for a whole contribution period (April–September, October–March): once a payslip shows an ESI line earlier in the same period, it continues even past a raise that would otherwise put gross over the ceiling. `generateEcrText` writes EPFO's published pipe-delimited ("#~#") ECR format, eleven fields a member — a best-effort implementation of the public format; validating an actual file against EPFO's own tools is phase 25.
+9. **Loans** (`engines/loans.ts`). `computeEmi` (standard reducing-balance formula, 0% dividing the principal evenly) and `generateSchedule` turn an approved loan into its full instalment table at once — each instalment's interest on the balance it opened the month with, the rest recovering principal, the last instalment absorbing whatever rounding left the others short so the balance closes at exactly zero. `prepayLoan` reduces the balance immediately and regenerates every instalment not yet queued onto payroll from the smaller balance at the same EMI, so a prepayment shortens how many instalments are left rather than their size; a prepayment that clears the balance closes the loan. `monthlyPerquisite` is rule 3(7)(i): nothing below the ₹20,000 aggregate-principal exemption or once the loan's own rate meets the dated benchmark rate (`benchmarkRateFor`), otherwise the rate gap on the opening balance, every month, for phase 21's Form 12BA. `queueDueLoanInstallments`, run by the daily job, queues each due instalment onto the same `py_it0015_additional_payment` one-off-payment rail leave encashment and overtime already use — so payroll itself needed no change to deduct it exactly once — and closes the loan once the last one is queued. Claims need less machinery of their own: `engines/claims.ts` queues an approved claim's payment on the wage type its category's taxability picks, the one step a decision inside HRMS and a claim arriving already approved from the ERP both take; `services/claims.ts` checks a submission against its category's limit for the employee's own grade, by the same most-specific-match precedent the leave policy engine uses for its own overrides.
 
 ### 5.6 Platform services
 
@@ -483,6 +485,7 @@ The blueprint defines 38 screens (with 18 nested tabs, 51 form surfaces). What e
 | Employees | Search and list (CH-04); hire (CH-01); record with a tab per infotype (CH-02), as-of view (CH-03), documents, change log, access log; mass update (CH-05) | `employee.view_all` (a manager's team list: `employee.view_team`); pay and bank tabs need `pay.view` / `bank.view`; logs need `audit.view` |
 | Time | Absences, attendance, quotas, time evaluation, schedules, holidays (TM-01…05); team calendar; my leave | `time.manage`; `time.team_calendar`; `self.leave` |
 | Payroll | Periods (with "email payslips" per period), wage types, salary structures (with each structure's own components), statutory rates (PF, ESI, professional tax, LWF, income-tax constants), GL mapping, recurring and one-off payments, run (with variance check and off-cycle), payslip with year to date, Download PDF and Email again, bank file, ledger (with its own CSV download) and remittances with ECR (PY-01…05); my payslips; a CTC tab and cost splits on the employee record | `payroll.view`, `payroll.setup`, `payroll.run`, `payroll.post`; `self.pay` |
+| Money | Loans and claims administration (claim categories, the benchmark rate), approval with bills side by side; my loans (ask, prepay progress, schedule); my claims (submit with bills, withdraw) | `payroll.setup`; `self.loans`, `self.claims` |
 | Tax | Sections and slabs, declarations, register, Form 16 (TDS-01…05) | `tax.manage`; own declaration and Form 16 with `self.tax` |
 | Recruitment | Requisitions (list, open, detail with its applications and the role as candidates read it, edit, publish); applications by stage; each application's page — screening, interview rounds, the decision, the offer, history; interviews upcoming and past; candidates with resumes; conversion (RC-01…05) | `recruitment.manage`; conversion `recruitment.hire` |
 | My interviews | The rounds someone is asked to take; each round's page, with the candidate, the role and the notes form | `recruitment.interview` |
@@ -1459,11 +1462,10 @@ Technical choices that need nobody's input, taken here so Part A can proceed wit
 | Attendance devices until a vendor is chosen | CSV upload and a generic punch endpoint | Every device can export CSV, and any middleware can call an endpoint. |
 | Continuous integration | GitHub Actions running typecheck, lint, tests, build, the UI audit and the mock ERP against a local database | Needs no secrets, because tests never touch Turso. |
 
-### 9.5 Part A — phases 19 to 24
+### 9.5 Part A — phases 20 to 24
 
 | # | Phase | Roadmap features | Depends on |
 |---|---|---|---|
-| 19 | Loans and reimbursements | Loans and advances, reimbursement claims | 18 |
 | 20 | Exit and full and final settlement | Exit management, full and final settlement | 14, 18, 19 |
 | 21 | Tax completeness | Investment proofs (12BB), HRA from rent, tax regime comparison, Form 12BA, section 89 relief, 24Q return file | 18, 19 |
 | 22 | Recruitment | Careers page, interview scheduling, structured scorecards, offer letters (all but e-signature), referral tracking, recruitment analytics | 14, 18 |
@@ -1494,28 +1496,6 @@ flowchart LR
   P16 --> P25
   P17 --> P25
 ```
-
-#### Phase 19 — Loans and reimbursements
-
-**Goal.** Money lent to and spent by employees flows through payroll with its paperwork, from whichever system it starts in.
-
-**Features.** Loans and advances · Reimbursement claims.
-
-**Build**
-
-| Part | What |
-|---|---|
-| Data | `py_loan` (type, principal, interest, EMI, start, status, approval request) · `py_loan_schedule` (period, principal, interest, balance, the run that recovered it) · `py_claim_category` (limit per grade, taxable or not: fuel, phone, medical, LTA) · `py_claim` and `py_claim_line` (date, what, amount, the bill as a stored document) |
-| Logic | An approved loan generates its schedule, and payroll deducts each EMI exactly once — the same "paid by run" rule as one-off payments. Prepayment reschedules the rest; closure stops it. **A concessional or interest-free loan over ₹20,000 creates a perquisite value**, which phase 21's Form 12BA reports. Claims carry their bills, go manager → finance, are checked against limits at submission, and are paid as one-off payments — taxable or not by category — in the next run, or off-cycle. |
-| Screens | My loans and My claims · loan and claim administration · claim approval with bills side by side |
-| API and events | `/v1/loans` with the schedule, so the ERP books the receivable · `POST /v1/claims`, so **claims approved in the ERP arrive to be paid through payroll** instead of being retyped · `loan.approved`, `loan.closed`, `claim.approved`, `claim.paid` |
-
-**Done when**
-- A ₹1,20,000 loan over 12 EMIs recovers ₹10,000 a month and closes at zero.
-- A prepayment reschedules the remainder.
-- An approved claim is paid once, with its bills on file, whether entered on screen or sent by the mock ERP.
-- A claim over its limit is refused at submission.
-- A concessional loan produces the right perquisite value (test).
 
 #### Phase 20 — Exit and full and final settlement
 
@@ -1707,22 +1687,22 @@ Kept to what belongs in the HR module of an ERP for an Indian company. Features 
 | Headcount requests | A manager asks for a new position; approved through HR and finance, it opens vacant, ready for recruitment to open a requisition against. | 15 | built |
 | Bulk import | Load positions, employees and opening balances from a spreadsheet, with a check before anything is written. | 15 | built |
 | A drawn org chart | The hierarchy as boxes and lines, not only an indented list. | 15 | built |
-| Policies by grade | Different entitlements for different grades or locations. | 16 | planned |
-| Regional holiday calendars | Holidays differ by state; today there is one national list. | 16 | planned |
-| Leave accrual, carry-forward and lapse | Entitlement earned monthly, part carried into next year, the rest lapsing, per policy. | 16 | planned |
-| Leave balance forecast | What the balance will be on a future date, counting approved leave and accrual. | 16 | planned |
-| Compensatory off | Time off earned for working a holiday, with an expiry. | 16 | planned |
-| Leave encashment | Paying unused leave, on exit or yearly, through payroll. | 16 | planned |
-| Shift rosters | Who works which shift on which day, for plants and support teams. | 17 | planned |
-| Attendance devices | Import punches from biometric devices instead of recording attendance by hand. | 17, vendor adapters in 25 | planned |
-| Team attendance regularisation | Approve a forgotten check-in or a missed punch. | 17 | planned |
-| Salary structures and CTC | Components by grade, a CTC letter, and the breakdown shown to the employee. | 18 | planned |
-| ESI, professional tax, LWF, employer PF | Statutory deductions and contributions still missing — see §10.md. | 18, compliance review in 25 | planned |
-| ECR file for EPFO | The monthly provident fund upload in EPFO's format. | 18, validation in 25 | planned |
-| Split cost centres | One person's cost shared across projects by percentage. | 18 | planned |
-| Accounting export | The payroll journal as a file, for audit, and as a fallback when the link to the ERP is down. | 18 | planned |
-| Loans and advances | EMI schedules with an outstanding balance, recovered through payroll. | 19 | planned |
-| Reimbursement claims | Claims with bills and approval, paid through payroll. | 19 | planned |
+| Policies by grade | Different entitlements for different grades or locations. | 16 | built |
+| Regional holiday calendars | Holidays differ by state; today there is one national list. | 16 | built |
+| Leave accrual, carry-forward and lapse | Entitlement earned monthly, part carried into next year, the rest lapsing, per policy. | 16 | built |
+| Leave balance forecast | What the balance will be on a future date, counting approved leave and accrual. | 16 | built |
+| Compensatory off | Time off earned for working a holiday, with an expiry. | 16 | built |
+| Leave encashment | Paying unused leave, on exit or yearly, through payroll. | 16 | built |
+| Shift rosters | Who works which shift on which day, for plants and support teams. | 17 | built |
+| Attendance devices | Import punches from biometric devices instead of recording attendance by hand. | 17, vendor adapters in 25 | built, vendor adapters in 25 |
+| Team attendance regularisation | Approve a forgotten check-in or a missed punch. | 17 | built |
+| Salary structures and CTC | Components by grade, a CTC letter, and the breakdown shown to the employee. | 18 | built |
+| ESI, professional tax, LWF, employer PF | Statutory deductions and contributions still missing — see §10.md. | 18, compliance review in 25 | built, compliance review in 25 |
+| ECR file for EPFO | The monthly provident fund upload in EPFO's format. | 18, validation in 25 | built, validation in 25 |
+| Split cost centres | One person's cost shared across projects by percentage. | 18 | built |
+| Accounting export | The payroll journal as a file, for audit, and as a fallback when the link to the ERP is down. | 18 | built |
+| Loans and advances | EMI schedules with an outstanding balance, recovered through payroll. | 19 | built |
+| Reimbursement claims | Claims with bills and approval, paid through payroll. | 19 | built |
 | Exit management | Resignation, notice period, clearance from each department, and full and final settlement. | 20 | planned |
 | Full and final settlement | Leave encashment, notice recovery and gratuity in one off-cycle run on exit. | 20 | planned |
 | Investment proofs (Form 12BB) | Employees upload rent receipts and 80C proofs against their declaration; HR verifies them before the year-end tax recalculation. | 21 | planned |
@@ -1823,7 +1803,7 @@ Phase 18 closed the gaps this section used to list: employer PF, EPS, EDLI and t
 |---|---|
 | **The ECR file against EPFO's own tools** | Generated to the published format from this build's own reading of it; an actual file has not been validated against EPFO's upload tool or a real UAN. |
 | **Gratuity and bonus** | Gratuity must be provided for and paid on leaving after five years; the Payment of Bonus Act applies to many salaries. |
-| **Income tax completeness** | Surcharge above ₹50 lakh; perquisites (including a concessional loan's, once phase 19 adds loans); income from a previous employer in the year (Form 12B); relief under section 89 for arrears; HRA exemption computed from rent paid rather than a declared figure; proof collection (Form 12BB) and verification before the year end. |
+| **Income tax completeness** | Surcharge above ₹50 lakh; a concessional loan's perquisite value is computed and stored per instalment (phase 19) but not yet read into Form 12BA or TDS; income from a previous employer in the year (Form 12B); relief under section 89 for arrears; HRA exemption computed from rent paid rather than a declared figure; proof collection (Form 12BB) and verification before the year end. |
 | **The 24Q return** | Quarterly TDS returns are filed as an FVU file generated from the government's utility; the register is the source, but the file is not produced. |
 | **Form 16 as issued** | Part A is downloaded from TRACES and Part B is issued by the employer, digitally signed. The certificate here is a faithful computation, not the issued document. |
 | **ESI and professional tax wage bases** | Both read the same taxable-earnings figure TDS already computes, not the narrower "ESI wages" or "PT wages" the law separately defines (which exclude some non-taxable reimbursements). A reasonable prototype simplification, worth a real audit's attention before go-live. |
@@ -1834,9 +1814,6 @@ Phase 18 closed the gaps this section used to list: employer PF, EPS, EDLI and t
 |---|---|---|
 | **A parallel run** | The only real proof a payroll is right. | Run alongside the existing payroll for two or three payroll cycles and reconcile every payslip to the paisa before switching over. |
 | Full and final settlement | Leavers are paid to their last day, but leave encashment, notice-period recovery and gratuity are not calculated. | A settlement action that produces an off-cycle run with those lines. |
-| Loans and advances | A loan is a recurring deduction today, with no balance or schedule. | A loan record with an EMI schedule and an outstanding balance. |
-| Reimbursements | A one-off payment with no claim, bill or approval behind it. | Claims with receipts and an approval step, paid through payroll. |
-| Salary structures | Allowances are percentages of basic for everyone. Real organisations offer a CTC broken into components by grade. | Structures per grade, and the CTC shown to the employee. |
 | Retro limits | Retro sees records *added* after a month was paid, not records deleted, and stops at the financial year. | Read deletions from the change log, which now records them, and extend retro across the year end with the tax effect on the right year. |
 | Bank formats and reconciliation | The bank file is a generic NEFT CSV. Banks each have their own bulk formats, and failed credits come back. | Formats per bank (or host-to-host), and reconciliation of what was actually credited. |
 | Payroll inputs cut-off | Inputs can change up to the moment of the run. | A cut-off date per period after which changes go to next month or through retro. |
@@ -1910,6 +1887,16 @@ Phase 18 closed the gaps this section used to list: employer PF, EPS, EDLI and t
 ## 11. History
 
 What each phase delivered, newest first, and where the build differed from its plan. When a phase in §9 is finished, it moves here.
+
+### Phase 19 — Loans and reimbursements
+
+- **Loans and the EMI schedule**: `py_loan` (type, principal, rate, tenure, EMI, status, the approval request) and `py_loan_schedule`, generated once in full the moment a loan is approved — `computeEmi` (the standard reducing-balance formula; 0% just divides the principal evenly) and `generateSchedule` work out each instalment's interest on the balance it opened the month with, the rest recovering principal, with the last instalment absorbing whatever rounding left the others short, so the balance always closes at exactly zero — the same "last split absorbs the remainder" convention phase 18's cost splits already used. Each instalment reaches payroll through `py_it0015_additional_payment`, the one-off-payment rail leave encashment and overtime already queue onto, so the payroll engine itself needed no change to deduct it exactly once; a loan closes itself the moment its last instalment is queued.
+- **Prepayment and a concessional loan's perquisite value**: a prepayment reduces the balance at once and regenerates every instalment not yet queued from the smaller balance at the same EMI — what shortens is how many instalments are left, not their size — and closes the loan if it clears the balance entirely. `py_loan_benchmark_rate` holds the dated rate rule 3(7)(i) compares a loan against: `monthlyPerquisite` is nothing below the ₹20,000 aggregate-principal exemption or once the loan's own rate already meets the benchmark, otherwise the rate gap on the opening balance, every month — computed and stored per instalment now, for phase 21's Form 12BA to read; nothing yet feeds it into TDS itself.
+- **Claims, checked against their category's limit at submission**: `py_claim_category` (fuel, phone, medical, LTA — seeded with medical taxable, matching the 2018 budget folding the old medical-reimbursement exemption into the standard deduction) and `py_claim_category_limit` for a grade-specific override, most-specific-match first and falling back to the category's own default — the same precedent the leave policy engine already set for its own overrides. "Grade" is the existing `pa_it0008_basic_pay.pay_scale_group` field, the same concept headcount requests already call grade, not a new one. A claim's bills attach to its lines (a new `claim_line` owner type on the existing generic document store) and, once approved, it is queued as one `py_it0015_additional_payment` on CLAIM or REIMB by the category's own taxability — one wage type per taxability, not one per category, kept deliberately simple.
+- **One rail, reached two ways**: a claim is approved either through the HRMS's own flow — manager, then anyone holding the Finance role — or arrives already approved from the ERP's own process through `POST /v1/claims`, checked against the same category limit either way (an HRMS payroll and tax policy the ERP's process has no reason to enforce itself) and paid through the same queueing step, `engines/claims.ts`, shared by both paths rather than duplicated. It sits apart from `services/claims.ts`, which calls the approval engine, so that `workflow/claim.ts` — itself loaded by the approval engine — can call it without the import cycle that would otherwise make, the same separation `engines/loans.ts` already kept from `services/loans.ts`.
+- **Screens**: **Loans and claims** administration (claim categories, the benchmark rate) · **claim approval** with bills shown side by side · **My loans** (ask, a prepayment's effect on the schedule) · **My claims** (submit with bills, withdraw while pending).
+- **API and events**: `GET /v1/loans`, each with its full schedule inline, so the ERP can book the receivable the moment `loan.approved` fires; `POST /v1/claims`; `loan.approved`, `loan.closed` (derived however a loan reaches Closed — the last instalment queued, a full prepayment, or HR closing it by hand, so none of the three paths is silently missed), `claim.approved`, `claim.paid`.
+- **Where it differs from the plan**: the perquisite value is computed and stored, as planned, but nothing reads it yet — Form 12BA and TDS integration are phase 21's own work, not pulled forward. There is no `GET /v1/claims` or `POST /v1/loans`: a loan is asked for and decided inside the HRMS and only ever read outward; a claim the ERP sends already approved is paid, never read back through this resource — asymmetric on purpose, since each direction has exactly one system of record.
 
 ### Phase 18 — Salary structures and statutory payroll
 

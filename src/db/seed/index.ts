@@ -26,6 +26,7 @@ import { seedLifecycle } from "./lifecycle";
 import { seedHeadcount } from "./headcount";
 import { seedImports } from "./imports";
 import { seedAttendance } from "./attendance";
+import { seedLoansAndClaims } from "./loans";
 
 const OPEN = s.OPEN_ENDED;
 export const DEMO_PASSWORD = "demo1234";
@@ -204,6 +205,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   const timeNotes = await seedTime(db);
   const payrollNotes = await seedPayroll(db);
   const statutoryNotes = await seedStatutory(db);
+  const loanNotes = await seedLoansAndClaims(db);
   const recruitmentNotes = await seedRecruitment(db);
   const performanceNotes = await seedPerformance(db);
 
@@ -228,6 +230,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     ...timeNotes,
     ...payrollNotes,
     ...statutoryNotes,
+    ...loanNotes,
     ...recruitmentNotes,
     ...performanceNotes,
     ...correctionNotes,

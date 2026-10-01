@@ -454,6 +454,10 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `leave.encashed` | `time:read` | Leave was encashed at the policy's daily rate, queued as a one-off payment. `data` is the payment; the amount needs pay:read. |
 | `attendance.day_finalised` | `time:read` | A rostered day's punches were turned into worked minutes, a late mark, and overtime if any. `data` is the attendance day. |
 | `regularisation.decided` | `time:read` | An attendance correction was approved or rejected. `data` says which; an approval also arrives as attendance.day_finalised. |
+| `loan.approved` | `payroll:read` | A loan was approved and its EMI schedule generated. `data` is the loan from GET /loans, with its schedule — book the receivable from it. Amounts need pay:read. |
+| `loan.closed` | `payroll:read` | A loan recovered its last instalment, was prepaid in full, or was closed by hand. `data` is the loan; amounts need pay:read. |
+| `claim.approved` | `payroll:read` | A reimbursement claim was approved, on screen or sent in already approved by the ERP. `data` is the claim; the amount needs pay:read. |
+| `claim.paid` | `payroll:read` | An approved claim was queued to be paid, on the wage type its category's taxability picked — CLAIM if taxable, REIMB if not. `data` is the payment; the amount needs pay:read. |
 
 ### Error codes
 
@@ -546,6 +550,8 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | GET | [`/recurring-payments`](#get-recurring-payments) | `payroll:read` + `pay:read` | List recurring payments |
 | POST | [`/recurring-payments`](#post-recurring-payments) | `payroll:write` | Send a recurring payment |
 | GET | [`/salary-structures`](#get-salary-structures) | `payroll:read` | List salary structures |
+| GET | [`/loans`](#get-loans) | `payroll:read` + `pay:read` | List loans |
+| POST | [`/claims`](#post-claims) | `payroll:write` | Send a claim already approved in the ERP |
 | GET | [`/tax/register`](#get-tax-register) | `tax:read` | The TDS register |
 | GET | [`/requisitions`](#get-requisitions) | `recruitment:read` | List requisitions |
 | GET | [`/applications`](#get-applications) | `recruitment:read` | List applications |
@@ -1855,6 +1861,54 @@ Content-Type: application/json
 <a id="get-salary-structures"></a>**List salary structures.** How an annual CTC splits into basic, allowances and employer contributions each month — read an employee's own with /employees/{id}/history?record=ctc.
 
 Needs `payroll:read`. Answers 200.
+
+#### GET /loans
+
+<a id="get-loans"></a>**List loans.** Each employee loan with its EMI schedule, generated the moment it is approved — book the receivable from it, or from the loan.approved event, and watch loan.closed for when it is recovered in full. `perquisite_value` on each instalment is the concessional-loan taxable value rule 3(7)(i) adds for that month.
+
+Needs `payroll:read` and `pay:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `employee_id` | integer |  |  |
+| `status` | `Pending` \\| `Active` \\| `Closed` \\| `Rejected` |  |  |
+
+#### POST /claims
+
+<a id="post-claims"></a>**Send a claim already approved in the ERP.** A reimbursement claim the ERP's own approval process already decided, to be paid through payroll instead of retyped on screen. Still checked against the category's limit — an HRMS payroll and tax policy the ERP's process has no reason to know — and refused over it. Written in as Approved straight away and queued for payment; there is no HRMS-side decision to wait on. Send an Idempotency-Key.
+
+Needs `payroll:write`. Send an `Idempotency-Key`. Answers 201.
+
+| Body field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `employee_id` | integer | yes |  |
+| `category` | string | yes |  |
+| `claim_date` | string | yes | A date, YYYY-MM-DD. |
+| `lines` | array of object | yes |  |
+
+```http
+POST /api/v1/claims
+Content-Type: application/json
+
+{
+  "employee_id": 3,
+  "category": "FUEL",
+  "claim_date": "2026-10-01",
+  "lines": [
+    {
+      "date": "2026-09-28",
+      "description": "Client-site mileage",
+      "amount": {
+        "amount": "2000.00",
+        "currency": "INR"
+      }
+    }
+  ]
+}
+```
 
 ### Tax endpoints
 

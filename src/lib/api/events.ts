@@ -68,6 +68,10 @@ export const EVENT_TYPES = {
     description: "A rostered day's punches were turned into worked minutes, a late mark, and overtime if any. `data` is the attendance day.",
   },
   "regularisation.decided": { scope: "time:read", description: "An attendance correction was approved or rejected. `data` says which; an approval also arrives as attendance.day_finalised." },
+  "loan.approved": { scope: "payroll:read", description: "A loan was approved and its EMI schedule generated. `data` is the loan from GET /loans, with its schedule — book the receivable from it. Amounts need pay:read." },
+  "loan.closed": { scope: "payroll:read", description: "A loan recovered its last instalment, was prepaid in full, or was closed by hand. `data` is the loan; amounts need pay:read." },
+  "claim.approved": { scope: "payroll:read", description: "A reimbursement claim was approved, on screen or sent in already approved by the ERP. `data` is the claim; the amount needs pay:read." },
+  "claim.paid": { scope: "payroll:read", description: "An approved claim was queued to be paid, on the wage type its category's taxability picked — CLAIM if taxable, REIMB if not. `data` is the payment; the amount needs pay:read." },
 } as const satisfies Record<string, { scope: Scope; description: string }>;
 
 export type EventType = keyof typeof EVENT_TYPES;
@@ -133,6 +137,20 @@ export function eventFor(c: ChangeRow): Derived | null {
   }
   if (c.entity === "py_it0015_additional_payment" && c.action === "create" && after.wage_type_code === "LENC") {
     return { type: "leave.encashed", subject: `payments/${c.entity_id}`, key: `lenc:${c.entity_id}` };
+  }
+  if (c.entity === "py_it0015_additional_payment" && c.action === "create" && (after.wage_type_code === "CLAIM" || after.wage_type_code === "REIMB")) {
+    return { type: "claim.paid", subject: `payments/${c.entity_id}`, key: `claimpay:${c.entity_id}` };
+  }
+  // Closing reaches the log three ways — the last instalment queued, a full
+  // prepayment, or HR closing it by hand — so either signal counts.
+  if (c.entity === "py_loan" && c.action === "update" && (after.status === "Closed" || after.closed === true)) {
+    return { type: "loan.closed", subject: `loans/${c.entity_id}`, key: `loanclosed:${c.entity_id}` };
+  }
+  if (c.entity === "py_loan" && c.action === "update" && after.status === "Active") {
+    return { type: "loan.approved", subject: `loans/${c.entity_id}`, key: `loanappr:${c.entity_id}` };
+  }
+  if (c.entity === "py_claim" && (c.action === "create" || c.action === "update") && after.status === "Approved") {
+    return { type: "claim.approved", subject: `claims/${c.entity_id}`, key: `claimappr:${c.entity_id}` };
   }
   if (c.entity === "pt_attendance_day") {
     return { type: "attendance.day_finalised", subject: `attendance-days/${c.entity_id}`, key: `attday:${c.entity_id}` };
@@ -397,6 +415,68 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
         amount: money(Number(r.amount_paise)),
       };
     }
+    case "claim.paid": {
+      const r = await one(
+        `SELECT p.id, p.employee_id, p.wage_type_code, p.amount_paise, p.payment_date, c.id AS claim_id, c.category_code
+         FROM py_it0015_additional_payment p JOIN py_claim c ON c.additional_payment_id = p.id
+         WHERE p.id = ?`,
+        [Number(id)],
+      );
+      if (!r) return null;
+      const { money } = await import("./format");
+      return {
+        id: Number(r.id),
+        claim_id: Number(r.claim_id),
+        employee_id: Number(r.employee_id),
+        category: String(r.category_code),
+        wage_type: String(r.wage_type_code),
+        amount: money(Number(r.amount_paise)),
+        payment_date: String(r.payment_date),
+      };
+    }
+    case "claim.approved": {
+      const r = await one("SELECT * FROM py_claim WHERE id = ?", [Number(id)]);
+      if (!r) return null;
+      const { money } = await import("./format");
+      return {
+        id: Number(r.id),
+        employee_id: Number(r.employee_id),
+        category: String(r.category_code),
+        claim_date: String(r.claim_date),
+        total_amount: money(Number(r.total_amount_paise)),
+        status: String(r.status),
+        decided_at: r.decided_at ?? null,
+      };
+    }
+    case "loan.approved":
+    case "loan.closed": {
+      const r = await one("SELECT * FROM py_loan WHERE id = ?", [Number(id)]);
+      if (!r) return null;
+      const scheduleRows = (
+        await rawClient().execute({ sql: "SELECT * FROM py_loan_schedule WHERE loan_id = ? ORDER BY installment_no", args: [Number(id)] })
+      ).rows as unknown as Record<string, unknown>[];
+      const { money } = await import("./format");
+      return {
+        id: Number(r.id),
+        employee_id: Number(r.employee_id),
+        loan_type: String(r.loan_type),
+        principal: money(Number(r.principal_paise)),
+        annual_rate_percent: Number(r.annual_rate_basis_points) / 100,
+        tenure_months: Number(r.tenure_months),
+        emi: money(Number(r.emi_paise)),
+        start_date: String(r.start_date),
+        status: String(r.status),
+        decided_at: r.decided_at ?? null,
+        schedule: scheduleRows.map((l) => ({
+          installment_no: Number(l.installment_no),
+          due_date: String(l.due_date),
+          principal: money(Number(l.principal_paise)),
+          interest: money(Number(l.interest_paise)),
+          closing_balance: money(Number(l.closing_balance_paise)),
+          perquisite_value: money(Number(l.perquisite_value_paise)),
+        })),
+      };
+    }
     case "attendance.day_finalised": {
       const r = await one("SELECT * FROM pt_attendance_day WHERE id = ?", [Number(id)]);
       if (!r) return null;
@@ -437,6 +517,20 @@ export function shapeFor(type: EventType, data: Record<string, unknown>, scopes:
   }
   if (type === "payslip.published" && !has("pay:read")) delete out.net_pay;
   if (type === "leave.encashed" && !has("pay:read")) delete out.amount;
+  if (type === "claim.paid" && !has("pay:read")) delete out.amount;
+  if (type === "claim.approved" && !has("pay:read")) delete out.total_amount;
+  if ((type === "loan.approved" || type === "loan.closed") && !has("pay:read")) {
+    delete out.principal;
+    delete out.emi;
+    out.schedule = ((data.schedule as Record<string, unknown>[]) ?? []).map((l) => {
+      const line = { ...l };
+      delete line.principal;
+      delete line.interest;
+      delete line.closing_balance;
+      delete line.perquisite_value;
+      return line;
+    });
+  }
   if (type === "payroll.run.completed" && !has("pay:read")) {
     delete out.gross_total;
     delete out.net_total;

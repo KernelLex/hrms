@@ -54,9 +54,12 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Payroll", href: "/payroll", icon: "Banknote", anyOf: ["payroll.view", "payroll.setup"] },
       { label: "Tax and Form 16", href: "/tax", icon: "ReceiptText", anyOf: ["tax.manage"] },
+      { label: "Loans and claims", href: "/loans-claims", icon: "HandCoins", anyOf: ["payroll.setup"] },
       { label: "My payslips", href: "/payroll/my-payslips", icon: "FileText", anyOf: ["self.pay"] },
       { label: "My tax declaration", href: "/tax/declarations", icon: "ReceiptText", anyOf: ["self.tax"] },
       { label: "My Form 16", href: "/tax/form16", icon: "FileBadge", anyOf: ["self.tax"] },
+      { label: "My loans", href: "/loans-claims/my-loans", icon: "Landmark", anyOf: ["self.loans"] },
+      { label: "My claims", href: "/loans-claims/my-claims", icon: "ReceiptIndianRupee", anyOf: ["self.claims"] },
     ],
   },
   {

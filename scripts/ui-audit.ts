@@ -54,6 +54,8 @@ const ROUTES = [
   "/payroll", "/payroll/periods", "/payroll/wage-types", "/payroll/recurring",
   "/payroll/additional", "/payroll/run", "/payroll/posting", "/payroll/my-payslips",
   "/payroll/salary-structures", "/payroll/salary-structures/STANDARD", "/payroll/statutory-rates", "/payroll/gl-mapping",
+  "/loans-claims", "/loans-claims/claims", "/loans-claims/categories", "/loans-claims/benchmark-rate",
+  "/loans-claims/my-loans", "/loans-claims/my-claims",
   "/recruitment", "/recruitment/requisitions", "/recruitment/candidates",
   "/recruitment/pipeline", "/recruitment/interviews", "/recruitment/hire",
   "/recruitment/requisitions/new", "/recruitment/requisitions/REQ0001", "/recruitment/requisitions/REQ0001/edit",

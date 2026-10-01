@@ -254,6 +254,26 @@ export async function runScenario(o: ScenarioOptions): Promise<Step[]> {
       }),
 
     async () =>
+      step("Sends a claim its own process already approved, to be paid through payroll", async () => {
+        check(hiredId, "No hire to claim for.");
+        const body = {
+          employee_id: hiredId,
+          category: "FUEL",
+          claim_date: o.today,
+          lines: [{ date: o.today, description: "Client-site mileage", amount: { amount: "1500.00", currency: "INR" } }],
+        };
+        const key = randomUUID();
+        type ClaimRep = { id: number; status: string; wage_type: string };
+        const first = await s.request<ClaimRep>("POST", "/claims", { body, headers: { "Idempotency-Key": key } });
+        check(first.status === 201, `Answered ${first.status}: ${JSON.stringify(first.body)}`);
+        check(first.body.status === "Approved", `Expected Approved, got ${first.body.status}.`);
+        check(first.body.wage_type === "REIMB", `Expected REIMB (fuel is not taxable), got ${first.body.wage_type}.`);
+        const again = await s.request<ClaimRep>("POST", "/claims", { body, headers: { "Idempotency-Key": key } });
+        check(again.status === 201 && again.body.id === first.body.id, "Retrying with the same key did not return the same claim.");
+        return `claim ${first.body.id} for employee ${hiredId}, approved and queued on REIMB`;
+      }),
+
+    async () =>
       step("Does not hear its own change back", async () => {
         await o.pump();
         const echoed = erp.received.find((e) => e.type === "cost_centre.changed" && e.subject === `cost-centres/${costCentre}`);

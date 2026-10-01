@@ -99,6 +99,11 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 - **Cost split across more than one cost centre**, by percentage, for anyone whose pay should not all land on one.
 - **Dated statutory rates**: provident fund, ESI, professional tax (state by state) and the labour welfare fund are all rates you can see and change yourself, not figures buried in the software — a rate change is an edit, not a wait for a new release.
 
+### Money
+
+- **Loans and advances**: ask for a loan and see it approved with its whole EMI schedule generated at once; each instalment is then recovered through payroll automatically, closing the loan at zero. **Prepay** at any time to shorten what is left, at the same EMI. A concessional or interest-free loan's taxable value is worked out automatically, every month, ready for its certificate later.
+- **Reimbursement claims**: submit a claim with its bills, checked against your category's limit — fuel, phone, medical and LTA, out of the box, with higher limits settable by grade — before it goes for approval. Approved claims, manager then finance, are paid through the very next payroll run. An expense already approved in your ERP arrives the same way, without anyone retyping it.
+
 ### Tax and Form 16
 
 - Tax sections and slabs for each year and both regimes.
@@ -154,7 +159,6 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ## Coming next
 
-- **Payroll**: loans and advances; reimbursement claims.
 - **Exits**: resignation, clearance, and full and final settlement.
 - **Tax**: investment proofs, HRA worked out from rent, a comparison of the two regimes, Form 12BA, relief on arrears, and the quarterly TDS return file.
 - **Recruitment**: interview slots and calendar invitations, scorecards, offer letters signed online, referrals, and hiring reports.
@@ -167,7 +171,7 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 ## Good to know
 
 - **Emails are prepared but not yet sent.** Every notification email is written and can be read on the Outbox screen; they go out once an email provider is connected.
-- **Statutory coverage is employee provident fund and income tax.** ESI, professional tax, labour welfare fund, gratuity and the employer's PF share are not calculated yet.
+- **Gratuity is not calculated yet.** Provident fund (including the employer's share), ESI, professional tax, the labour welfare fund and income tax are.
 - **The demo organisation** (Acme Manufacturing) is sample data, for trying the software.
 
 A guide for connecting a system to it is in [API.md](API.md).

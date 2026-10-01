@@ -134,6 +134,13 @@
       "when": 1790771652818,
       "tag": "0018_salary_structures_and_statutory",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1790860809392,
+      "tag": "0019_loans_and_claims",
+      "breakpoints": true
     }
   ]
 }

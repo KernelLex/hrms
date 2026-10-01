@@ -24,7 +24,14 @@ export type ProcessDef = {
   link: string;
 };
 
-export const PROCESSES: { leave: ProcessDef; correction: ProcessDef; headcount: ProcessDef; regularisation: ProcessDef } = {
+export const PROCESSES: {
+  leave: ProcessDef;
+  correction: ProcessDef;
+  headcount: ProcessDef;
+  regularisation: ProcessDef;
+  loan: ProcessDef;
+  claim: ProcessDef;
+} = {
   leave: {
     label: "Leave",
     overridePermission: "leave.decide_any",
@@ -51,6 +58,18 @@ export const PROCESSES: { leave: ProcessDef; correction: ProcessDef; headcount: 
     overridePermission: "time.manage",
     facts: {},
     link: "/approvals?process=regularisation",
+  },
+  loan: {
+    label: "Loans",
+    overridePermission: "payroll.setup",
+    facts: {},
+    link: "/approvals?process=loan",
+  },
+  claim: {
+    label: "Claims",
+    overridePermission: "payroll.setup",
+    facts: {},
+    link: "/approvals?process=claim",
   },
 };
 

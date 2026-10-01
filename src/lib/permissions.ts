@@ -54,7 +54,7 @@ export const PERMISSIONS = {
   "leave.decide_any": { group: "Time and leave", can: "decide any leave request, whoever it is waiting for" },
 
   "payroll.view": { group: "Payroll", can: "see payroll periods, runs and results", sensitive: true },
-  "payroll.setup": { group: "Payroll", can: "keep wage types, recurring payments, one-off payments, salary structures, CTC, statutory rates, cost splits and GL mapping" },
+  "payroll.setup": { group: "Payroll", can: "keep wage types, recurring payments, one-off payments, salary structures, CTC, statutory rates, cost splits, GL mapping, loans and claim categories" },
   "payroll.run": { group: "Payroll", can: "run payroll, including off-cycle runs" },
   "payroll.post": { group: "Payroll", can: "release and post periods, and make bank files, ledger postings and remittances" },
 
@@ -80,13 +80,15 @@ export const PERMISSIONS = {
   "self.tax": { group: "Self-service", can: "make their own tax declaration and download their Form 16" },
   "self.appraisal": { group: "Self-service", can: "write their own self review" },
   "self.attendance": { group: "Self-service", can: "see their own roster and attendance, and ask for a day to be corrected" },
+  "self.loans": { group: "Self-service", can: "ask for a loan and see their own schedule and balance" },
+  "self.claims": { group: "Self-service", can: "submit reimbursement claims with bills and see their own" },
 } as const satisfies Record<string, Def>;
 
 export type Permission = keyof typeof PERMISSIONS;
 
 export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[];
 
-const SELF: Permission[] = ["self.profile", "self.leave", "self.pay", "self.tax", "self.appraisal", "self.attendance"];
+const SELF: Permission[] = ["self.profile", "self.leave", "self.pay", "self.tax", "self.appraisal", "self.attendance", "self.loans", "self.claims"];
 
 /**
  * The built-in roles, exactly as they behaved before permissions existed:

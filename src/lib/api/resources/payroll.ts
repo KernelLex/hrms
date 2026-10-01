@@ -261,7 +261,7 @@ async function requireErpOwnsPayments() {
   }
 }
 
-async function employeeInScope(ctx: ApiContext, employeeId: number) {
+export async function employeeInScope(ctx: ApiContext, employeeId: number) {
   const companies = ctx.client.companies;
   const found = await rows(
     `SELECT 1 FROM pa_employee e WHERE e.id = ? ${

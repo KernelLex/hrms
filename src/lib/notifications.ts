@@ -73,6 +73,14 @@ export const NOTIFICATION_KINDS = {
     label: "Decisions on my regularisations",
     description: "When your manager approves or rejects a correction you asked for.",
   },
+  "loan.decided": {
+    label: "Decisions on my loans",
+    description: "When your loan is approved or rejected.",
+  },
+  "claim.decided": {
+    label: "Decisions on my claims",
+    description: "When your reimbursement claim is approved or rejected.",
+  },
 } as const;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

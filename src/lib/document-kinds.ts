@@ -12,7 +12,8 @@ export const EMPLOYEE_DOCUMENT_KINDS = [
 
 /**
  * What the change log keeps of a document: what it was and whose, never
- * where it is stored. An employee's file is logged against that employee.
+ * where it is stored. An employee's file is logged against that employee; a
+ * claim line's bill is logged against the line.
  */
 export function documentSummary(doc: {
   id: number;
@@ -24,7 +25,11 @@ export function documentSummary(doc: {
 }) {
   return {
     id: doc.id,
-    ...(doc.ownerType === "employee" ? { employeeId: doc.ownerId } : { candidateId: doc.ownerId }),
+    ...(doc.ownerType === "employee"
+      ? { employeeId: doc.ownerId }
+      : doc.ownerType === "claim_line"
+        ? { claimLineId: doc.ownerId }
+        : { candidateId: doc.ownerId }),
     kind: doc.kind,
     fileName: doc.fileName,
     sizeBytes: doc.sizeBytes,
