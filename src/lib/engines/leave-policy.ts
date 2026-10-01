@@ -493,7 +493,17 @@ async function dailyRatePaise(employeeId: number, asOf: string, calendarCode: st
  */
 export async function encashLeave(
   tx: Executor,
-  opts: { employeeId: number; quotaTypeCode: string; year: number; days: number; paymentDate: string; createdBy: string; actor: Actor },
+  opts: {
+    employeeId: number;
+    quotaTypeCode: string;
+    year: number;
+    days: number;
+    paymentDate: string;
+    createdBy: string;
+    actor: Actor;
+    /** A final settlement pays out whatever is left, not limited to what a year's policy would let someone encash while still employed. */
+    ignoreAnnualCap?: boolean;
+  },
 ): Promise<{ ok: true; amountPaise: number } | { ok: false; reason: string }> {
   const { employeeId, quotaTypeCode, year, paymentDate, createdBy, actor } = opts;
   const units = Math.round(opts.days * 2);
@@ -509,7 +519,7 @@ export async function encashLeave(
     args: [employeeId, quotaTypeCode, year],
   });
   const usedUp = Number(already.rows[0].n);
-  if (usedUp + units > policy.encashableHalfDaysPerYear) {
+  if (!opts.ignoreAnnualCap && usedUp + units > policy.encashableHalfDaysPerYear) {
     return { ok: false, reason: `Only ${formatDays(Math.max(0, policy.encashableHalfDaysPerYear - usedUp))} days are still encashable this year.` };
   }
 

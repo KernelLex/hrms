@@ -50,5 +50,59 @@ export async function seedLifecycle(client: Client): Promise<string[]> {
     notes.push("  1 letter template: Appointment");
   }
 
+  const offboarding = await client.execute("SELECT 1 FROM pa_checklist_template WHERE event = 'offboarding' LIMIT 1");
+  if (offboarding.rows.length === 0) {
+    const created = await client.execute({
+      sql: "INSERT INTO pa_checklist_template (event, name, is_active, created_at) VALUES ('offboarding', ?, 1, ?) RETURNING id",
+      args: ["Standard offboarding", at],
+    });
+    const templateId = Number(created.rows[0].id);
+    const items: [string, string, number, number][] = [
+      ["Hand over work in progress and open items", "reporting_manager", 0, 10],
+      ["Collect the laptop, ID card and any other company property", "hr", 1, 20],
+      ["Revoke system and building access", "hr", 1, 30],
+      ["Conduct the exit interview", "hr", 2, 40],
+      ["Confirm the full and final settlement", "hr", 5, 50],
+    ];
+    await client.batch(
+      items.map(([task, ownerType, dueDays, sortOrder]) => ({
+        sql: "INSERT INTO pa_checklist_item (template_id, task, owner_type, due_days, sort_order) VALUES (?, ?, ?, ?, ?)",
+        args: [templateId, task, ownerType, dueDays, sortOrder],
+      })),
+      "write",
+    );
+    notes.push("  1 offboarding checklist template, 5 tasks");
+  }
+
+  const relieving = await client.execute("SELECT 1 FROM pa_letter_template WHERE kind = 'Relieving' LIMIT 1");
+  if (relieving.rows.length === 0) {
+    const body = [
+      "Dear {{first_name}} {{last_name}},",
+      "This is to confirm that you were relieved from your position as {{position_title}} in {{department}} at {{company_name}}, with effect from {{effective_date}}.",
+      "All dues as per the full and final settlement have been, or will be, paid to you. We thank you for your service and wish you well.",
+      "Yours sincerely,\n{{company_name}}\n{{company_address}}",
+    ].join("\n\n");
+    await client.execute({
+      sql: "INSERT INTO pa_letter_template (kind, version, is_active, body, created_by, created_at) VALUES ('Relieving', 1, 1, ?, 'seed', ?)",
+      args: [body, at],
+    });
+    notes.push("  1 letter template: Relieving");
+  }
+
+  const experience = await client.execute("SELECT 1 FROM pa_letter_template WHERE kind = 'Experience' LIMIT 1");
+  if (experience.rows.length === 0) {
+    const body = [
+      "To whom it may concern,",
+      "This is to certify that {{first_name}} {{last_name}} was employed with {{company_name}} as {{position_title}} in {{department}}, from {{hire_date}} to {{effective_date}}.",
+      "During this time, we found them sincere, hardworking and professional. We wish them success in their future endeavours.",
+      "Yours sincerely,\n{{company_name}}\n{{company_address}}",
+    ].join("\n\n");
+    await client.execute({
+      sql: "INSERT INTO pa_letter_template (kind, version, is_active, body, created_by, created_at) VALUES ('Experience', 1, 1, ?, 'seed', ?)",
+      args: [body, at],
+    });
+    notes.push("  1 letter template: Experience");
+  }
+
   return notes;
 }

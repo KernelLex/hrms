@@ -37,6 +37,8 @@ export const NAV: NavGroup[] = [
       { label: "My team", href: "/core-hr", icon: "Users", anyOf: ["employee.view_team"] },
       { label: "My tasks", href: "/tasks", icon: "ListChecks", anyOf: ["self.profile"] },
       { label: "Headcount requests", href: "/headcount-requests", icon: "Users2", anyOf: ["employee.view_team", "org.edit"] },
+      { label: "Exits", href: "/exits", icon: "LogOut", anyOf: ["employee.edit"] },
+      { label: "Resign", href: "/exit", icon: "DoorOpen", anyOf: ["self.exit"] },
     ],
   },
   {

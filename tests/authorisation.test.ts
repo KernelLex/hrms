@@ -9,6 +9,7 @@ import * as careers from "@/app/actions/careers";
 import * as coreHr from "@/app/actions/core-hr";
 import * as corrections from "@/app/actions/corrections";
 import * as documents from "@/app/actions/documents";
+import * as exits from "@/app/actions/exits";
 import * as headcount from "@/app/actions/headcount";
 import * as imports from "@/app/actions/imports";
 import * as integrations from "@/app/actions/integrations";
@@ -55,6 +56,7 @@ const MODULES = {
   "core-hr": coreHr,
   corrections,
   documents,
+  exits,
   headcount,
   imports,
   integrations,
@@ -112,6 +114,13 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   // Only about the person themselves; HR decides in the approvals inbox.
   corrections: { requestChange: ["self.profile"], cancelChange: ["self.profile"] },
   documents: { uploadEmployeeDocument: ["employee.documents"], removeEmployeeDocument: ["employee.documents"] },
+  exits: {
+    submitExit: ["self.exit"],
+    withdrawExit: ["self.exit"],
+    submitExitInterview: ["self.exit"],
+    waiveNoticeAction: ["employee.edit"],
+    settleExitAction: ["payroll.run"],
+  },
   headcount: { requestHeadcount: ["employee.view_team", "org.edit"] },
   "loans-claims": {
     submitLoan: ["self.loans"],

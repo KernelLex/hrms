@@ -13,6 +13,7 @@ import { timeEndpoints } from "./resources/time";
 import { attendanceEndpoints } from "./resources/attendance";
 import { payrollEndpoints } from "./resources/payroll";
 import { loansClaimsEndpoints } from "./resources/loans-claims";
+import { exitEndpoints } from "./resources/exits";
 import { otherEndpoints } from "./resources/other";
 
 /**
@@ -33,6 +34,7 @@ const RESOURCES: Endpoint[] = [
   ...attendanceEndpoints,
   ...payrollEndpoints,
   ...loansClaimsEndpoints,
+  ...exitEndpoints,
   ...otherEndpoints,
 ];
 

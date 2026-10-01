@@ -170,6 +170,47 @@ export async function closeLoan(tx: Executor, loanId: number): Promise<{ error?:
 }
 
 /**
+ * What is still owed right now: the last queued instalment's closing
+ * balance, or the full principal if none has been queued yet — the same
+ * reading `prepayLoan` takes before it reduces it.
+ */
+async function outstandingBalance(tx: Executor, loanId: number): Promise<number | null> {
+  const loanRows = await tx.execute({ sql: "SELECT principal_paise FROM py_loan WHERE id = ?", args: [loanId] });
+  const loan = loanRows.rows[0] as Record<string, unknown> | undefined;
+  if (!loan) return null;
+  const scheduleRows = await tx.execute({ sql: "SELECT * FROM py_loan_schedule WHERE loan_id = ? ORDER BY installment_no", args: [loanId] });
+  const queued = (scheduleRows.rows as unknown as Record<string, unknown>[]).filter((s) => s.additional_payment_id !== null);
+  return queued.length > 0 ? Number(queued[queued.length - 1].closing_balance_paise) : Number(loan.principal_paise);
+}
+
+/**
+ * A final settlement recovers whatever is left in one go, rather than
+ * waiting on the rest of the schedule: deletes the unqueued instalments,
+ * queues one LOAN deduction for the full outstanding balance, dated to the
+ * settlement, and closes the loan. Nothing to recover closes it just the
+ * same, with nothing queued.
+ */
+export async function recoverLoanAtExit(tx: Executor, opts: { loanId: number; employeeId: number; recoveryDate: string }): Promise<{ error: string } | { amountPaise: number }> {
+  const loanRows = await tx.execute({ sql: "SELECT status FROM py_loan WHERE id = ?", args: [opts.loanId] });
+  const loan = loanRows.rows[0] as Record<string, unknown> | undefined;
+  if (!loan) return { error: "That loan no longer exists." };
+  if (String(loan.status) !== "Active") return { error: "Only an active loan can be recovered this way." };
+  const balance = await outstandingBalance(tx, opts.loanId);
+  if (balance === null) return { error: "That loan no longer exists." };
+
+  await tx.execute({ sql: "DELETE FROM py_loan_schedule WHERE loan_id = ? AND additional_payment_id IS NULL", args: [opts.loanId] });
+  await tx.execute({ sql: "UPDATE py_loan SET status = 'Closed' WHERE id = ?", args: [opts.loanId] });
+  if (balance <= 0) return { amountPaise: 0 };
+
+  await tx.execute({
+    sql: `INSERT INTO py_it0015_additional_payment (employee_id, wage_type_code, amount_paise, payment_date, created_at)
+          VALUES (?, 'LOAN', ?, ?, ?)`,
+    args: [opts.employeeId, balance, opts.recoveryDate, now()],
+  });
+  return { amountPaise: balance };
+}
+
+/**
  * Queues whatever instalments have come due since this last ran: one
  * `py_it0015_additional_payment` each, dated to the instalment's own due
  * date so the regular run of that month picks it up. A loan that has just

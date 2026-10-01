@@ -31,6 +31,7 @@ export const PROCESSES: {
   regularisation: ProcessDef;
   loan: ProcessDef;
   claim: ProcessDef;
+  exit: ProcessDef;
 } = {
   leave: {
     label: "Leave",
@@ -70,6 +71,12 @@ export const PROCESSES: {
     overridePermission: "payroll.setup",
     facts: {},
     link: "/approvals?process=claim",
+  },
+  exit: {
+    label: "Exits",
+    overridePermission: "employee.edit",
+    facts: {},
+    link: "/approvals?process=exit",
   },
 };
 

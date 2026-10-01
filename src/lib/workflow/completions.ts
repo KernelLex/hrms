@@ -7,6 +7,7 @@ import { completeHeadcount } from "./headcount";
 import { completeRegularisation } from "./regularisation";
 import { completeLoan } from "./loan";
 import { completeClaim } from "./claim";
+import { completeExit } from "./exit";
 
 /** What approving or rejecting finally does, per process. */
 export const COMPLETIONS: Record<ProcessCode, Completion> = {
@@ -16,4 +17,5 @@ export const COMPLETIONS: Record<ProcessCode, Completion> = {
   regularisation: completeRegularisation,
   loan: completeLoan,
   claim: completeClaim,
+  exit: completeExit,
 };

@@ -66,6 +66,15 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 - **Transfers and promotions** as guided steps, like hiring: a new position, department or company, and for a promotion, new pay — from a date you choose, with the record's history kept intact.
 - **Letters**: keep one or more letter templates filled in from the employee's record, and issue one in a couple of clicks. It is kept exactly as issued, even if the record or the template changes afterwards.
 
+### Leaving
+
+- **Resign**, with a last working day and a notice period; your manager, then HR, decide.
+- **The exit board**: every resignation, termination and retirement, with clearance progress and a settlement waiting to be paid.
+- **Clearance checklist** on the way out — laptop and ID card returned, access revoked, the exit interview — the same kind of checklist onboarding already uses, assigned to the right person automatically.
+- **One full and final settlement**, paid in a single run on the last day: salary to that day, unused leave encashed, a notice shortfall recovered (or waived by HR), **gratuity** after five years' service, and any outstanding loan recovered in full — with a statement showing every component and how it was worked out.
+- **Relieving and experience letters**, from the same templates as any other letter.
+- Sign-in stops working from the last day.
+
 ### Time and leave
 
 - **Leave policies by grade and location**: how much a year, earned monthly or all at once, a joiner's first year pro-rated automatically, a cap on what carries into the new year, and what lapses.
@@ -159,7 +168,6 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ## Coming next
 
-- **Exits**: resignation, clearance, and full and final settlement.
 - **Tax**: investment proofs, HRA worked out from rent, a comparison of the two regimes, Form 12BA, relief on arrears, and the quarterly TDS return file.
 - **Recruitment**: interview slots and calendar invitations, scorecards, offer letters signed online, referrals, and hiring reports.
 - **Performance and learning**: check-ins through the year, 360-degree feedback, improvement plans, and training with certificate expiry alerts.
@@ -171,7 +179,7 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 ## Good to know
 
 - **Emails are prepared but not yet sent.** Every notification email is written and can be read on the Outbox screen; they go out once an email provider is connected.
-- **Gratuity is not calculated yet.** Provident fund (including the employer's share), ESI, professional tax, the labour welfare fund and income tax are.
+- **Statutory bonus is not calculated yet.** Provident fund (including the employer's share), ESI, professional tax, the labour welfare fund, gratuity and income tax are.
 - **The demo organisation** (Acme Manufacturing) is sample data, for trying the software.
 
 A guide for connecting a system to it is in [API.md](API.md).

@@ -111,6 +111,64 @@ export async function startOnboarding(tx: Executor, actor: Actor, input: StartOn
   if (loggedMonitoring) await tx.execute(loggedMonitoring);
 }
 
+export type StartOffboardingInput = {
+  employeeId: number;
+  effectiveDate: string;
+  createdBy: string;
+};
+
+/**
+ * Starting an offboarding checklist on an exit's last day — the same shape
+ * `startOnboarding` writes, against the "offboarding" template instead, and
+ * with no probation review to schedule.
+ */
+export async function startOffboarding(tx: Executor, actor: Actor, input: StartOffboardingInput): Promise<void> {
+  const template = await tx.execute(
+    "SELECT id FROM pa_checklist_template WHERE event = 'offboarding' AND is_active = 1 ORDER BY id LIMIT 1",
+  );
+  const templateId = template.rows[0] ? Number(template.rows[0].id) : null;
+  const at = new Date().toISOString();
+
+  const checklist = await tx.execute({
+    sql: "INSERT INTO pa_checklist (employee_id, template_id, event, started_at) VALUES (?, ?, 'offboarding', ?) RETURNING id",
+    args: [input.employeeId, templateId, at],
+  });
+  const checklistId = Number(checklist.rows[0].id);
+  const loggedChecklist = changeStatement(actor, {
+    entity: "pa_checklist",
+    entityId: checklistId,
+    subjectEmployeeId: input.employeeId,
+    action: "create",
+    after: { employeeId: input.employeeId, templateId, event: "offboarding" },
+  });
+  if (loggedChecklist) await tx.execute(loggedChecklist);
+  if (!templateId) return;
+
+  const items = await tx.execute({
+    sql: "SELECT * FROM pa_checklist_item WHERE template_id = ? ORDER BY sort_order",
+    args: [templateId],
+  });
+  // Whoever is about to leave reported to someone for the last time today.
+  const position = await tx.execute({
+    sql: `SELECT position_code FROM pa_it0001_org_assignment WHERE employee_id = ? AND valid_from <= ? AND valid_to >= ? LIMIT 1`,
+    args: [input.employeeId, input.effectiveDate, input.effectiveDate],
+  });
+  const positionCode = position.rows[0] ? String(position.rows[0].position_code) : null;
+  const [manager, hr] = await Promise.all([
+    positionCode ? reportingManagerUserId(tx, positionCode, input.effectiveDate) : Promise.resolve(null),
+    anyHrUserId(tx),
+  ]);
+  for (const item of items.rows) {
+    const ownerType = String(item.owner_type);
+    const assignee = ownerType === "reporting_manager" ? manager : hr;
+    await tx.execute({
+      sql: `INSERT INTO pa_task (checklist_id, task, owner_type, assigned_user_id, due_date, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'Pending', ?)`,
+      args: [checklistId, String(item.task), ownerType, assignee, addDaysTo(input.effectiveDate, Number(item.due_days)), at],
+    });
+  }
+}
+
 /**
  * Marks a checklist done once every one of its tasks is — called after a
  * task is completed. Logged, so it derives the `onboarding.completed` event.

@@ -39,6 +39,7 @@ import {
   HandCoins,
   Landmark,
   ReceiptIndianRupee,
+  DoorOpen,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,8 @@ const ICONS: Record<string, LucideIcon> = {
   HandCoins,
   Landmark,
   ReceiptIndianRupee,
+  LogOut,
+  DoorOpen,
 };
 
 /* -------------------------------------------------------------- brand mark */

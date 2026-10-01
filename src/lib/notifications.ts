@@ -81,6 +81,14 @@ export const NOTIFICATION_KINDS = {
     label: "Decisions on my claims",
     description: "When your reimbursement claim is approved or rejected.",
   },
+  "exit.decided": {
+    label: "Decisions on my exit",
+    description: "When your resignation is approved or rejected.",
+  },
+  "settlement.paid": {
+    label: "My final settlement",
+    description: "When your full and final settlement is paid.",
+  },
 } as const;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

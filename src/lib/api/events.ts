@@ -72,6 +72,9 @@ export const EVENT_TYPES = {
   "loan.closed": { scope: "payroll:read", description: "A loan recovered its last instalment, was prepaid in full, or was closed by hand. `data` is the loan; amounts need pay:read." },
   "claim.approved": { scope: "payroll:read", description: "A reimbursement claim was approved, on screen or sent in already approved by the ERP. `data` is the claim; the amount needs pay:read." },
   "claim.paid": { scope: "payroll:read", description: "An approved claim was queued to be paid, on the wage type its category's taxability picked — CLAIM if taxable, REIMB if not. `data` is the payment; the amount needs pay:read." },
+  "employee.resigned": { scope: "employees:read", description: "An exit was approved and the last day fixed. `data` is the employee." },
+  "employee.exited": { scope: "employees:read", description: "An employee's last day arrived: sign-in was disabled, their position freed, and their settlement paid. `data` is the employee — close their accounts, recover assets and stop access." },
+  "settlement.paid": { scope: "payroll:read", description: "A full and final settlement was paid in one off-cycle run. `data` is the settlement with every component; amounts need pay:read." },
 } as const satisfies Record<string, { scope: Scope; description: string }>;
 
 export type EventType = keyof typeof EVENT_TYPES;
@@ -151,6 +154,15 @@ export function eventFor(c: ChangeRow): Derived | null {
   }
   if (c.entity === "py_claim" && (c.action === "create" || c.action === "update") && after.status === "Approved") {
     return { type: "claim.approved", subject: `claims/${c.entity_id}`, key: `claimappr:${c.entity_id}` };
+  }
+  if (c.entity === "pa_exit" && c.action === "update" && after.status === "Approved" && c.subject_employee_id) {
+    return emp("employee.resigned", c.subject_employee_id);
+  }
+  if (c.entity === "pa_exit" && c.action === "update" && after.status === "Settled" && c.subject_employee_id) {
+    return emp("employee.exited", c.subject_employee_id);
+  }
+  if (c.entity === "py_settlement" && c.action === "create") {
+    return { type: "settlement.paid", subject: `settlements/${c.entity_id}`, key: `settlement:${c.entity_id}` };
   }
   if (c.entity === "pt_attendance_day") {
     return { type: "attendance.day_finalised", subject: `attendance-days/${c.entity_id}`, key: `attday:${c.entity_id}` };
@@ -347,9 +359,29 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
     case "employee.transferred":
     case "employee.promoted":
     case "employee.confirmed":
-    case "onboarding.completed": {
+    case "onboarding.completed":
+    case "employee.resigned":
+    case "employee.exited": {
       const [rep] = await loadEmployees([Number(id)], todayInIndia(), { pay: true, bank: true });
       return rep ?? null;
+    }
+    case "settlement.paid": {
+      const r = await one("SELECT * FROM py_settlement WHERE id = ?", [Number(id)]);
+      if (!r) return null;
+      const lineRows = await rawClient().execute({ sql: "SELECT * FROM py_settlement_line WHERE settlement_id = ? ORDER BY sort_order", args: [Number(id)] });
+      const { money } = await import("./format");
+      return {
+        id: Number(r.id),
+        exit_id: Number(r.exit_id),
+        employee_id: Number(r.employee_id),
+        run_id: r.run_id === null ? null : Number(r.run_id),
+        paid_at: r.paid_at ?? null,
+        components: (lineRows.rows as unknown as Record<string, unknown>[]).map((l) => ({
+          component: String(l.component),
+          basis: String(l.basis),
+          amount: money(Number(l.amount_paise)),
+        })),
+      };
     }
     case "letter.issued": {
       const r = await one("SELECT * FROM pa_letter WHERE id = ?", [Number(id)]);
@@ -519,6 +551,13 @@ export function shapeFor(type: EventType, data: Record<string, unknown>, scopes:
   if (type === "leave.encashed" && !has("pay:read")) delete out.amount;
   if (type === "claim.paid" && !has("pay:read")) delete out.amount;
   if (type === "claim.approved" && !has("pay:read")) delete out.total_amount;
+  if (type === "settlement.paid" && !has("pay:read")) {
+    out.components = ((data.components as Record<string, unknown>[]) ?? []).map((c) => {
+      const line = { ...c };
+      delete line.amount;
+      return line;
+    });
+  }
   if ((type === "loan.approved" || type === "loan.closed") && !has("pay:read")) {
     delete out.principal;
     delete out.emi;

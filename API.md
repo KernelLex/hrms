@@ -458,6 +458,9 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `loan.closed` | `payroll:read` | A loan recovered its last instalment, was prepaid in full, or was closed by hand. `data` is the loan; amounts need pay:read. |
 | `claim.approved` | `payroll:read` | A reimbursement claim was approved, on screen or sent in already approved by the ERP. `data` is the claim; the amount needs pay:read. |
 | `claim.paid` | `payroll:read` | An approved claim was queued to be paid, on the wage type its category's taxability picked — CLAIM if taxable, REIMB if not. `data` is the payment; the amount needs pay:read. |
+| `employee.resigned` | `employees:read` | An exit was approved and the last day fixed. `data` is the employee. |
+| `employee.exited` | `employees:read` | An employee's last day arrived: sign-in was disabled, their position freed, and their settlement paid. `data` is the employee — close their accounts, recover assets and stop access. |
+| `settlement.paid` | `payroll:read` | A full and final settlement was paid in one off-cycle run. `data` is the settlement with every component; amounts need pay:read. |
 
 ### Error codes
 
@@ -552,6 +555,8 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | GET | [`/salary-structures`](#get-salary-structures) | `payroll:read` | List salary structures |
 | GET | [`/loans`](#get-loans) | `payroll:read` + `pay:read` | List loans |
 | POST | [`/claims`](#post-claims) | `payroll:write` | Send a claim already approved in the ERP |
+| GET | [`/exits`](#get-exits) | `employees:read` | List exits |
+| GET | [`/settlements`](#get-settlements) | `payroll:read` + `pay:read` | List settlements |
 | GET | [`/tax/register`](#get-tax-register) | `tax:read` | The TDS register |
 | GET | [`/requisitions`](#get-requisitions) | `recruitment:read` | List requisitions |
 | GET | [`/applications`](#get-applications) | `recruitment:read` | List applications |
@@ -1072,6 +1077,20 @@ Needs `employees:read`. More fields with `bank:read`. Answers 200.
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` |  |  |
 | `employee_id` | integer |  |  |
+
+#### GET /exits
+
+<a id="get-exits"></a>**List exits.** Every resignation, termination and retirement, approved or not. `employee.resigned` fires once approved, `employee.exited` on the last day.
+
+Needs `employees:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `employee_id` | integer |  |  |
+| `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Withdrawn` \\| `Settled` |  |  |
 
 ### Organisation endpoints
 
@@ -1909,6 +1928,19 @@ Content-Type: application/json
   ]
 }
 ```
+
+#### GET /settlements
+
+<a id="get-settlements"></a>**List settlements.** Each full and final settlement, with every component and its basis. Needs pay:read for the amounts.
+
+Needs `payroll:read` and `pay:read`. Answers 200.
+
+| Query parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer |  | Up to 200; 50 by default. |
+| `cursor` | string |  | The `next_cursor` from the previous page. |
+| `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+| `employee_id` | integer |  |  |
 
 ### Tax endpoints
 

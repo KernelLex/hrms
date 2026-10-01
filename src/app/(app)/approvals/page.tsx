@@ -25,6 +25,7 @@ import { HeadcountList } from "./headcount";
 import { RegularisationList } from "./regularisation";
 import { LoanList } from "./loan";
 import { ClaimList } from "./claim";
+import { ExitList } from "./exit";
 
 /**
  * One inbox for everything waiting on this person, across processes, with a
@@ -146,6 +147,8 @@ export default async function ApprovalsPage(props: { searchParams: Promise<{ pro
           <LoanList rows={rows} steps={steps} />
         ) : process === "claim" ? (
           <ClaimList rows={rows} steps={steps} />
+        ) : process === "exit" ? (
+          <ExitList rows={rows} steps={steps} />
         ) : (
           <Table>
             <thead>

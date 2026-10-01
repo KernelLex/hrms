@@ -141,6 +141,13 @@
       "when": 1790860809392,
       "tag": "0019_loans_and_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1790872220490,
+      "tag": "0020_exits_and_settlement",
+      "breakpoints": true
     }
   ]
 }

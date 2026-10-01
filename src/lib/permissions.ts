@@ -82,13 +82,14 @@ export const PERMISSIONS = {
   "self.attendance": { group: "Self-service", can: "see their own roster and attendance, and ask for a day to be corrected" },
   "self.loans": { group: "Self-service", can: "ask for a loan and see their own schedule and balance" },
   "self.claims": { group: "Self-service", can: "submit reimbursement claims with bills and see their own" },
+  "self.exit": { group: "Self-service", can: "resign, and see their own exit, clearance and settlement" },
 } as const satisfies Record<string, Def>;
 
 export type Permission = keyof typeof PERMISSIONS;
 
 export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[];
 
-const SELF: Permission[] = ["self.profile", "self.leave", "self.pay", "self.tax", "self.appraisal", "self.attendance", "self.loans", "self.claims"];
+const SELF: Permission[] = ["self.profile", "self.leave", "self.pay", "self.tax", "self.appraisal", "self.attendance", "self.loans", "self.claims", "self.exit"];
 
 /**
  * The built-in roles, exactly as they behaved before permissions existed:
