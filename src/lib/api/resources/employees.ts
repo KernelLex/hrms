@@ -200,6 +200,8 @@ const HISTORY = {
   working_time: { table: "pa_it0007_planned_working_time", columns: ["work_schedule_code", "weekly_hours", "employment_percent"], scope: null },
   basic_pay: { table: "pa_it0008_basic_pay", columns: ["pay_scale_type", "pay_scale_group", "amount_paise", "currency"], scope: "pay:read" },
   bank_account: { table: "pa_it0009_bank_details", columns: ["bank_name", "account_number", "ifsc", "holder_name"], scope: "bank:read" },
+  ctc: { table: "py_employee_ctc", columns: ["structure_code", "annual_ctc_paise"], scope: "pay:read" },
+  statutory_details: { table: "pa_it0011_statutory_details", columns: ["uan", "esi_number", "professional_tax_state"], scope: "pay:read" },
 } as const;
 
 const HistorySlice = z
@@ -363,7 +365,7 @@ export const employeeEndpoints: Endpoint[] = [
     tag: "People",
     summary: "An employee's dated history",
     description:
-      "Every dated slice of one kind of record, newest first — what was true when. `basic_pay` needs pay:read and `bank_account` bank:read. `valid_to` null means open-ended.",
+      "Every dated slice of one kind of record, newest first — what was true when. `basic_pay`, `ctc` and `statutory_details` need pay:read, `bank_account` needs bank:read. `valid_to` null means open-ended.",
     scopes: ["employees:read"],
     optionalScopes: ["pay:read", "bank:read"],
     params: { id: "The employee's id." },
@@ -390,8 +392,8 @@ export const employeeEndpoints: Endpoint[] = [
             valid_to: until(s(sl.valid_to)),
             values: Object.fromEntries(
               record.columns.map((col) =>
-                col === "amount_paise"
-                  ? ["amount", money(n(sl.amount_paise), s(sl.currency) ?? "INR")]
+                col.endsWith("_paise")
+                  ? ["amount", money(n(sl[col]), s(sl.currency) ?? "INR")]
                   : [col === "cost_center" ? "cost_centre" : col, sl[col] ?? null],
               ).filter(([k]) => k !== "currency"),
             ),

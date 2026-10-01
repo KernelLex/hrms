@@ -1,31 +1,51 @@
 import "server-only";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tdsTaxSlab, type TaxRegime } from "@/db/schema";
+import { tdsTaxSlab, pyTaxConstant, type TaxRegime } from "@/db/schema";
 
 /**
  * Income tax computation.
  *
  * Slab based, from data rather than hardcoded numbers, so Form 16 Part B shows
  * a computation that actually adds up and a rate change is a row edit rather
- * than a code change.
+ * than a code change. The standard deduction, the Section 87A rebate and the
+ * cess rate are the same kind of data, read from py_tax_constant.
  *
  * Everything is INTEGER paise; rates are basis points (1200 = 12.00%).
  */
 
-export const CESS_BASIS_POINTS = 400; // 4% health and education cess
-
-/** Standard deduction on salary, per regime, for the supported years. */
-export const STANDARD_DEDUCTION_PAISE: Record<TaxRegime, number> = {
-  Old: 5_000_000, // ₹50,000
-  New: 7_500_000, // ₹75,000
+export type TaxConstants = {
+  standardDeductionPaise: number;
+  rebate87aLimitPaise: number;
+  rebate87aMaxPaise: number;
+  cessBasisPoints: number;
 };
 
-/** Section 87A rebate: full relief up to this taxable income. */
-const REBATE_87A: Record<TaxRegime, { limitPaise: number; maxPaise: number }> = {
-  Old: { limitPaise: 50_000_000, maxPaise: 1_250_000 },
-  New: { limitPaise: 120_000_000, maxPaise: 6_000_000 },
+/** Used only where a financial year has no py_tax_constant row at all. */
+const FALLBACK_CONSTANTS: Record<TaxRegime, TaxConstants> = {
+  Old: { standardDeductionPaise: 5_000_000, rebate87aLimitPaise: 50_000_000, rebate87aMaxPaise: 1_250_000, cessBasisPoints: 400 },
+  New: { standardDeductionPaise: 7_500_000, rebate87aLimitPaise: 120_000_000, rebate87aMaxPaise: 6_000_000, cessBasisPoints: 400 },
 };
+
+export async function constantsFor(regime: TaxRegime, financialYear: string): Promise<TaxConstants> {
+  const row = await db.query.pyTaxConstant.findFirst({
+    where: and(eq(pyTaxConstant.financialYear, financialYear), eq(pyTaxConstant.regime, regime)),
+  });
+  if (row) return row;
+  // No row for this year: the latest one on record, so a new financial year
+  // not yet seeded still computes rather than silently using zero.
+  const latest = await db.query.pyTaxConstant.findFirst({
+    where: eq(pyTaxConstant.regime, regime),
+    orderBy: (t, { desc }) => desc(t.financialYear),
+  });
+  return latest ?? FALLBACK_CONSTANTS[regime];
+}
+
+/** Both regimes' constants for a year, for callers that compute many times over. */
+export async function constantsForYear(financialYear: string): Promise<Record<TaxRegime, TaxConstants>> {
+  const [Old, New] = await Promise.all([constantsFor("Old", financialYear), constantsFor("New", financialYear)]);
+  return { Old, New };
+}
 
 export type TaxComputation = {
   grossSalaryPaise: number;
@@ -119,21 +139,25 @@ export type AnnualTaxInput = {
 };
 
 export async function computeAnnualTax(opts: AnnualTaxInput): Promise<TaxComputation> {
-  return computeAnnualTaxWith(opts, await slabsFor(opts.regime, opts.financialYear));
+  const [slabs, constants] = await Promise.all([
+    slabsFor(opts.regime, opts.financialYear),
+    constantsFor(opts.regime, opts.financialYear),
+  ]);
+  return computeAnnualTaxWith(opts, slabs, constants);
 }
 
 /**
- * The same computation against slabs already loaded — payroll computes tax
- * several times per employee, and fetching the slabs each time would be a
- * round trip per computation.
+ * The same computation against slabs and constants already loaded — payroll
+ * computes tax several times per employee, and fetching them each time would
+ * be a round trip per computation.
  */
-export function computeAnnualTaxWith(opts: AnnualTaxInput, slabs: Slab[]): TaxComputation {
+export function computeAnnualTaxWith(opts: AnnualTaxInput, slabs: Slab[], constants: TaxConstants): TaxComputation {
   const { grossSalaryPaise, regime, otherIncomePaise = 0 } = opts;
 
   // The new regime gives a larger standard deduction and almost nothing else.
   const section10ExemptPaise = regime === "Old" ? (opts.section10ExemptPaise ?? 0) : 0;
   const chapterViaPaise = regime === "Old" ? (opts.chapterViaPaise ?? 0) : 0;
-  const standardDeductionPaise = STANDARD_DEDUCTION_PAISE[regime];
+  const standardDeductionPaise = constants.standardDeductionPaise;
 
   const afterExemptions = Math.max(0, grossSalaryPaise - section10ExemptPaise);
   const afterStandard = Math.max(0, afterExemptions - standardDeductionPaise);
@@ -147,17 +171,16 @@ export function computeAnnualTaxWith(opts: AnnualTaxInput, slabs: Slab[]): TaxCo
   // Section 87A. Under the new regime, income just over the limit also gets
   // marginal relief: the tax cannot exceed the income above the limit, or a
   // ₹1 raise past ₹12 lakh would cost ₹60,000 in tax.
-  const rebate = REBATE_87A[regime];
   let rebate87aPaise = 0;
-  if (taxableIncomePaise <= rebate.limitPaise) {
-    rebate87aPaise = Math.min(gross, rebate.maxPaise);
+  if (taxableIncomePaise <= constants.rebate87aLimitPaise) {
+    rebate87aPaise = Math.min(gross, constants.rebate87aMaxPaise);
   } else if (regime === "New") {
-    const excess = taxableIncomePaise - rebate.limitPaise;
+    const excess = taxableIncomePaise - constants.rebate87aLimitPaise;
     rebate87aPaise = Math.max(0, gross - excess);
   }
 
   const afterRebate = Math.max(0, gross - rebate87aPaise);
-  const cessPaise = Math.round((afterRebate * CESS_BASIS_POINTS) / 10_000);
+  const cessPaise = Math.round((afterRebate * constants.cessBasisPoints) / 10_000);
 
   return {
     grossSalaryPaise,
@@ -187,9 +210,11 @@ export function annualTaxFor(
   },
   financialYear: string,
   slabs: Record<TaxRegime, Slab[]>,
+  constants: Record<TaxRegime, TaxConstants>,
 ): number {
   return computeAnnualTaxWith(
     { grossSalaryPaise, financialYear, ...declaration },
     slabs[declaration.regime],
+    constants[declaration.regime],
   ).totalTaxPaise;
 }

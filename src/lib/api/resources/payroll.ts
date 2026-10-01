@@ -145,6 +145,21 @@ const OneOff = z
 const Recurring = z
   .object({ id: z.number().int(), employee_id: z.number().int(), wage_type: z.string(), amount: Money, start_date: IsoDate, end_date: IsoDate.nullable(), created_at: z.string() })
   .meta({ id: "RecurringPayment" });
+const SalaryStructure = z
+  .object({
+    code: z.string(),
+    name: z.string(),
+    is_active: z.boolean(),
+    components: z.array(
+      z.object({
+        wage_type: z.string(),
+        component_type: z.string().meta({ description: "PercentOfCTC, PercentOfBasic, Fixed or Balancing." }),
+        percent: z.number().nullable(),
+        fixed_amount: Money.nullable(),
+      }),
+    ),
+  })
+  .meta({ id: "SalaryStructure", description: "How an annual CTC splits into monthly components." });
 
 const m = (v: unknown) => money(Number(v))! as { amount: string; currency: "INR" };
 const ackOf = (a: { state: string; reference: string | null; reason: string | null; updatedAt: string | null } | undefined) => ({
@@ -505,7 +520,7 @@ export const payrollEndpoints: Endpoint[] = [
     path: "/remittances",
     tag: "Payments",
     summary: "List statutory remittances",
-    description: "Provident fund and TDS owed to each authority from each run, with their due dates.",
+    description: "Provident fund, ESI, TDS, professional tax and the labour welfare fund owed to each authority from each run, with their due dates.",
     scopes: ["payroll:read"],
     query: z.object({ ...PageQuery, status: z.enum(["Due", "Remitted"]).optional() }),
     response: pageSchema(Remittance),
@@ -633,6 +648,38 @@ export const payrollEndpoints: Endpoint[] = [
       return {
         status: 201,
         body: { id: Number(r.id), employee_id: Number(r.employee_id), wage_type: String(r.wage_type_code), amount: m(r.amount_paise), start_date: String(r.start_date), end_date: until(s(r.end_date)), created_at: String(r.created_at) },
+      };
+    },
+  },
+  {
+    method: "GET",
+    path: "/salary-structures",
+    tag: "Payments",
+    summary: "List salary structures",
+    description: "How an annual CTC splits into basic, allowances and employer contributions each month — read an employee's own with /employees/{id}/history?record=ctc.",
+    scopes: ["payroll:read"],
+    response: z.object({ data: z.array(SalaryStructure) }),
+    handler: async () => {
+      const [structures, components] = await Promise.all([
+        rows("SELECT code, name, is_active FROM py_salary_structure ORDER BY code"),
+        rows("SELECT structure_code, wage_type_code, component_type, percent_basis_points, fixed_amount_paise FROM py_salary_structure_component ORDER BY sort_order"),
+      ]);
+      return {
+        body: {
+          data: structures.map((st) => ({
+            code: String(st.code),
+            name: String(st.name),
+            is_active: Number(st.is_active) === 1,
+            components: components
+              .filter((c) => c.structure_code === st.code)
+              .map((c) => ({
+                wage_type: String(c.wage_type_code),
+                component_type: String(c.component_type),
+                percent: c.percent_basis_points === null ? null : Number(c.percent_basis_points) / 100,
+                fixed_amount: c.fixed_amount_paise === null ? null : m(c.fixed_amount_paise),
+              })),
+          })),
+        },
       };
     },
   },

@@ -198,8 +198,11 @@ describe("forecast", () => {
     await accrueForPeriod(rawClient(), { year: 2026, month: 9, employeeIds: [employeeId], createdBy: "test", actor });
     const current = await balanceOf(employeeId, "SICK", 2026);
     const forecast = await forecastBalance(employeeId, "SICK", "2026-12-31");
-    // From today (Sept 2026) to December is 3 more months at 2 units each.
-    expect(forecast).toBe(current!.entitledHalfDays - current!.usedHalfDays + 6);
+    // forecastBalance projects monthly accrual from the real "today" to the
+    // forecast date (see leave-policy.ts) — computed here too, rather than a
+    // fixed month count, so this does not go stale as a real month passes.
+    const monthsAhead = Math.max(0, 12 - (new Date().getUTCMonth() + 1));
+    expect(forecast).toBe(current!.entitledHalfDays - current!.usedHalfDays + monthsAhead * 2);
   });
 });
 

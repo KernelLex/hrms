@@ -127,6 +127,13 @@
       "when": 1790762857083,
       "tag": "0017_shifts_and_rosters",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1790771652818,
+      "tag": "0018_salary_structures_and_statutory",
+      "breakpoints": true
     }
   ]
 }

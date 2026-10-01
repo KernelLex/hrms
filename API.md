@@ -408,7 +408,7 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `tax_ids:read` | See tax identifiers such as PAN, where they are held (none are held yet) |
 | `time:read` | Read holidays, absences, leave requests, leave balances, rosters and attendance days |
 | `time:write` | Record absences and leave requests, and send device punches and timesheets |
-| `payroll:read` | Read payroll periods, runs, payment batches and statutory remittances |
+| `payroll:read` | Read payroll periods, runs, payment batches, statutory remittances and salary structures |
 | `payroll:write` | Send one-off and recurring payments, and confirm salary and remittance payments |
 | `gl:read` | Read the payroll journal (GL postings) and the chart of accounts |
 | `gl:write` | Acknowledge or reject journals, and write the accounts the ERP owns |
@@ -439,6 +439,7 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `payment_batch.created` | `payroll:read` | Salaries of a run are ready to pay. `data` is the batch; amounts with pay:read, accounts with bank:read. Confirm it. |
 | `payslip.published` | `payroll:read` | A payslip became visible to its employee: its month was posted, or its off-cycle payment made. `data` names it; the PDF is at /payroll/results/{id}/payslip. Net pay with pay:read. |
 | `remittance.due` | `payroll:read` | A statutory remittance fell due. `data` is the remittance. |
+| `remittance.paid` | `payroll:read` | A statutory remittance — PF, ESI, TDS, professional tax or LWF — was marked remitted. `data` is the remittance. |
 | `change_request.decided` | `employees:read` | HR decided a correction an employee asked for to their record. `data` says what, from when, and the outcome; an approved change also arrives as employee.updated. |
 | `candidate.hired` | `recruitment:read` | An offered candidate became an employee. `data` has the application and the new employee's id. |
 | `appraisal.finalised` | `performance:read` | Calibration made a rating final. `data` is the appraisal. |
@@ -544,6 +545,7 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | POST | [`/one-off-payments`](#post-one-off-payments) | `payroll:write` | Send a one-off payment |
 | GET | [`/recurring-payments`](#get-recurring-payments) | `payroll:read` + `pay:read` | List recurring payments |
 | POST | [`/recurring-payments`](#post-recurring-payments) | `payroll:write` | Send a recurring payment |
+| GET | [`/salary-structures`](#get-salary-structures) | `payroll:read` | List salary structures |
 | GET | [`/tax/register`](#get-tax-register) | `tax:read` | The TDS register |
 | GET | [`/requisitions`](#get-requisitions) | `recruitment:read` | List requisitions |
 | GET | [`/applications`](#get-applications) | `recruitment:read` | List applications |
@@ -828,7 +830,7 @@ GET /api/v1/employees/3
 
 #### GET /employees/{id}/history
 
-<a id="get-employees-id-history"></a>**An employee's dated history.** Every dated slice of one kind of record, newest first — what was true when. `basic_pay` needs pay:read and `bank_account` bank:read. `valid_to` null means open-ended.
+<a id="get-employees-id-history"></a>**An employee's dated history.** Every dated slice of one kind of record, newest first — what was true when. `basic_pay`, `ctc` and `statutory_details` need pay:read, `bank_account` needs bank:read. `valid_to` null means open-ended.
 
 Needs `employees:read`. More fields with `pay:read` or `bank:read`. Answers 200.
 
@@ -838,7 +840,7 @@ Needs `employees:read`. More fields with `pay:read` or `bank:read`. Answers 200.
 
 | Query parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `record` | `action` \\| `org_assignment` \\| `personal_data` \\| `working_time` \\| `basic_pay` \\| `bank_account` | yes |  |
+| `record` | `action` \\| `org_assignment` \\| `personal_data` \\| `working_time` \\| `basic_pay` \\| `bank_account` \\| `ctc` \\| `statutory_details` | yes |  |
 
 ```http
 GET /api/v1/employees/3/history?record=org_assignment
@@ -1728,7 +1730,7 @@ Content-Type: application/json
 
 #### GET /remittances
 
-<a id="get-remittances"></a>**List statutory remittances.** Provident fund and TDS owed to each authority from each run, with their due dates.
+<a id="get-remittances"></a>**List statutory remittances.** Provident fund, ESI, TDS, professional tax and the labour welfare fund owed to each authority from each run, with their due dates.
 
 Needs `payroll:read`. Answers 200.
 
@@ -1847,6 +1849,12 @@ Content-Type: application/json
   "end_date": null
 }
 ```
+
+#### GET /salary-structures
+
+<a id="get-salary-structures"></a>**List salary structures.** How an annual CTC splits into basic, allowances and employer contributions each month — read an employee's own with /employees/{id}/history?record=ctc.
+
+Needs `payroll:read`. Answers 200.
 
 ### Tax endpoints
 

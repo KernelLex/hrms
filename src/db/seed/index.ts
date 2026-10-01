@@ -18,6 +18,7 @@ import * as s from "../schema";
 import { seedPersonnel } from "./personnel";
 import { seedTime } from "./time";
 import { seedPayroll } from "./payroll";
+import { seedStatutory } from "./statutory";
 import { seedCorrections } from "./corrections";
 import { seedRecruitment } from "./recruitment";
 import { seedPerformance } from "./performance";
@@ -202,6 +203,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   const personnelNotes = await seedPersonnel(db);
   const timeNotes = await seedTime(db);
   const payrollNotes = await seedPayroll(db);
+  const statutoryNotes = await seedStatutory(db);
   const recruitmentNotes = await seedRecruitment(db);
   const performanceNotes = await seedPerformance(db);
 
@@ -225,6 +227,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     ...personnelNotes,
     ...timeNotes,
     ...payrollNotes,
+    ...statutoryNotes,
     ...recruitmentNotes,
     ...performanceNotes,
     ...correctionNotes,

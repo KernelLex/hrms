@@ -54,7 +54,7 @@ export const PERMISSIONS = {
   "leave.decide_any": { group: "Time and leave", can: "decide any leave request, whoever it is waiting for" },
 
   "payroll.view": { group: "Payroll", can: "see payroll periods, runs and results", sensitive: true },
-  "payroll.setup": { group: "Payroll", can: "keep wage types, recurring payments and one-off payments" },
+  "payroll.setup": { group: "Payroll", can: "keep wage types, recurring payments, one-off payments, salary structures, CTC, statutory rates, cost splits and GL mapping" },
   "payroll.run": { group: "Payroll", can: "run payroll, including off-cycle runs" },
   "payroll.post": { group: "Payroll", can: "release and post periods, and make bank files, ledger postings and remittances" },
 
@@ -76,7 +76,7 @@ export const PERMISSIONS = {
 
   "self.profile": { group: "Self-service", can: "see their own profile, documents and who has viewed them" },
   "self.leave": { group: "Self-service", can: "ask for leave and see their own balances" },
-  "self.pay": { group: "Self-service", can: "read their own payslips" },
+  "self.pay": { group: "Self-service", can: "read their own payslips and CTC breakdown" },
   "self.tax": { group: "Self-service", can: "make their own tax declaration and download their Form 16" },
   "self.appraisal": { group: "Self-service", can: "write their own self review" },
   "self.attendance": { group: "Self-service", can: "see their own roster and attendance, and ask for a day to be corrected" },

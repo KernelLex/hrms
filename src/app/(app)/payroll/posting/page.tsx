@@ -248,6 +248,14 @@ export default async function PostingPage(props: {
                 ? `Posted ${formatDate(posting.postingDate)} by ${posting.postedBy}.`
                 : "Posts salary expense and the payables it creates."
             }
+            actions={
+              posting ? (
+                <ButtonAnchor href={`/api/payroll/gl-journal/${posting.id}`} size="sm" download>
+                  <Download />
+                  Download CSV
+                </ButtonAnchor>
+              ) : undefined
+            }
           />
           {posting && erpConnected && ack ? (
             <div className="flex flex-wrap items-center justify-between gap-3 px-6 pb-4">
@@ -333,6 +341,14 @@ export default async function PostingPage(props: {
           <CardHeader
             title="Statutory remittance"
             description="What is owed to the authorities, and by when."
+            actions={
+              remittances.some((r) => r.authority.startsWith("EPFO")) ? (
+                <ButtonAnchor href={`/api/payroll/ecr/${run.id}`} size="sm" download>
+                  <Download />
+                  Download ECR
+                </ButtonAnchor>
+              ) : undefined
+            }
           />
           {remittances.length === 0 ? (
             <EmptyState icon={<Landmark />} title="Nothing due">

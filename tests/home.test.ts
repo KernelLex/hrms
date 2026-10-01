@@ -33,9 +33,12 @@ describe("HR home", () => {
   });
 
   it("names the month whose payroll has not been run", async () => {
-    const h = await hrHome(TODAY);
-    // The seed opens a period for the current month and runs nothing.
+    // The seed opens a period for the real current month (see seed/payroll.ts),
+    // so this asks hrHome as of today too — the fixed TODAY used elsewhere in
+    // this file would go stale the moment a real month boundary passes.
     const now = new Date();
+    const realToday = now.toISOString().slice(0, 10);
+    const h = await hrHome(realToday);
     expect(h.unrunPeriods).toContainEqual(
       expect.objectContaining({ year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 }),
     );

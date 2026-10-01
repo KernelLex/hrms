@@ -17,7 +17,13 @@ import { omPersonnelArea } from "./org";
 export const PERIOD_STATUS = ["Open", "Locked", "Posted"] as const;
 export type PeriodStatus = (typeof PERIOD_STATUS)[number];
 
-export const WAGE_KIND = ["Earning", "Deduction"] as const;
+/**
+ * An employer contribution is neither paid to the employee nor deducted from
+ * them — employer PF, EPS, EDLI, admin charges, employer ESI. Shown on the
+ * payslip as part of CTC, posted to the ledger as cost and liability, never
+ * subtracted from net pay.
+ */
+export const WAGE_KIND = ["Earning", "Deduction", "EmployerContribution"] as const;
 
 /**
  * A regular run pays the month for everyone in the personnel area. An
@@ -321,4 +327,100 @@ export const pyOpeningBalance = sqliteTable(
     createdAt: text("created_at").notNull(),
   },
   (t) => [uniqueIndex("ux_opening_balance_employee_year").on(t.employeeId, t.financialYear)],
+);
+
+/* ------------------------------------------------------ salary structures */
+
+export const SALARY_COMPONENT_TYPES = ["PercentOfCTC", "PercentOfBasic", "Fixed", "Balancing"] as const;
+export type SalaryComponentType = (typeof SALARY_COMPONENT_TYPES)[number];
+
+/** A named shape a CTC is broken into — which wage types, and how each is worked out. */
+export const pySalaryStructure = sqliteTable("py_salary_structure", {
+  code: text("code").primaryKey(),
+  name: text("name").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+});
+
+export const pySalaryStructureComponent = sqliteTable(
+  "py_salary_structure_component",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    structureCode: text("structure_code")
+      .notNull()
+      .references(() => pySalaryStructure.code, { onDelete: "cascade" }),
+    wageTypeCode: text("wage_type_code")
+      .notNull()
+      .references(() => pyWageType.code),
+    componentType: text("component_type").notNull(),
+    /** Used when componentType is PercentOfCTC or PercentOfBasic; 4000 means 40.00%. */
+    percentBasisPoints: integer("percent_basis_points"),
+    /** Used when componentType is Fixed. */
+    fixedAmountPaise: integer("fixed_amount_paise"),
+    /** Exactly one component per structure is Balancing: whatever the others do not account for. */
+    sortOrder: integer("sort_order").notNull().default(100),
+  },
+  (t) => [index("ix_structure_component").on(t.structureCode)],
+);
+
+/**
+ * An employee's annual CTC under a structure, dated like basic pay. Saving a
+ * slice derives that structure's basic-pay component and writes it through
+ * the time-slice engine, the same as a hire or a promotion would — payroll
+ * itself still reads basic pay from IT0008, unchanged.
+ */
+export const pyEmployeeCtc = sqliteTable(
+  "py_employee_ctc",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    structureCode: text("structure_code")
+      .notNull()
+      .references(() => pySalaryStructure.code),
+    annualCtcPaise: integer("annual_ctc_paise").notNull(),
+    validFrom: text("valid_from").notNull(),
+    validTo: text("valid_to").notNull(),
+    seq: integer("seq").notNull().default(1),
+    createdBy: text("created_by").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("ux_ctc_slice").on(t.employeeId, t.validFrom, t.seq)],
+);
+
+/* ---------------------------------------------------------------- cost splits */
+
+/** An employee's pay cost split across more than one cost centre — the single cost_center on IT0001 is the common case; this is the exception. */
+export const pyCostSplit = sqliteTable(
+  "py_cost_split",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => paEmployee.id, { onDelete: "cascade" }),
+    costCentre: text("cost_centre").notNull(),
+    /** Basis points of the total; every employee's own rows must sum to 10000. */
+    percentBasisPoints: integer("percent_basis_points").notNull(),
+    validFrom: text("valid_from").notNull(),
+    validTo: text("valid_to").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("ix_cost_split_employee").on(t.employeeId, t.validFrom)],
+);
+
+/* ----------------------------------------------------------------- GL mapping */
+
+/** Overrides a wage type's default GL account for one company — the ERP's own accounts, as synced in phase 12. */
+export const pyGlMapping = sqliteTable(
+  "py_gl_mapping",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    companyCode: text("company_code").notNull(),
+    wageTypeCode: text("wage_type_code")
+      .notNull()
+      .references(() => pyWageType.code),
+    glAccount: text("gl_account").notNull(),
+  },
+  (t) => [uniqueIndex("ux_gl_mapping_company_wage").on(t.companyCode, t.wageTypeCode)],
 );

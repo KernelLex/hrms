@@ -132,6 +132,9 @@ async function guardEmployee(access: Access, employeeId: number, infotype?: stri
   if (infotype === "0009" && !can(access, "bank.view")) {
     return "Changing bank details needs permission to see them.";
   }
+  if (infotype === "0011" && !can(access, "pay.view")) {
+    return "Changing statutory details needs permission to see pay.";
+  }
   return null;
 }
 
@@ -220,6 +223,19 @@ const SLICED_FORMS = {
       holder_name: v.holderName as string | null,
     }),
   },
+  "0011": {
+    table: SLICED_TABLES.statutoryDetails,
+    schema: z.object({
+      uan: z.string().nullable(),
+      esiNumber: z.string().nullable(),
+      professionalTaxState: z.string().nullable(),
+    }),
+    columns: (v: Record<string, unknown>) => ({
+      uan: v.uan as string | null,
+      esi_number: v.esiNumber as string | null,
+      professional_tax_state: v.professionalTaxState ? (v.professionalTaxState as string).toUpperCase() : null,
+    }),
+  },
 } as const;
 
 export type SlicedInfotype = keyof typeof SLICED_FORMS;
@@ -264,6 +280,12 @@ function readSliced(code: SlicedInfotype, form: FormData) {
         accountNumber: str(form.get("accountNumber")),
         ifsc: opt(form.get("ifsc")),
         holderName: opt(form.get("holderName")),
+      };
+    case "0011":
+      return {
+        uan: opt(form.get("uan")),
+        esiNumber: opt(form.get("esiNumber")),
+        professionalTaxState: opt(form.get("professionalTaxState")),
       };
   }
 }

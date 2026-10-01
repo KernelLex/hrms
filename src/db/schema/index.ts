@@ -5,6 +5,7 @@ export * from "./personnel";
 export * from "./lifecycle";
 export * from "./time";
 export * from "./payroll";
+export * from "./statutory";
 export * from "./tax";
 export * from "./recruitment";
 export * from "./performance";

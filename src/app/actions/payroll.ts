@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, lte, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/access";
 import {
@@ -15,10 +15,13 @@ import {
   pyGlPosting,
   pyGlPostingLine,
   pyStatutoryRemittance,
+  pyCostSplit,
+  pyGlMapping,
+  omPersonnelArea,
   OPEN_ENDED,
   now,
 } from "@/db/schema";
-import { startRun, readRunProgress, type RunProgress } from "@/lib/engines/payroll";
+import { startRun, readRunProgress, periodEnd, type RunProgress } from "@/lib/engines/payroll";
 import { toPaise } from "@/lib/money";
 import { rawClient } from "@/lib/db";
 import { actorOf, audited, changeStatement, recordCreate, recordCreated, recordDelete } from "@/lib/change-log";
@@ -574,13 +577,17 @@ export async function postToLedger(
   const run = await db.query.pyPayrollRun.findFirst({ where: eq(pyPayrollRun.id, runId) });
   if (!run) return fail("That run no longer exists.");
   if (run.status !== "Completed") return fail("That run is still in progress.");
+  const period = await db.query.pyPayrollPeriod.findFirst({ where: eq(pyPayrollPeriod.id, run.periodId) });
+  if (!period) return fail("That payroll period no longer exists.");
+  const asOfDate = periodEnd(period.year, period.month);
 
-  // Every line in the run, summed by wage type and by the cost centre of each
-  // person's org assignment at the end of the period — one read, not one per
-  // employee.
-  const aggregate = await rawClient().execute({
-    sql: `SELECT l.wage_type_code AS code, MIN(l.wage_type_name) AS name, l.kind,
-                 o.cost_center, SUM(l.amount_paise) AS amount
+  // Every line in the run, summed by wage type and by employee — one read,
+  // not one per employee. Cost-centre splitting happens in code below, since
+  // an employee with py_cost_split rows fans their own lines across more than
+  // one cost centre, which SQL's single GROUP BY cannot express directly.
+  const perEmployee = await rawClient().execute({
+    sql: `SELECT r.employee_id, l.wage_type_code AS code, MIN(l.wage_type_name) AS name, l.kind,
+                 o.cost_center AS default_cost_center, SUM(l.amount_paise) AS amount
           FROM py_payroll_result_line l
           JOIN py_payroll_result r ON r.id = l.result_id AND r.status = 'Calculated'
           JOIN py_payroll_run run ON run.id = r.run_id
@@ -590,28 +597,67 @@ export async function postToLedger(
            AND o.valid_from <= date(printf('%04d-%02d-01', p.year, p.month), '+1 month', '-1 day')
            AND o.valid_to >= date(printf('%04d-%02d-01', p.year, p.month), '+1 month', '-1 day')
           WHERE r.run_id = ?
-          GROUP BY l.wage_type_code, l.kind, o.cost_center`,
+          GROUP BY r.employee_id, l.wage_type_code, l.kind`,
     args: [runId],
   });
-  if (aggregate.rows.length === 0) return fail("That run has no results to post.");
+  if (perEmployee.rows.length === 0) return fail("That run has no results to post.");
 
-  type Total = { code: string; name: string; kind: string; costCenter: string | null; amount: number };
-  const rows: Total[] = aggregate.rows.map((r) => ({
+  type EmployeeLine = { employeeId: number; code: string; name: string; kind: string; defaultCostCenter: string | null; amount: number };
+  const employeeLines: EmployeeLine[] = perEmployee.rows.map((r) => ({
+    employeeId: Number(r.employee_id),
     code: String(r.code),
     // Arrears lines name their month; the ledger wants the wage type.
     name: String(r.name).replace(/ (arrears )?for [A-Z][a-z]+ \d{4}$/, ""),
     kind: String(r.kind),
-    costCenter: r.cost_center === null ? null : String(r.cost_center),
+    defaultCostCenter: r.default_cost_center === null ? null : String(r.default_cost_center),
     amount: Number(r.amount),
   }));
+
+  const employeeIds = [...new Set(employeeLines.map((l) => l.employeeId))];
+  const splits =
+    employeeIds.length > 0
+      ? await db
+          .select()
+          .from(pyCostSplit)
+          .where(and(inArray(pyCostSplit.employeeId, employeeIds), lte(pyCostSplit.validFrom, asOfDate), gte(pyCostSplit.validTo, asOfDate)))
+      : [];
+  const splitsByEmployee = new Map<number, { costCentre: string; percentBasisPoints: number }[]>();
+  for (const s of splits) {
+    if (!splitsByEmployee.has(s.employeeId)) splitsByEmployee.set(s.employeeId, []);
+    splitsByEmployee.get(s.employeeId)!.push({ costCentre: s.costCentre, percentBasisPoints: s.percentBasisPoints });
+  }
+
+  // Fans one employee's one wage-type amount across their cost centres,
+  // rounding each share and giving the last one the remainder so the split
+  // always sums back to the original amount exactly.
+  const allocate = (employeeId: number, defaultCostCenter: string | null, amount: number): { costCenter: string | null; amount: number }[] => {
+    const allocation = splitsByEmployee.get(employeeId);
+    if (!allocation || allocation.length === 0) return [{ costCenter: defaultCostCenter, amount }];
+    let allocated = 0;
+    const out = allocation.map((a, i) => {
+      const share = i === allocation.length - 1 ? amount - allocated : Math.round((amount * a.percentBasisPoints) / 10_000);
+      allocated += share;
+      return { costCenter: a.costCentre, amount: share };
+    });
+    return out;
+  };
+
+  type Total = { code: string; name: string; kind: string; costCenter: string | null; amount: number };
+  const rows: Total[] = employeeLines.flatMap((l) =>
+    allocate(l.employeeId, l.defaultCostCenter, l.amount).map((a) => ({ code: l.code, name: l.name, kind: l.kind, costCenter: a.costCenter, amount: a.amount })),
+  );
   const totals = new Map<string, { name: string; kind: string; amount: number }>();
-  for (const r of rows) {
+  for (const r of employeeLines) {
     const t = totals.get(r.code);
     totals.set(r.code, { name: r.name, kind: r.kind, amount: (t?.amount ?? 0) + r.amount });
   }
 
   const wageTypes = await db.select().from(pyWageType);
-  const glOf = new Map(wageTypes.map((w) => [w.code, w.glAccount ?? "5010"]));
+  const area = await db.query.omPersonnelArea.findFirst({ where: eq(omPersonnelArea.code, period.areaCode) });
+  const glMappings = area ? await db.select().from(pyGlMapping).where(eq(pyGlMapping.companyCode, area.companyCode)) : [];
+  const glOverride = new Map(glMappings.map((m) => [m.wageTypeCode, m.glAccount]));
+  const glOf = new Map(wageTypes.map((w) => [w.code, glOverride.get(w.code) ?? w.glAccount ?? "5010"]));
+  const EMPLOYER_CONTRIBUTION_EXPENSE_GL = "5030";
 
   // Posting again replaces the journal; the ERP hears it was deleted.
   for (const gone of await db.delete(pyGlPosting).where(eq(pyGlPosting.runId, runId)).returning()) {
@@ -658,9 +704,35 @@ export async function postToLedger(
     });
   }
 
+  // An employer contribution is company cost and a liability at once — an
+  // expense charged to the cost centre it was earned in, and a payable, never
+  // a reduction of what the employee is owed.
+  for (const r of rows) {
+    if (r.kind !== "EmployerContribution" || r.amount === 0) continue;
+    glLines.push({
+      postingId: posting.id,
+      glAccount: EMPLOYER_CONTRIBUTION_EXPENSE_GL,
+      description: `${description} — ${r.name}`,
+      debitPaise: r.amount,
+      creditPaise: 0,
+      costCenter: r.costCenter,
+    });
+  }
+  for (const [code, t] of totals) {
+    if (t.kind !== "EmployerContribution" || t.amount === 0) continue;
+    glLines.push({
+      postingId: posting.id,
+      glAccount: glOf.get(code) ?? "2120",
+      description: `${description} — ${t.name} payable`,
+      debitPaise: 0,
+      creditPaise: t.amount,
+      costCenter: null,
+    });
+  }
+
   // What is left is owed to the employees.
-  const earningsTotal = rows.filter((r) => r.kind === "Earning").reduce((s, r) => s + r.amount, 0);
-  const deductionsTotal = rows.filter((r) => r.kind === "Deduction").reduce((s, r) => s + r.amount, 0);
+  const earningsTotal = [...totals.values()].filter((t) => t.kind === "Earning").reduce((s, t) => s + t.amount, 0);
+  const deductionsTotal = [...totals.values()].filter((t) => t.kind === "Deduction").reduce((s, t) => s + t.amount, 0);
   const netTotal = earningsTotal - deductionsTotal;
   glLines.push({
     postingId: posting.id,
@@ -681,8 +753,12 @@ export async function postToLedger(
     return d.toISOString().slice(0, 10);
   };
 
-  const pf = totals.get("PF")?.amount ?? 0;
-  const tds = totals.get("TDS")?.amount ?? 0;
+  const totalOf = (code: string) => totals.get(code)?.amount ?? 0;
+  const pf = totalOf("PF") + totalOf("EPF_ER") + totalOf("EPS_ER") + totalOf("EDLI_ER") + totalOf("PF_ADMIN");
+  const tds = totalOf("TDS");
+  const esi = totalOf("ESI") + totalOf("ESI_ER");
+  const pt = totalOf("PT");
+  const lwf = totalOf("LWF") + totalOf("LWF_ER");
   const remittances: {
     runId: number;
     authority: string;
@@ -695,6 +771,15 @@ export async function postToLedger(
   }
   if (tds > 0) {
     remittances.push({ runId, authority: "Income Tax Department (TDS)", amountPaise: tds, dueDate: dueDate(7), status: "Due" });
+  }
+  if (esi > 0) {
+    remittances.push({ runId, authority: "ESIC (employee state insurance)", amountPaise: esi, dueDate: dueDate(15), status: "Due" });
+  }
+  if (pt > 0) {
+    remittances.push({ runId, authority: "State professional tax authority", amountPaise: pt, dueDate: dueDate(20), status: "Due" });
+  }
+  if (lwf > 0) {
+    remittances.push({ runId, authority: "State labour welfare fund", amountPaise: lwf, dueDate: dueDate(15), status: "Due" });
   }
   if (remittances.length > 0) {
     // Logged, so the ERP hears remittance.due.

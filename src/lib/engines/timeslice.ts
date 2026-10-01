@@ -38,7 +38,9 @@ export const SLICED_TABLES = {
   plannedWorkingTime: "pa_it0007_planned_working_time",
   basicPay: "pa_it0008_basic_pay",
   bankDetails: "pa_it0009_bank_details",
+  statutoryDetails: "pa_it0011_statutory_details",
   action: "pa_it0000_action",
+  employeeCtc: "py_employee_ctc",
 } as const;
 
 export type SlicedTable = (typeof SLICED_TABLES)[keyof typeof SLICED_TABLES];

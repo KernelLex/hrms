@@ -1,6 +1,6 @@
 # HRMS — handover
 
-**Last updated:** 27 Sept 2026 · **Current phase:** 13 of 25 done (self-service and payslips: corrections, year to date, PDF payslips by email, the installable app). Next is phase 14, joining, moving and letters.
+**Last updated:** 1 Oct 2026 · **Current phase:** 18 of 25 done (salary structures and statutory payroll: CTC by structure, ESI/professional tax/LWF/employer PF, the ECR file, split cost centres, GL mapping). Next is phase 19, loans and reimbursements.
 
 **Live:** https://hrms-amogh24.vercel.app · **Repository:** `github.com/KernelLex/hrms` (branch `main`) · **Continuous integration:** GitHub Actions on every push
 
@@ -102,13 +102,13 @@ The value is in the seams:
 | | |
 |---|---|
 | Phases complete | 0 to 9 (the original build), 10 to 15 of the extended plan. Part A runs to 24; Part B is 25. |
-| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page; phase 14 added 6: the Career tab, transfer and promotion wizards, My tasks, Probation due and Letter templates; phase 15 added 4: headcount requests, and the import wizard's upload, report and list screens — plus the org chart redrawn as boxes and lines, with the indented list kept beside it as the accessible view |
-| Database tables | 103, in 15 migrations (0000 to 0014) |
-| Engines | Time-slice, quota, payroll, tax, time evaluation; plus the job runner, the approval engine and the import engine |
-| Permissions | 31, in ten groups; 3 built-in roles, and Recruiter and Finance as examples of roles HR can create |
-| Integration API | 62 endpoints under `/api/v1`, 28 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
-| Automated tests | **286 passing** in 33 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
-| UI audit | **304 of 304** role, screen and width combinations clean (`npm run audit:ui`), as four people at 1280 and 375 pixels |
+| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page; phase 14 added 6: the Career tab, transfer and promotion wizards, My tasks, Probation due and Letter templates; phase 15 added 4: headcount requests, and the import wizard's upload, report and list screens — plus the org chart redrawn as boxes and lines, with the indented list kept beside it as the accessible view; phase 16 added Holiday calendars and Leave policies; phase 17 added 6: Shifts, Roster patterns (with each pattern's own day-grid detail), Roster, Today's board, Devices and My attendance; phase 18 added 5: Salary structures (with each structure's own components detail), Statutory rates, GL mapping, a CTC tab and a Statutory details tab on the employee record |
+| Database tables | 126, in 19 migrations (0000 to 0018) |
+| Engines | Time-slice, quota, leave policy, payroll, tax, time evaluation, attendance, statutory; plus the job runner, the approval engine and the import engine |
+| Permissions | 32, in ten groups; 3 built-in roles, and Recruiter and Finance as examples of roles HR can create |
+| Integration API | 71 endpoints under `/api/v1`, 33 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
+| Automated tests | **327 passing** in 36 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario |
+| UI audit | **Clean** (`npm run audit:ui`): every screen, as four people at 1280 and 375 pixels |
 | CI | Typecheck, lint, tests, production build, UI audit and the mock ERP over HTTP on every push |
 | Pending on others | Cloudflare R2 (not enabled on the account), email delivery (no provider chosen), and the rest of phase 25 |
 
@@ -134,8 +134,9 @@ The value is in the seams:
 | 15 | Org and data tools | done |
 | 16 | Leave policies | done |
 | 17 | Attendance and shifts | done |
-| 18 | Salary structures and statutory payroll | **next** |
-| 19–24 | Loans and claims, exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
+| 18 | Salary structures and statutory payroll | done |
+| 19 | Loans and reimbursements | **next** |
+| 20–24 | Exits, tax completeness, recruitment, performance and learning, analytics | planned (§9.5) |
 | 25 | Outside input: the ERP go-live, email, R2, e-signature and the rest | waits on you and the client (§9.6) |
 
 ### 3.3 Infrastructure
@@ -165,9 +166,9 @@ The careers site, `/careers`, needs no account: the demo's HR executive role is 
 
 | Check | Result |
 |---|---|
-| `npm test` | 286 passing: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, payroll, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, onboarding checklists and tasks, transfers and promotions through the time-slice engine, probation confirm/extend/end, letters (merge, PDF, immutability), headcount requests through their approval to a vacant position recruitment can hire against, bulk import (dry run, confirm, batching 5,000 employees, re-importing a file writing nothing twice), opening balances reducing a projected month's TDS, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document, the guided-actions endpoint and its events, imports needing the scope that matches what is being imported), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
-| Mutation checks | Six deliberate bugs in the payroll and tax engines each fail a test; the outbox regression test fails on the old per-minute delivery key; the authorisation matrix fails when one Server Function's check is loosened |
-| `npm run audit:ui` | 304 of 304 clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
+| `npm test` | 327 passing: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, leave policies and their ledger, compensatory off, leave encashment, shifts, rosters, attendance finalisation and regularisation, payroll, statutory PF/ESI/professional tax/LWF (including ESI's contribution-period continuation and Maharashtra's February rule), employer contributions reaching the ledger and never net pay, cost-centre splits, the CTC breakdown against a hand calculation, the ECR file's field format, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, onboarding checklists and tasks, transfers and promotions through the time-slice engine, probation confirm/extend/end, letters (merge, PDF, immutability), headcount requests through their approval to a vacant position recruitment can hire against, bulk import (dry run, confirm, batching 5,000 employees, re-importing a file writing nothing twice), opening balances reducing a projected month's TDS, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document, the guided-actions endpoint and its events, imports needing the scope that matches what is being imported), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
+| Mutation checks | Six deliberate bugs in the payroll and tax engines each fail a test; the outbox regression test fails on the old per-minute delivery key; the authorisation matrix fails when one Server Function's check is loosened; removing ESI's contribution-period continuation check fails the statutory engine's own test |
+| `npm run audit:ui` | clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
 | `npm run sandbox` | The mock ERP's 20 steps against a running app over HTTP, receiving real signed webhooks: 20 of 20 |
 | `API.md` | Its reference is generated from the endpoint definitions; a test fails when it is stale |
 | `npx tsc --noEmit`, `npm run lint`, `next build` | clean |
@@ -371,14 +372,14 @@ Turso is SQLite. Getting any of these wrong produces wrong numbers or a schema t
 
 ### 5.4 Data model
 
-115 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
+126 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
 
 | Prefix | Tables |
 |---|---|
 | `om_` | company, personnel_area, personnel_sub_area, job, org_unit, position, reporting_line, cost_centre (sent by the ERP), headcount_request |
-| `pa_` | employee; change_request (a correction an employee asked for, and its approval); checklist, checklist_item, checklist_template, task, letter, letter_template; infotypes it0000_action, it0001_org_assignment, it0002_personal_data, it0006_address, it0007_planned_working_time, it0008_basic_pay, it0009_bank_details, it0019_monitoring (probation), it0021_family_member, it0105_communication |
+| `pa_` | employee; change_request (a correction an employee asked for, and its approval); checklist, checklist_item, checklist_template, task, letter, letter_template; infotypes it0000_action, it0001_org_assignment, it0002_personal_data, it0006_address, it0007_planned_working_time, it0008_basic_pay, it0009_bank_details, it0011_statutory_details (UAN, ESI number, professional tax state), it0019_monitoring (probation), it0021_family_member, it0105_communication |
 | `pt_` | absence_type, attendance_type, quota_type, it2001_absence, it2002_attendance, it2006_absence_quota (a running total; `quota_ledger` is the source of truth), leave_request, leave_policy, quota_ledger, comp_off, work_schedule_rule, holiday, holiday_calendar, time_evaluation_result, shift, roster_pattern, roster_pattern_day, roster, device, punch, attendance_day, regularisation |
-| `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, opening_balance, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line (with the ERP's payment confirmation), gl_posting, gl_posting_line, statutory_remittance, gl_account (sent by the ERP) |
+| `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, opening_balance, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line (with the ERP's payment confirmation), gl_posting, gl_posting_line, statutory_remittance, gl_account (sent by the ERP), salary_structure, salary_structure_component, employee_ctc, cost_split, gl_mapping, pf_rate, esi_rate, professional_tax_slab, lwf_rate, tax_constant |
 | `rc_` | requisition (the role as candidates read it, and whether it is published), candidate, application (channel, screening, the decision and the offer), application_stage_history, interview (each round: interviewer, time, place, status, rating, recommendation, notes), hire_conversion |
 | `pm_` | appraisal_template, appraisal_cycle, goal, appraisal, calibration, increment_recommendation |
 | `tds_` | section_master, tax_slab, employee_declaration, deduction_register, form16 |
@@ -398,10 +399,11 @@ The line between a prototype and a clickable mockup; everything else is forms ov
 1. **Time slices** (`engines/timeslice.ts`). Writing an infotype closes, trims, splits or replaces whatever it overlaps, in one transaction (`saveTimeSlice`, or `writeTimeSlice` inside a transaction the caller owns, such as an approval's), and logs each step to the change log in the same transaction. `readAsOf(table, employee, date)` answers "what was true then"; the as-of screen and every salary lookup use it. Addresses and contacts are sliced per type, so a new permanent address closes only the old permanent one. A new slice records the values it replaced, so the change log reads "₹65,000 → ₹72,000".
 2. **Quotas** (`engines/quota.ts`). Working days against each employee's own holiday calendar, resolved by their personnel area; balances in half-day units, moved by `postLedger` — the one place either the ledger (`pt_quota_ledger`) or its running-total summary is written, so a balance equals its ledger's sum by construction. Single conditional updates mean two approvals at once cannot overdraw. The sandwich rule pulls in the non-working days a request abuts, where the governing policy asks for it.
 3. **Leave policy** (`engines/leave-policy.ts`). What `pt_leave_policy` turns into ledger entries: `accrueForPeriod` grants a month's or a year's entitlement, pro-rated for a joiner where the policy says to, guarded against granting the same period twice; `runYearEnd` closes a year out against the policy governing it, capped carry-forward and lapse each their own entry; `forecastBalance` projects monthly accrual to a future date; `earnCompOff`, `consumeCompOff` (oldest-expiring first, splitting a grant) and `expireCompOffs`; `encashLeave` prices a day at basic pay over the month's working days and queues an IT0015 payment.
-4. **Payroll** (`engines/payroll.ts`). Basic pay per working day employed against the employee's own calendar, slice by slice, less unpaid days; percentage allowances; recurring and one-off payments (an encashment among them); arrears for posted months whose inputs changed after they were paid; PF and TDS; net. `startRun` fixes who is in a run; `processRunBatch` calculates twenty at a time, each person's reads in one batch and writes in one atomic batch. Regular and off-cycle runs; each one-off paid exactly once. TDS projects the year from what has been paid, subtracts what was deducted, spreads the rest, and takes tax on a one-off in the month it is paid. Missing bank details produce the error row PY-03 shows.
-5. **Tax** (`engines/tax.ts`). Slabs by regime and year, standard deduction, 87A rebate with the new regime's marginal relief, 4% cess. Feeds monthly TDS and Form 16 Part B, so Part B reconciles with Part A.
+4. **Payroll** (`engines/payroll.ts`). Basic pay per working day employed against the employee's own calendar, slice by slice, less unpaid days; percentage allowances; recurring and one-off payments (an encashment among them); arrears for posted months whose inputs changed after they were paid; employee PF, employer PF/EPS/EDLI/admin charge, ESI (both sides), professional tax, the labour welfare fund (both sides) and TDS; net. Employer PF, ESI and LWF post as a new wage-type kind, `EmployerContribution` — on the payslip, excluded from gross, deductions and net by the same filter that already separated Earning from Deduction. `startRun` fixes who is in a run; `processRunBatch` calculates twenty at a time, each person's reads in one batch and writes in one atomic batch. Regular and off-cycle runs; each one-off paid exactly once. TDS projects the year from what has been paid, subtracts what was deducted, spreads the rest, and takes tax on a one-off in the month it is paid. Missing bank details produce the error row PY-03 shows. `computeCtcBreakdown`/`previewCtc` turn an annual CTC and a salary structure into basic, the automatic allowances basic drives, employer PF and a balancing allowance — two passes, since ESI eligibility depends on gross and gross depends on the balancing line.
+5. **Tax** (`engines/tax.ts`). Slabs by regime and year; the standard deduction, the 87A rebate (with the new regime's marginal relief) and the 4% cess now read from `py_tax_constant` (`constantsFor`/`constantsForYear`), the same dated-row pattern the slabs already used, rather than literals — `computeAnnualTaxWith` takes them as an explicit argument, so every existing caller keeps working unchanged. Feeds monthly TDS and Form 16 Part B, so Part B reconciles with Part A.
 6. **Time evaluation** (`engines/time-evaluation.ts`). Turns absences and attendance into a period's paid days and overtime for payroll, against each employee's own holiday calendar.
 7. **Attendance** (`engines/attendance.ts`). `generateRoster` applies a pattern to a team from a chosen start date; `runDailyAttendance` turns a batch of rostered days' punches into `pt_attendance_day` rows — first in, last out, a late mark past the shift's grace period, overtime past its length, a night shift read from its own start to its own end rather than one calendar day — everything read once for the whole batch. Overtime is paid at double the hourly rate as an IT0015 payment, the same table leave encashment uses. `finalizeAttendanceDay` re-runs the same logic for one employee's one day, reading and writing through the caller's own transaction so an approved regularisation's punches are visible to it immediately.
+8. **Statutory** (`engines/statutory.ts`). Dated PF, ESI, professional tax and labour welfare fund rates, each read once per payroll batch and applied per employee rather than queried per employee — `pfContribution` and `esiContribution` are pure functions over an already-loaded rate; `professionalTaxFromSlabs` and `lwfDueFromRates` the same, over every state's rows loaded once. ESI eligibility locks in for a whole contribution period (April–September, October–March): once a payslip shows an ESI line earlier in the same period, it continues even past a raise that would otherwise put gross over the ceiling. `generateEcrText` writes EPFO's published pipe-delimited ("#~#") ECR format, eleven fields a member — a best-effort implementation of the public format; validating an actual file against EPFO's own tools is phase 25.
 
 ### 5.6 Platform services
 
@@ -480,7 +482,7 @@ The blueprint defines 38 screens (with 18 nested tabs, 51 form surfaces). What e
 | Org structure | Companies, personnel areas, sub-areas, jobs, departments, positions, reporting lines, org chart (OM-01…08) | `org.view` to see, `org.edit` to change |
 | Employees | Search and list (CH-04); hire (CH-01); record with a tab per infotype (CH-02), as-of view (CH-03), documents, change log, access log; mass update (CH-05) | `employee.view_all` (a manager's team list: `employee.view_team`); pay and bank tabs need `pay.view` / `bank.view`; logs need `audit.view` |
 | Time | Absences, attendance, quotas, time evaluation, schedules, holidays (TM-01…05); team calendar; my leave | `time.manage`; `time.team_calendar`; `self.leave` |
-| Payroll | Periods (with "email payslips" per period), wage types, recurring and one-off payments, run (with variance check and off-cycle), payslip with year to date, Download PDF and Email again, bank file, ledger and remittances (PY-01…05); my payslips | `payroll.view`, `payroll.setup`, `payroll.run`, `payroll.post`; `self.pay` |
+| Payroll | Periods (with "email payslips" per period), wage types, salary structures (with each structure's own components), statutory rates (PF, ESI, professional tax, LWF, income-tax constants), GL mapping, recurring and one-off payments, run (with variance check and off-cycle), payslip with year to date, Download PDF and Email again, bank file, ledger (with its own CSV download) and remittances with ECR (PY-01…05); my payslips; a CTC tab and cost splits on the employee record | `payroll.view`, `payroll.setup`, `payroll.run`, `payroll.post`; `self.pay` |
 | Tax | Sections and slabs, declarations, register, Form 16 (TDS-01…05) | `tax.manage`; own declaration and Form 16 with `self.tax` |
 | Recruitment | Requisitions (list, open, detail with its applications and the role as candidates read it, edit, publish); applications by stage; each application's page — screening, interview rounds, the decision, the offer, history; interviews upcoming and past; candidates with resumes; conversion (RC-01…05) | `recruitment.manage`; conversion `recruitment.hire` |
 | My interviews | The rounds someone is asked to take; each round's page, with the candidate, the role and the notes form | `recruitment.interview` |
@@ -1457,11 +1459,10 @@ Technical choices that need nobody's input, taken here so Part A can proceed wit
 | Attendance devices until a vendor is chosen | CSV upload and a generic punch endpoint | Every device can export CSV, and any middleware can call an endpoint. |
 | Continuous integration | GitHub Actions running typecheck, lint, tests, build, the UI audit and the mock ERP against a local database | Needs no secrets, because tests never touch Turso. |
 
-### 9.5 Part A — phases 18 to 24
+### 9.5 Part A — phases 19 to 24
 
 | # | Phase | Roadmap features | Depends on |
 |---|---|---|---|
-| 18 | Salary structures and statutory payroll | Salary structures and CTC; ESI, professional tax, LWF and employer PF; ECR file; split cost centres; accounting export | 11, 12 |
 | 19 | Loans and reimbursements | Loans and advances, reimbursement claims | 18 |
 | 20 | Exit and full and final settlement | Exit management, full and final settlement | 14, 18, 19 |
 | 21 | Tax completeness | Investment proofs (12BB), HRA from rent, tax regime comparison, Form 12BA, section 89 relief, 24Q return file | 18, 19 |
@@ -1476,7 +1477,6 @@ flowchart LR
   P12 --> P13["13 Self-service and payslips"]
   P13 --> P14["14 Joining, moving, letters"]
   P12 --> P15["15 Org and data tools"]
-  P12 --> P18["18 Structures and statutory"]
   P18 --> P19["19 Loans and claims"]
   P14 --> P20["20 Exit and F&F"]
   P19 --> P20
@@ -1494,31 +1494,6 @@ flowchart LR
   P16 --> P25
   P17 --> P25
 ```
-
-#### Phase 18 — Salary structures and statutory payroll
-
-**Goal.** Payroll covers what Indian law requires, pay is defined as CTC by structure, and the results reach the ERP's ledger the way finance books them.
-
-**Features.** Salary structures and CTC · ESI, professional tax, LWF and employer PF · ECR file for EPFO (generated to the published format; validation with the government's tools is phase 25) · Split cost centres · Accounting export.
-
-**Build**
-
-| Part | What |
-|---|---|
-| Data | `py_salary_structure` and its components (percentage of CTC, percentage of basic, fixed, and a balancing special allowance) · annual CTC and structure as a dated record, from which basic and allowances derive · `py_statutory_rate`, **all dated**: PF rates and wage ceiling, EPS cap, EDLI, admin charges; ESI rates and wage ceiling; professional tax slabs per state, including Maharashtra's February rule; LWF per state and frequency · the standard deduction, 87A limits and cess move out of code into the same kind of dated rows · a statutory details infotype (UAN, ESI number, professional tax state) · `py_cost_split` (employee, cost centre, percentage, dates) · `py_gl_mapping` (wage type to the ERP's account, per company) |
-| Logic | The payroll engine gains a statutory stage after gross. Employee PF stays; **employer PF, EPS, EDLI and admin charges arrive as a new line kind, "employer contribution"** — shown on the payslip as part of CTC, posted to the ledger as cost and liability, never deducted from pay. ESI applies for whole contribution periods (April to September, October to March), so a raise mid-period does not end it. Professional tax and LWF follow the state. The ECR file follows EPFO's published format, with UAN and each wage base; the ESI file and the professional tax and LWF summaries follow the same pattern. Remittances gain each authority and its due date. Ledger posting splits cost by percentage. The journal also exports as a CSV file, for audit and as a fallback when the link to the ERP is down. |
-| Screens | Salary structures with a preview for any CTC · CTC on the hire, transfer and promotion actions, and "Your CTC" on My profile · dated statutory rates · a statutory details tab · remittances with ECR and ESI downloads · cost splits on the employee · GL mapping (the ERP's accounts, as synced in phase 12) and the export |
-| API and events | **The payroll journal is the most important thing the ERP takes from the HRMS.** `/v1/gl-postings` gains the ERP's accounts from the GL mapping, cost-centre splits, employer contributions and a per-company breakdown, and each journal carries its acknowledgement state. · `/v1/payment-batches` for the salaries the ERP will pay, with confirmations back · `/v1/remittances` with payment back · `/v1/salary-structures` · `/v1/employees/{id}/ctc` · `/v1/payroll/periods/{id}/statutory-files` · `remittance.paid`, `gl.posting.created` carrying the full journal |
-
-**Done when**
-- A ₹6 lakh CTC produces the same monthly components as a hand calculation.
-- ESI continues after a raise until its contribution period ends (test).
-- Professional tax matches the Karnataka and Maharashtra slabs, including February.
-- The ECR file for a test month matches EPFO's published format field by field.
-- Employer contributions reach the ledger and CTC, not net pay.
-- A 60/40 split posts to two cost centres.
-- The mock ERP books the journal against its own accounts and acknowledges it, confirms the payment batch, and each person's salary shows as paid.
-- The engine passes a mutation check like phase 9's.
 
 #### Phase 19 — Loans and reimbursements
 
@@ -1842,20 +1817,16 @@ Each item says why it matters, because the reason decides how much effort it des
 
 #### Statutory coverage in India
 
-The engine handles provident fund (the employee's share) and income tax. A real payroll needs more.
+Phase 18 closed the gaps this section used to list: employer PF, EPS, EDLI and the admin charge are calculated; the ECR file is generated (to the published format — validating an actual file against EPFO's own tools is still open, below); ESI and professional tax are calculated, including ESI's contribution-period rule and Maharashtra's February slab; the labour welfare fund is calculated; and the standard deduction, the 87A limits, the cess rate and the PF wage ceiling are now dated rows (`py_tax_constant`, `py_pf_rate`), not constants in code. What is left:
 
 | What | Why |
 |---|---|
-| **Employer PF, EPS and EDLI** | The employer's 12% splits into EPF and EPS (capped), plus EDLI and admin charges — none are calculated, so the ledger understates cost and the remittance is short. |
-| **ECR file for EPFO** | Provident fund is remitted by uploading an Electronic Challan cum Return in EPFO's format, with each member's UAN. |
-| **ESI** | Employees earning up to ₹21,000 a month contribute 0.75% and the employer 3.25%. Not calculated. |
-| **Professional tax** | Levied by most states on their own slabs (Karnataka, Maharashtra and others). Not calculated. |
-| **Labour Welfare Fund** | State-specific, often half-yearly. Not calculated. |
+| **The ECR file against EPFO's own tools** | Generated to the published format from this build's own reading of it; an actual file has not been validated against EPFO's upload tool or a real UAN. |
 | **Gratuity and bonus** | Gratuity must be provided for and paid on leaving after five years; the Payment of Bonus Act applies to many salaries. |
-| **Income tax completeness** | Surcharge above ₹50 lakh; perquisites; income from a previous employer in the year (Form 12B); relief under section 89 for arrears; HRA exemption computed from rent paid rather than a declared figure; proof collection (Form 12BB) and verification before the year end. |
+| **Income tax completeness** | Surcharge above ₹50 lakh; perquisites (including a concessional loan's, once phase 19 adds loans); income from a previous employer in the year (Form 12B); relief under section 89 for arrears; HRA exemption computed from rent paid rather than a declared figure; proof collection (Form 12BB) and verification before the year end. |
 | **The 24Q return** | Quarterly TDS returns are filed as an FVU file generated from the government's utility; the register is the source, but the file is not produced. |
 | **Form 16 as issued** | Part A is downloaded from TRACES and Part B is issued by the employer, digitally signed. The certificate here is a faithful computation, not the issued document. |
-| **Tax rules as data** | Standard deduction, the 87A limits, cess and the PF wage ceiling are constants in code. Budget changes happen every February. Move them into dated configuration the way tax slabs already are. |
+| **ESI and professional tax wage bases** | Both read the same taxable-earnings figure TDS already computes, not the narrower "ESI wages" or "PT wages" the law separately defines (which exclude some non-taxable reimbursements). A reasonable prototype simplification, worth a real audit's attention before go-live. |
 
 #### Running payroll safely
 
@@ -1939,6 +1910,17 @@ The engine handles provident fund (the employee's share) and income tax. A real 
 ## 11. History
 
 What each phase delivered, newest first, and where the build differed from its plan. When a phase in §9 is finished, it moves here.
+
+### Phase 18 — Salary structures and statutory payroll
+
+- **Salary structures and CTC**: `py_salary_structure` names a shape (seeded: Standard, basic 40% of CTC, special allowance balancing) and `py_salary_structure_component` says how each wage type in it is worked out — a percentage of CTC, a percentage of basic, a fixed amount, or Balancing (exactly one per structure: whatever the others do not account for). `py_employee_ctc` is a dated slice like basic pay itself. Saving a CTC derives its structure's basic through the time-slice engine — the same mechanism a hire or a promotion uses — and its balancing allowance as a recurring payment, ending whatever was open before rather than stacking a second one; payroll's own reads of basic pay and recurring payments need no change to pick either up. `computeCtcBreakdown` solves the one real circularity — ESI eligibility depends on gross, and gross depends on the balancing line — in two passes: the first assumes no ESI, and only if the gross it produces is still within the ceiling does a second pass add the employer's share.
+- **Statutory rates, all dated**: `py_pf_rate` (employee and employer PF, EPS as a share of the employer rate, EDLI, the admin charge, the wage ceiling), `py_esi_rate`, `py_professional_tax_slab` (per state, with a February-specific row where a state has one, beating the general row for the same band — Maharashtra's ₹200 eleven months and ₹300 in February reaches its ₹2,500 annual cap exactly), `py_lwf_rate` (per state, due only in its own cycle month), and `py_tax_constant` — the standard deduction, the 87A rebate and the cess rate `engines/tax.ts` used to hold as literals, seeded with the exact values the code held, so the switch to reading them is value-neutral. A new infotype, IT0011 (`pa_it0011_statutory_details`: UAN, ESI number, the state professional tax follows), was wired straight into the existing generic sliced-infotype machinery (`core-hr.ts`'s `SLICED_FORMS`, `infotypes.ts`) rather than a screen of its own — the same tab, history and time-slice engine basic pay and bank details already use.
+- **A new wage-type kind, `EmployerContribution`**: employer PF, EPS, EDLI, the admin charge, employer ESI and employer LWF are computed alongside the employee-side deductions they sit beside, shown on the payslip as their own lines, and excluded from gross, deductions and net by the same filter that already separated Earning from Deduction — no change to that arithmetic was needed, only more lines of a new kind. ESI locks in for a whole contribution period (April–September, October–March): eligibility checks the current month's wages against the ceiling, or a prior ESI deduction earlier in the same period already loaded for retro, so a raise mid-period does not end it. Professional tax and LWF read the employee's own IT0011 state.
+- **Posting extended, not replaced**: `postToLedger` debits an employer contribution to a new expense account (5030) and credits it to the wage type's own account, the same debit-expense/credit-liability shape a deduction already had, just doubled. `py_gl_mapping` overrides a wage type's GL account per company, checked before its own default. `py_cost_split` fans an employee's earnings and employer-contribution expense across more than one cost centre by percentage — rounded per split, the last absorbing the remainder so the total never drifts — in place of the single cost centre on their org assignment; the per-employee, per-wage-type aggregate the posting action already built just gained a cost-centre dimension inside it. Statutory remittances extend to ESI, professional tax and LWF authorities alongside PF and TDS, each its own due date.
+- **The ECR file**: EPFO's published pipe-delimited ("#~#") format, eleven fields a member — UAN, name, PF/EPS/EDLI wages, employee and employer PF, EPS, NCP days, refund of advances — generated from a completed run's PF lines and each employee's UAN; a best-effort implementation of the public format, since validating an actual file against EPFO's own tools is phase 25. The GL journal also downloads as a CSV, the same pattern the bank file and the payroll-run export already used, for audit and as a fallback when the link to the ERP is down.
+- **Screens**: **Salary structures** (a plain master list, each one opening to its own components editor that submits the whole set at once, since exactly one of a handful of rows must be Balancing) · **Statutory rates** (one screen, five sections — PF, ESI, professional tax, LWF, income-tax constants — each a compact list behind its own "Add", a lighter sibling of MasterScreen built for several master-data lists sharing one page) · **GL mapping** · a **CTC** tab on the employee record (revise CTC, its history, a live monthly breakdown at today's rates, and cost splits) · **Statutory details** alongside Bank details.
+- **API and events**: `/v1/gl-postings`, `/v1/payment-batches` and `/v1/remittances` already existed and are generic over every line and every authority, so employer contributions, cost-centre splits and ESI/professional-tax/LWF remittances reach them, and the `gl.posting.created` event, without a line of code changed — the same "generic pass-through" the IT0015 payment rail proved in phase 16. What is genuinely new: `GET /salary-structures`; `ctc` and `statutory_details` as two more `record` kinds on the already-generic `GET /employees/{id}/history`; and `remittance.paid`, firing when a remittance already fetched through `/remittances` is marked paid.
+- **Where it differs from the plan**: `/v1/payroll/periods/{id}/statutory-files` was not built — the ECR file is reachable today only through the authenticated screen download, not yet through the integration API, which would need the plain Next.js download route the ECR and GL-journal exports use to accept an API token as well as a session cookie. The ESI file and professional-tax/LWF summary files the plan mentioned alongside the ECR were not built either; the remittance rows (with their own authority, amount and due date) are what the API and the Statutory remittance screen expose instead, and nothing in "done when" needed a file for them specifically. Professional tax and LWF read gross from the same taxable-earnings figure TDS already computes, not a separately defined "ESI wages" or "PT wages" basis that excludes non-taxable reimbursements the way the real law's wage definitions do — a reasonable simplification for a prototype, noted here because it is the kind of difference a real payroll audit would ask about.
 
 ### Phase 17 — Attendance and shifts
 

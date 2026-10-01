@@ -54,7 +54,7 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 - **Every fact is dated.** A change is added from the day it applies, and the old value is kept — so you can see anyone's pay, position or address as it was on any past date.
 - **Guided hiring** that creates everything a new employee needs in one step: their job, personal details, working time and pay.
-- Personal details, addresses, contacts, family, bank account, working time and pay, each with its full history.
+- Personal details, addresses, contacts, family, bank account, statutory details (UAN, ESI number, the state professional tax follows), working time and pay, each with its full history.
 - **Documents** filed on each employee's record.
 - **Mass updates** for many employees at once.
 - **Change history** on every record: who changed what, when, and the value before and after.
@@ -83,7 +83,10 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 ### Payroll
 
 - Monthly payroll periods that open, lock for processing and are posted.
-- **Gross to net for every employee**: basic pay by days employed, allowances, recurring and one-off payments, unpaid-leave proration, provident fund and income tax.
+- **Gross to net for every employee**: basic pay by days employed, allowances, recurring and one-off payments, unpaid-leave proration, provident fund, ESI, professional tax, the labour welfare fund and income tax.
+- **Salary structures and CTC**: define how an annual cost-to-company splits into basic, allowances and a balancing figure, once per structure; assigning a CTC to someone derives their monthly pay from it automatically, from the date you choose. A live preview shows the monthly breakdown for any CTC before you save it.
+- **Employer contributions** — the employer's share of PF, ESI and the labour welfare fund — show on the payslip as part of the cost of employing someone, never subtracted from what they are paid.
+- **ESI continues correctly through a raise**: once someone is covered, a mid-year rise does not drop them out until the law's own six-month cycle ends.
 - **Joiners, leavers and mid-month raises** paid correctly by the day.
 - **Arrears** paid automatically, once, when a month already paid is corrected afterwards.
 - **Off-cycle runs** for bonuses and corrections outside the monthly run.
@@ -91,7 +94,10 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 - Runs continue in the background, so nobody waits on the screen.
 - **Payslips** for every employee, itemised line by line with the year to date, as a page or a PDF.
 - **Payslips by email**: posting a month emails each person their payslip as a password-protected PDF, once; HR can send one again.
-- **The bank transfer file**, **the accounting journal** by cost centre, and **statutory remittances** with their due dates.
+- **The bank transfer file**, **the accounting journal** by cost centre (downloadable, and sent to your ERP automatically), and **statutory remittances** — provident fund, ESI, tax, professional tax and the labour welfare fund — each with its due date and a record of when it was paid.
+- **The EPFO file** for provident fund, generated in the government's own published format.
+- **Cost split across more than one cost centre**, by percentage, for anyone whose pay should not all land on one.
+- **Dated statutory rates**: provident fund, ESI, professional tax (state by state) and the labour welfare fund are all rates you can see and change yourself, not figures buried in the software — a rate change is an edit, not a wait for a new release.
 
 ### Tax and Form 16
 
@@ -148,7 +154,7 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ## Coming next
 
-- **Payroll**: salary structures and CTC; ESI, professional tax, labour welfare fund and the employer's PF share; the EPFO file; costs split across cost centres; loans and advances; reimbursement claims.
+- **Payroll**: loans and advances; reimbursement claims.
 - **Exits**: resignation, clearance, and full and final settlement.
 - **Tax**: investment proofs, HRA worked out from rent, a comparison of the two regimes, Form 12BA, relief on arrears, and the quarterly TDS return file.
 - **Recruitment**: interview slots and calendar invitations, scorecards, offer letters signed online, referrals, and hiring reports.

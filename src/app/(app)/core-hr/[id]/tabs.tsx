@@ -18,7 +18,7 @@ export function InfotypeTabs({
   const pathname = usePathname();
   const base = `/core-hr/${employeeId}`;
   const shown = INFOTYPES.filter(
-    (i) => (i.code !== "0008" || seesPay) && (i.code !== "0009" || seesBank),
+    (i) => (i.code !== "0008" || seesPay) && (i.code !== "0009" || seesBank) && (i.code !== "0011" || seesPay),
   );
 
   return (
@@ -31,6 +31,11 @@ export function InfotypeTabs({
       <Tab href={`${base}/career`} active={pathname === `${base}/career`}>
         Career
       </Tab>
+      {seesPay ? (
+        <Tab href={`${base}/ctc`} active={pathname === `${base}/ctc`}>
+          CTC
+        </Tab>
+      ) : null}
       <Tab href={`${base}/as-of`} active={pathname === `${base}/as-of`}>
         As of date
       </Tab>

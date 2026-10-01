@@ -2,7 +2,22 @@ import "server-only";
 import type { InStatement } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { now, type RunType, type TaxRegime } from "@/db/schema";
-import { annualTaxFor, financialYearOf, slabsForYear, type Slab } from "./tax";
+import { annualTaxFor, financialYearOf, slabsForYear, constantsForYear, type Slab, type TaxConstants } from "./tax";
+import {
+  pfRateFor,
+  esiRateFor,
+  loadPtSlabs,
+  loadLwfRates,
+  pfContribution,
+  esiContribution,
+  esiContributionPeriod,
+  professionalTaxFromSlabs,
+  lwfDueFromRates,
+  type PfRate,
+  type EsiRate,
+  type PtSlabRow,
+  type LwfRateRow,
+} from "./statutory";
 
 /**
  * The payroll engine: gross to net.
@@ -36,7 +51,7 @@ import { annualTaxFor, financialYearOf, slabsForYear, type Slab } from "./tax";
 export type PayrollLine = {
   wageTypeCode: string;
   wageTypeName: string;
-  kind: "Earning" | "Deduction";
+  kind: "Earning" | "Deduction" | "EmployerContribution";
   amountPaise: number;
   sortOrder: number;
   /** Set on arrears: the earlier period this line corrects. */
@@ -57,9 +72,6 @@ export type EmployeeResult = {
   /** One-off payments this result pays, so they are paid exactly once. */
   paidAdditionalIds: number[];
 };
-
-/** EPF is 12% of basic, and basic is capped at ₹15,000 for the calculation. */
-const PF_WAGE_CEILING_PAISE = 1_500_000;
 
 /** Employees calculated per request. Small enough for any serverless limit. */
 export const BATCH_SIZE = 20;
@@ -120,7 +132,7 @@ function yearBounds(financialYear: string) {
 type WageType = {
   code: string;
   name: string;
-  kind: "Earning" | "Deduction";
+  kind: "Earning" | "Deduction" | "EmployerContribution";
   amountType: string;
   percentBasisPoints: number | null;
   formulaKey: string | null;
@@ -137,7 +149,23 @@ type Context = {
   holidaysByCalendar: Map<string, Set<string>>;
   wageTypes: Map<string, WageType>;
   slabs: Record<TaxRegime, Slab[]>;
+  constants: Record<TaxRegime, TaxConstants>;
+  pfRate: PfRate;
+  esiRate: EsiRate;
+  ptSlabs: PtSlabRow[];
+  lwfRates: LwfRateRow[];
 };
+
+/** Used only where the database somehow has no rate row at all. */
+const FALLBACK_PF_RATE: PfRate = {
+  employeeRateBasisPoints: 1200,
+  employerRateBasisPoints: 1200,
+  epsRateBasisPoints: 833,
+  edliRateBasisPoints: 50,
+  adminChargeBasisPoints: 50,
+  wageCeilingPaise: 1_500_000,
+};
+const FALLBACK_ESI_RATE: EsiRate = { employeeRateBasisPoints: 75, employerRateBasisPoints: 325, wageCeilingPaise: 2_100_000 };
 
 const DEFAULT_CALENDAR = "NATIONAL";
 const holidaysFor = (ctx: Context, calendarCode: string): Set<string> => ctx.holidaysByCalendar.get(calendarCode) ?? new Set();
@@ -193,6 +221,7 @@ type Facts = {
   }[];
   /** What an imported employee earned and paid before this system held their history. */
   openingBalance: { asOfYm: number; grossPaidPaise: number; tdsDeductedPaise: number } | null;
+  statutoryDetails: { professionalTaxState: string | null } | null;
 };
 
 async function loadContext(financialYear: string): Promise<Context> {
@@ -216,6 +245,14 @@ async function loadContext(financialYear: string): Promise<Context> {
     if (!holidaysByCalendar.has(code)) holidaysByCalendar.set(code, new Set());
     holidaysByCalendar.get(code)!.add(String(h.date));
   }
+  const [slabs, constants, pfRate, esiRate, ptSlabs, lwfRates] = await Promise.all([
+    slabsForYear(financialYear),
+    constantsForYear(financialYear),
+    pfRateFor(to),
+    esiRateFor(to),
+    loadPtSlabs(),
+    loadLwfRates(),
+  ]);
   return {
     financialYear,
     holidaysByCalendar,
@@ -225,7 +262,7 @@ async function loadContext(financialYear: string): Promise<Context> {
         {
           code: String(r.code),
           name: String(r.name),
-          kind: String(r.kind) as "Earning" | "Deduction",
+          kind: String(r.kind) as "Earning" | "Deduction" | "EmployerContribution",
           amountType: String(r.amount_type),
           percentBasisPoints: r.percent_basis_points === null ? null : Number(r.percent_basis_points),
           formulaKey: r.formula_key === null ? null : String(r.formula_key),
@@ -235,7 +272,12 @@ async function loadContext(financialYear: string): Promise<Context> {
         },
       ]),
     ),
-    slabs: await slabsForYear(financialYear),
+    slabs,
+    constants,
+    pfRate: pfRate ?? FALLBACK_PF_RATE,
+    esiRate: esiRate ?? FALLBACK_ESI_RATE,
+    ptSlabs,
+    lwfRates,
   };
 }
 
@@ -315,11 +357,17 @@ async function loadFacts(
               ORDER BY o.valid_from DESC LIMIT 1`,
         args: [e, to, to],
       },
+      {
+        sql: `SELECT professional_tax_state FROM pa_it0011_statutory_details
+              WHERE employee_id = ? AND valid_from <= ? AND valid_to >= ?
+              ORDER BY valid_from DESC LIMIT 1`,
+        args: [e, to, to],
+      },
     ],
     "read",
   );
 
-  const [emp, basic, bank, recurring, absences, oneOffs, declaration, history, lines, openingBalance, calendar] = rs;
+  const [emp, basic, bank, recurring, absences, oneOffs, declaration, history, lines, openingBalance, calendar, statutoryDetails] = rs;
   if (emp.rows.length === 0) return null;
   const d = declaration.rows[0];
   const rows = <T>(r: (typeof rs)[number]) => r.rows as unknown as T[];
@@ -376,6 +424,9 @@ async function loadFacts(
           grossPaidPaise: Number(openingBalance.rows[0].gross_paid_paise),
           tdsDeductedPaise: Number(openingBalance.rows[0].tds_deducted_paise),
         }
+      : null,
+    statutoryDetails: statutoryDetails.rows[0]
+      ? { professionalTaxState: statutoryDetails.rows[0].professional_tax_state === null ? null : String(statutoryDetails.rows[0].professional_tax_state) }
       : null,
   };
 }
@@ -527,22 +578,204 @@ function regularPart(
 function providentFund(basicPaise: number, ctx: Context): PayrollLine | null {
   const pfType = [...ctx.wageTypes.values()].find((w) => w.formulaKey === "PF");
   if (!pfType) return null;
-  const amount = Math.round(
-    (Math.min(basicPaise, PF_WAGE_CEILING_PAISE) * (pfType.percentBasisPoints ?? 1200)) / 10_000,
-  );
+  const { employee } = pfContribution(basicPaise, ctx.pfRate);
   return {
     wageTypeCode: pfType.code,
     wageTypeName: pfType.name,
     kind: "Deduction",
-    amountPaise: amount,
+    amountPaise: employee,
     sortOrder: pfType.sortOrder,
   };
+}
+
+/** Employer PF, EPS, EDLI and the admin charge — company cost, never subtracted from net pay. */
+function employerPfLines(basicPaise: number, ctx: Context): PayrollLine[] {
+  const c = pfContribution(basicPaise, ctx.pfRate);
+  const byFormula = (key: string) => [...ctx.wageTypes.values()].find((w) => w.formulaKey === key);
+  const lines: PayrollLine[] = [];
+  const push = (formulaKey: string, amountPaise: number) => {
+    const wt = byFormula(formulaKey);
+    if (wt && amountPaise > 0) lines.push({ wageTypeCode: wt.code, wageTypeName: wt.name, kind: "EmployerContribution", amountPaise, sortOrder: wt.sortOrder });
+  };
+  push("EPF_ER", c.epf);
+  push("EPS_ER", c.eps);
+  push("EDLI_ER", c.edli);
+  push("PF_ADMIN", c.adminCharge);
+  return lines;
+}
+
+/**
+ * Once enrolled, ESI continues for the rest of the six-month contribution
+ * period even if a raise since has pushed gross over the ceiling — the law
+ * locks eligibility in at the period's start, not month by month.
+ */
+function hadEsiEarlierInPeriod(f: Facts, year: number, month: number, esiCode: string): boolean {
+  const { from } = esiContributionPeriod(periodEnd(year, month));
+  const fromYm = ym(Number(from.slice(0, 4)), Number(from.slice(5, 7)));
+  const current = ym(year, month);
+  const periodResultIds = new Set(
+    f.history.filter((h) => h.run_type === "Regular" && ym(h.year, h.month) >= fromYm && ym(h.year, h.month) < current).map((h) => h.result_id),
+  );
+  return f.historyLines.some((l) => periodResultIds.has(l.result_id) && l.wage_type_code === esiCode && l.for_period_id === null && l.amount_paise > 0);
+}
+
+/** Employee and employer ESI, only where the month's wages are within the ceiling or the period already locked them in. */
+function esiLines(esiWagesPaise: number, eligible: boolean, ctx: Context): PayrollLine[] {
+  if (!eligible) return [];
+  const c = esiContribution(esiWagesPaise, ctx.esiRate);
+  const lines: PayrollLine[] = [];
+  const emp = [...ctx.wageTypes.values()].find((w) => w.formulaKey === "ESI");
+  if (emp && c.employee > 0) lines.push({ wageTypeCode: emp.code, wageTypeName: emp.name, kind: "Deduction", amountPaise: c.employee, sortOrder: emp.sortOrder });
+  const er = [...ctx.wageTypes.values()].find((w) => w.formulaKey === "ESI_ER");
+  if (er && c.employer > 0) lines.push({ wageTypeCode: er.code, wageTypeName: er.name, kind: "EmployerContribution", amountPaise: c.employer, sortOrder: er.sortOrder });
+  return lines;
+}
+
+function professionalTaxLine(state: string | null, date: string, grossPaise: number, ctx: Context): PayrollLine | null {
+  if (!state) return null;
+  const wt = [...ctx.wageTypes.values()].find((w) => w.formulaKey === "PT");
+  if (!wt) return null;
+  const amount = professionalTaxFromSlabs(ctx.ptSlabs, state, date, grossPaise);
+  if (amount <= 0) return null;
+  return { wageTypeCode: wt.code, wageTypeName: wt.name, kind: "Deduction", amountPaise: amount, sortOrder: wt.sortOrder };
+}
+
+/** Labour welfare fund, employee and employer sides, only in a due month. */
+function lwfLines(state: string | null, date: string, ctx: Context): PayrollLine[] {
+  if (!state) return [];
+  const due = lwfDueFromRates(ctx.lwfRates, state, date);
+  if (!due) return [];
+  const lines: PayrollLine[] = [];
+  const emp = [...ctx.wageTypes.values()].find((w) => w.formulaKey === "LWF");
+  if (emp && due.employeeAmountPaise > 0) lines.push({ wageTypeCode: emp.code, wageTypeName: emp.name, kind: "Deduction", amountPaise: due.employeeAmountPaise, sortOrder: emp.sortOrder });
+  const er = [...ctx.wageTypes.values()].find((w) => w.formulaKey === "LWF_ER");
+  if (er && due.employerAmountPaise > 0) lines.push({ wageTypeCode: er.code, wageTypeName: er.name, kind: "EmployerContribution", amountPaise: due.employerAmountPaise, sortOrder: er.sortOrder });
+  return lines;
 }
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
+
+/* ----------------------------------------------------- CTC breakdown */
+
+export type CtcBreakdownLine = { wageTypeCode: string; wageTypeName: string; amountPaise: number };
+export type CtcBreakdown = {
+  monthlyCtcPaise: number;
+  lines: CtcBreakdownLine[];
+  grossPaise: number;
+  employerPfPaise: number;
+  employerEsiPaise: number;
+};
+
+type StructureComponent = {
+  wageTypeCode: string;
+  wageTypeName: string;
+  componentType: "PercentOfCTC" | "PercentOfBasic" | "Fixed" | "Balancing";
+  percentBasisPoints: number | null;
+  fixedAmountPaise: number | null;
+};
+
+/**
+ * A CTC broken into its monthly components: basic from the structure, the
+ * automatic wage-type allowances basic drives (HRA, conveyance), employer PF
+ * on top, and whatever is left balancing to the CTC.
+ *
+ * ESI eligibility depends on gross, which depends on the balancing line,
+ * which depends on ESI — solved with two passes: the first assumes no ESI,
+ * and if the gross it produces is still within the ceiling, a second pass
+ * includes the employer's ESI share too.
+ */
+export function computeCtcBreakdown(opts: {
+  annualCtcPaise: number;
+  components: StructureComponent[];
+  automaticPercentOfBasic: { code: string; name: string; percentBasisPoints: number }[];
+  pfRate: PfRate;
+  esiRate: EsiRate;
+}): CtcBreakdown {
+  const { components, automaticPercentOfBasic, pfRate, esiRate } = opts;
+  const monthlyCtcPaise = Math.round(opts.annualCtcPaise / 12);
+  const nonBalancing = components.filter((c) => c.componentType !== "Balancing");
+  const balancing = components.find((c) => c.componentType === "Balancing");
+
+  const baseLines = (): { lines: CtcBreakdownLine[]; basic: number } => {
+    const lines: CtcBreakdownLine[] = [];
+    let basic = 0;
+    for (const c of nonBalancing) {
+      if (c.componentType === "PercentOfBasic") continue; // resolved once basic is known, below
+      const amount = c.componentType === "PercentOfCTC" ? Math.round((monthlyCtcPaise * (c.percentBasisPoints ?? 0)) / 10_000) : (c.fixedAmountPaise ?? 0);
+      lines.push({ wageTypeCode: c.wageTypeCode, wageTypeName: c.wageTypeName, amountPaise: amount });
+      if (c.wageTypeCode === "BASIC") basic = amount;
+    }
+    for (const c of nonBalancing) {
+      if (c.componentType !== "PercentOfBasic") continue;
+      lines.push({ wageTypeCode: c.wageTypeCode, wageTypeName: c.wageTypeName, amountPaise: Math.round((basic * (c.percentBasisPoints ?? 0)) / 10_000) });
+    }
+    for (const w of automaticPercentOfBasic) {
+      if (lines.some((l) => l.wageTypeCode === w.code)) continue; // the structure already names it explicitly
+      lines.push({ wageTypeCode: w.code, wageTypeName: w.name, amountPaise: Math.round((basic * w.percentBasisPoints) / 10_000) });
+    }
+    return { lines, basic };
+  };
+
+  const pass = (esiEligible: boolean) => {
+    const { lines, basic } = baseLines();
+    const pf = pfContribution(basic, pfRate);
+    const employerPfPaise = pf.epf + pf.eps + pf.edli + pf.adminCharge;
+    const grossBeforeBalancing = lines.reduce((s, l) => s + l.amountPaise, 0);
+    const employerEsiPaise = esiEligible ? esiContribution(grossBeforeBalancing, esiRate).employer : 0;
+    if (balancing) {
+      const amount = Math.max(0, monthlyCtcPaise - grossBeforeBalancing - employerPfPaise - employerEsiPaise);
+      lines.push({ wageTypeCode: balancing.wageTypeCode, wageTypeName: balancing.wageTypeName, amountPaise: amount });
+    }
+    const grossPaise = lines.reduce((s, l) => s + l.amountPaise, 0);
+    return { lines, grossPaise, employerPfPaise, employerEsiPaise };
+  };
+
+  const first = pass(false);
+  const result = first.grossPaise <= esiRate.wageCeilingPaise ? pass(true) : first;
+  return { monthlyCtcPaise, ...result };
+}
+
+/** The same breakdown, loading the structure and today's rates from the database — for a preview screen. */
+export async function previewCtc(structureCode: string, annualCtcPaise: number, asOfDate: string): Promise<CtcBreakdown> {
+  const client = rawClient();
+  const [componentsRes, wageTypesRes, pfRate, esiRate] = await Promise.all([
+    client.execute({
+      sql: `SELECT sc.wage_type_code, wt.name AS wage_type_name, sc.component_type, sc.percent_basis_points, sc.fixed_amount_paise
+            FROM py_salary_structure_component sc JOIN py_wage_type wt ON wt.code = sc.wage_type_code
+            WHERE sc.structure_code = ? ORDER BY sc.sort_order`,
+      args: [structureCode],
+    }),
+    client.execute({
+      sql: `SELECT code, name, percent_basis_points FROM py_wage_type
+            WHERE is_active = 1 AND is_automatic = 1 AND kind = 'Earning' AND amount_type = 'PercentOfBasic'`,
+      args: [],
+    }),
+    pfRateFor(asOfDate),
+    esiRateFor(asOfDate),
+  ]);
+  const components: StructureComponent[] = componentsRes.rows.map((r) => ({
+    wageTypeCode: String(r.wage_type_code),
+    wageTypeName: String(r.wage_type_name),
+    componentType: String(r.component_type) as StructureComponent["componentType"],
+    percentBasisPoints: r.percent_basis_points === null ? null : Number(r.percent_basis_points),
+    fixedAmountPaise: r.fixed_amount_paise === null ? null : Number(r.fixed_amount_paise),
+  }));
+  const automaticPercentOfBasic = wageTypesRes.rows.map((r) => ({
+    code: String(r.code),
+    name: String(r.name),
+    percentBasisPoints: Number(r.percent_basis_points),
+  }));
+  return computeCtcBreakdown({
+    annualCtcPaise,
+    components,
+    automaticPercentOfBasic,
+    pfRate: pfRate ?? FALLBACK_PF_RATE,
+    esiRate: esiRate ?? FALLBACK_ESI_RATE,
+  });
+}
 
 /* ------------------------------------------------------------- retro */
 
@@ -697,7 +930,7 @@ function incomeTax(opts: {
   const F = opts.fullMonthTaxablePaise;
   const base =
     taxablePaid + (unrecorded + future + thisMonthToCome) * F + opts.regularTaxablePaise;
-  const tax = (gross: number) => annualTaxFor(gross, f.declaration, ctx.financialYear, ctx.slabs);
+  const tax = (gross: number) => annualTaxFor(gross, f.declaration, ctx.financialYear, ctx.slabs, ctx.constants);
 
   const taxOnBase = tax(base);
   const taxWithOneOffs = opts.oneOffTaxablePaise ? tax(base + opts.oneOffTaxablePaise) : taxOnBase;
@@ -801,6 +1034,16 @@ function calculateFromFacts(opts: {
   if (runType === "Regular" && "lines" in regular) {
     const pf = providentFund(regular.basicPaise, ctx);
     if (pf && pf.amountPaise > 0) lines.push(pf);
+    lines.push(...employerPfLines(regular.basicPaise, ctx));
+
+    const esiCode = [...ctx.wageTypes.values()].find((w) => w.formulaKey === "ESI")?.code ?? "ESI";
+    const esiEligible = regularTaxable > 0 && (regularTaxable <= ctx.esiRate.wageCeilingPaise || hadEsiEarlierInPeriod(f, year, month, esiCode));
+    lines.push(...esiLines(regularTaxable, esiEligible, ctx));
+
+    const ptState = f.statutoryDetails?.professionalTaxState ?? null;
+    const pt = professionalTaxLine(ptState, to, regularTaxable, ctx);
+    if (pt) lines.push(pt);
+    lines.push(...lwfLines(ptState, to, ctx));
   }
 
   const oneOffTaxable =

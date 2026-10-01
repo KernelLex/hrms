@@ -46,13 +46,14 @@ const ROUTES = [
   "/org/departments", "/org/positions", "/org/reporting-lines", "/org/chart",
   "/org/imports", "/org/imports/new", "/org/imports/1", "/headcount-requests",
   "/core-hr", "/core-hr/hire", "/core-hr/mass-update", "/core-hr/probation", "/core-hr/letter-templates",
-  "/core-hr/2/career", "/core-hr/2/transfer", "/core-hr/2/promote", "/tasks",
+  "/core-hr/2/career", "/core-hr/2/transfer", "/core-hr/2/promote", "/core-hr/2/ctc", "/core-hr/2/0011", "/tasks",
   "/time", "/time/absences", "/time/attendances", "/time/quotas", "/time/evaluation",
   "/time/schedules", "/time/holidays", "/time/holiday-calendars", "/time/leave-policies",
   "/time/shifts", "/time/roster-patterns", "/time/roster", "/time/attendance-board", "/time/devices",
   "/time/approvals", "/time/my-leave", "/time/my-attendance",
   "/payroll", "/payroll/periods", "/payroll/wage-types", "/payroll/recurring",
   "/payroll/additional", "/payroll/run", "/payroll/posting", "/payroll/my-payslips",
+  "/payroll/salary-structures", "/payroll/salary-structures/STANDARD", "/payroll/statutory-rates", "/payroll/gl-mapping",
   "/recruitment", "/recruitment/requisitions", "/recruitment/candidates",
   "/recruitment/pipeline", "/recruitment/interviews", "/recruitment/hire",
   "/recruitment/requisitions/new", "/recruitment/requisitions/REQ0001", "/recruitment/requisitions/REQ0001/edit",
@@ -147,6 +148,7 @@ async function discover(page: Page): Promise<string[]> {
       if (first.startsWith("/core-hr/")) {
         found.add(`${first}/as-of`);
         found.add(`${first}/0008`);
+        found.add(`${first}/0011`);
         found.add(`${first}/access`);
         found.add(`${first}/changes`);
         found.add(`${first}/documents`);

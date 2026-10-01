@@ -41,6 +41,7 @@ export const EVENT_TYPES = {
     description: "A payslip became visible to its employee: its month was posted, or its off-cycle payment made. `data` names it; the PDF is at /payroll/results/{id}/payslip. Net pay with pay:read.",
   },
   "remittance.due": { scope: "payroll:read", description: "A statutory remittance fell due. `data` is the remittance." },
+  "remittance.paid": { scope: "payroll:read", description: "A statutory remittance — PF, ESI, TDS, professional tax or LWF — was marked remitted. `data` is the remittance." },
   "change_request.decided": {
     scope: "employees:read",
     description: "HR decided a correction an employee asked for to their record. `data` says what, from when, and the outcome; an approved change also arrives as employee.updated.",
@@ -181,6 +182,9 @@ export function eventFor(c: ChangeRow): Derived | null {
     return { type: "payment_batch.created", subject: `payment-batches/${c.entity_id}`, key: `batch:${c.entity_id}` };
   }
   if (c.entity === "py_statutory_remittance" && c.action === "create") return { type: "remittance.due", subject: `remittances/${c.entity_id}`, key: `rem:${c.entity_id}` };
+  if (c.entity === "py_statutory_remittance" && c.action === "update" && after.status === "Remitted") {
+    return { type: "remittance.paid", subject: `remittances/${c.entity_id}`, key: `rem-paid:${c.entity_id}` };
+  }
   if (c.entity === "py_payroll_result" && after.published_at) {
     return { type: "payslip.published", subject: `payslips/${c.entity_id}`, key: `payslip:${c.entity_id}` };
   }
@@ -272,7 +276,8 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
       const r = await one("SELECT * FROM py_bank_transfer_file WHERE id = ?", [Number(id)]);
       return r ? ((await payroll.paymentBatches({ has: () => true }, [r]))[0] as Record<string, unknown>) : null;
     }
-    case "remittance.due": {
+    case "remittance.due":
+    case "remittance.paid": {
       const r = await one("SELECT * FROM py_statutory_remittance WHERE id = ?", [Number(id)]);
       return r ? payroll.remittanceOf(r) : null;
     }

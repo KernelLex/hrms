@@ -35,10 +35,13 @@ export default async function InfotypePage(props: {
   const meta = infotypeByCode(infotype);
   if (!meta) notFound();
 
-  // The layout has already confirmed who may open the record; pay and bank
-  // details need their own permission. Record what was read.
+  // The layout has already confirmed who may open the record; pay, bank and
+  // statutory details need their own permission. Record what was read.
   const session = await getAccess();
-  if ((meta.code === "0008" && !can(session, "pay.view")) || (meta.code === "0009" && !can(session, "bank.view"))) {
+  if (
+    ((meta.code === "0008" || meta.code === "0011") && !can(session, "pay.view")) ||
+    (meta.code === "0009" && !can(session, "bank.view"))
+  ) {
     redirect(`/core-hr/${employeeId}`);
   }
   if (session) {
@@ -76,6 +79,7 @@ export default async function InfotypePage(props: {
       "0007": SLICED_TABLES.plannedWorkingTime,
       "0008": SLICED_TABLES.basicPay,
       "0009": SLICED_TABLES.bankDetails,
+      "0011": SLICED_TABLES.statutoryDetails,
     }[infotype]!;
 
     const history = await readHistory<Record<string, string | number | null>>(
@@ -191,7 +195,7 @@ export default async function InfotypePage(props: {
           currency: String(h.currency ?? "INR"),
         },
       }));
-    } else {
+    } else if (infotype === "0009") {
       columns = [
         { key: "bank", label: "Bank" },
         { key: "account", label: "Account" },
@@ -214,6 +218,28 @@ export default async function InfotypePage(props: {
           accountNumber: String(h.account_number ?? ""),
           ifsc: String(h.ifsc ?? ""),
           holderName: String(h.holder_name ?? ""),
+        },
+      }));
+    } else {
+      columns = [
+        { key: "uan", label: "UAN" },
+        { key: "esi", label: "ESI number" },
+        { key: "state", label: "Professional tax state" },
+      ];
+      rows = history.map((h) => ({
+        id: String(h.id),
+        validFrom: String(h.valid_from),
+        validTo: String(h.valid_to),
+        describe: `Statutory details from ${formatDate(String(h.valid_from))}`,
+        cells: {
+          uan: h.uan ?? dash,
+          esi: h.esi_number ?? dash,
+          state: h.professional_tax_state ?? dash,
+        },
+        values: {
+          uan: String(h.uan ?? ""),
+          esiNumber: String(h.esi_number ?? ""),
+          professionalTaxState: String(h.professional_tax_state ?? ""),
         },
       }));
     }

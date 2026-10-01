@@ -21,7 +21,7 @@ export const SCOPES = {
   "tax_ids:read": "See tax identifiers such as PAN, where they are held (none are held yet)",
   "time:read": "Read holidays, absences, leave requests, leave balances, rosters and attendance days",
   "time:write": "Record absences and leave requests, and send device punches and timesheets",
-  "payroll:read": "Read payroll periods, runs, payment batches and statutory remittances",
+  "payroll:read": "Read payroll periods, runs, payment batches, statutory remittances and salary structures",
   "payroll:write": "Send one-off and recurring payments, and confirm salary and remittance payments",
   "gl:read": "Read the payroll journal (GL postings) and the chart of accounts",
   "gl:write": "Acknowledge or reject journals, and write the accounts the ERP owns",

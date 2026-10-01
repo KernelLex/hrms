@@ -55,6 +55,12 @@ export const INFOTYPES: InfotypeMeta[] = [
     description: "Where the salary is paid. Payroll fails without this.",
   },
   {
+    code: "0011",
+    name: "Statutory details",
+    kind: "sliced",
+    description: "UAN, ESI number and the state professional tax follows.",
+  },
+  {
     code: "0021",
     name: "Family members",
     kind: "repeating",
@@ -185,6 +191,12 @@ export function infotypeFields(
         { kind: "text", name: "accountNumber", label: "Account number", required: true },
         { kind: "text", name: "ifsc", label: "IFSC code" },
         { kind: "text", name: "holderName", label: "Account holder" },
+      ];
+    case "0011":
+      return [
+        { kind: "text", name: "uan", label: "UAN", placeholder: "100123456789", hint: "Universal Account Number, for EPFO." },
+        { kind: "text", name: "esiNumber", label: "ESI number" },
+        { kind: "text", name: "professionalTaxState", label: "Professional tax state", uppercase: true, hint: "Matches a state on the professional tax rates screen." },
       ];
     case "0021":
       return [

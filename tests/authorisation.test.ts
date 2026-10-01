@@ -19,6 +19,7 @@ import * as payroll from "@/app/actions/payroll";
 import * as performance from "@/app/actions/performance";
 import * as recruitment from "@/app/actions/recruitment";
 import * as search from "@/app/actions/search";
+import * as statutory from "@/app/actions/statutory";
 import * as tax from "@/app/actions/tax";
 import * as time from "@/app/actions/time";
 import { GET as documentRoute } from "@/app/api/documents/[id]/route";
@@ -26,6 +27,8 @@ import { GET as exportEmployees } from "@/app/api/export/employees/route";
 import { GET as exportPayrollRun } from "@/app/api/export/payroll-run/[id]/route";
 import { GET as exportRegister } from "@/app/api/export/register/route";
 import { GET as bankFile } from "@/app/api/payroll/bank-file/[id]/route";
+import { GET as ecrFile } from "@/app/api/payroll/ecr/[id]/route";
+import { GET as glJournal } from "@/app/api/payroll/gl-journal/[id]/route";
 import { actAs, createPerson, type Person } from "./support/people";
 
 /**
@@ -61,6 +64,7 @@ const MODULES = {
   performance,
   recruitment,
   search,
+  statutory,
   tax,
   time,
 } as const;
@@ -159,6 +163,27 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     generateBankFile: ["payroll.post"],
     postToLedger: ["payroll.post"],
     markRemitted: ["payroll.post"],
+  },
+  statutory: {
+    saveSalaryStructure: ["payroll.setup"],
+    deleteSalaryStructure: ["payroll.setup"],
+    saveStructureComponents: ["payroll.setup"],
+    saveCtc: ["payroll.setup"],
+    deleteCtc: ["payroll.setup"],
+    saveCostSplit: ["payroll.setup"],
+    deleteCostSplit: ["payroll.setup"],
+    saveGlMapping: ["payroll.setup"],
+    deleteGlMapping: ["payroll.setup"],
+    savePfRate: ["payroll.setup"],
+    deletePfRate: ["payroll.setup"],
+    saveEsiRate: ["payroll.setup"],
+    deleteEsiRate: ["payroll.setup"],
+    savePtSlab: ["payroll.setup"],
+    deletePtSlab: ["payroll.setup"],
+    saveLwfRate: ["payroll.setup"],
+    deleteLwfRate: ["payroll.setup"],
+    saveTaxConstant: ["payroll.setup"],
+    deleteTaxConstant: ["payroll.setup"],
   },
   performance: {
     saveCycle: ["performance.manage"],
@@ -316,6 +341,8 @@ describe("routes", () => {
     { name: "payroll run export", rule: ["payroll.view"], run: () => exportPayrollRun(new Request("http://localhost/x"), params({ id: "0" }) as never) },
     { name: "tax register export", rule: ["tax.manage"], run: () => exportRegister(new Request("http://localhost/api/export/register?fy=2026-27")) },
     { name: "bank file", rule: ["payroll.post"], run: () => bankFile(new Request("http://localhost/x"), params({ id: "0" }) as never) },
+    { name: "ECR file", rule: ["payroll.post"], run: () => ecrFile(new Request("http://localhost/x"), params({ id: "0" }) as never) },
+    { name: "GL journal", rule: ["payroll.view"], run: () => glJournal(new Request("http://localhost/x"), params({ id: "0" }) as never) },
   ];
 
   for (const persona of ["hr", "manager", "employee", "recruiter", "nobody"]) {

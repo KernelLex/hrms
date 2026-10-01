@@ -43,21 +43,27 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/export/payroll-
   const r = run.rows[0];
   if (!r) return new Response("Not found.", { status: 404 });
 
-  // One column per wage type that appears, earnings before deductions.
+  // One column per wage type that appears, earnings before deductions before employer contributions.
+  const kindOrder = { Earning: 0, Deduction: 1, EmployerContribution: 2 } as const;
   const codes = [
     ...new Map(
       [...lines.rows]
-        .sort((a, b) => (String(a.kind) === String(b.kind) ? Number(a.sort_order) - Number(b.sort_order) : String(a.kind) === "Earning" ? -1 : 1))
+        .sort((a, b) =>
+          String(a.kind) === String(b.kind)
+            ? Number(a.sort_order) - Number(b.sort_order)
+            : kindOrder[String(a.kind) as keyof typeof kindOrder] - kindOrder[String(b.kind) as keyof typeof kindOrder],
+        )
         .map((l) => [String(l.wage_type_code), String(l.kind)]),
     ),
   ].filter(([code]) => code !== "UNPAID");
   const amount = new Map(lines.rows.map((l) => [`${l.result_id}:${l.wage_type_code}`, Number(l.amount)]));
+  const kindLabel = (kind: string) => (kind === "Earning" ? "earning" : kind === "Deduction" ? "deduction" : "employer");
 
   logAccess(session, { subjectEmployeeId: null, resource: "payroll run export", resourceId: runId });
 
   const header: Cell[] = [
     "Employee number", "Name", "Status", "Working days", "Days employed", "Unpaid days",
-    ...codes.map(([code, kind]) => `${code} (${kind === "Earning" ? "earning" : "deduction"})`),
+    ...codes.map(([code, kind]) => `${code} (${kindLabel(kind)})`),
     "Gross", "Deductions", "Net", "Error",
   ];
   const period = `${r.year}-${String(r.month).padStart(2, "0")}`;
