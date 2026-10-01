@@ -434,10 +434,10 @@ The catalogue (`src/lib/permissions.ts`; the migration keeps `sec_permission` id
 | Payroll | `payroll.view`*, `payroll.setup`, `payroll.run`, `payroll.post` | all | — | — | — |
 | Tax | `tax.manage` | yes | — | — | — |
 | Recruitment | `recruitment.manage`, `recruitment.hire`*, `recruitment.interview` | all | interview | interview | manage, interview |
-| Performance | `performance.manage`*, `performance.rate_team`, `performance.rate_any` | manage, rate_any | rate_team | — | — |
+| Performance | `performance.manage`*, `performance.rate_team`, `performance.rate_any`, `training.manage` | manage, rate_any, training.manage | rate_team | — | — |
 | Reports and records | `reports.view`*, `audit.view` | both | — | — | — |
 | Administration | `access.manage`, `integrations.manage`* | both | — | — | — |
-| Self-service | `self.profile`, `self.leave`, `self.pay`, `self.tax`, `self.appraisal`, `self.attendance` | all | all | all | — |
+| Self-service | `self.profile`, `self.leave`, `self.pay`, `self.tax`, `self.appraisal`, `self.attendance`, `self.loans`, `self.claims`, `self.exit`, `self.training` | all | all | all | — |
 
 Deciding leave is not a permission: it follows the approval flow.
 
