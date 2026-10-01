@@ -27,6 +27,12 @@ export default async function setup() {
   process.env.TURSO_AUTH_TOKEN = "";
 
   const client = createClient({ url: `file:${file}`, timeout: 5000 });
+  // WAL mode lets a reader and a writer work at once instead of blocking each
+  // other; it is the default journal mode's exclusive lock, not the busy
+  // timeout above, that was failing a plain commit under this suite's own
+  // sequential-but-overlapping file handoffs. It is stored in the file
+  // itself, so setting it once here is enough for every later connection.
+  await client.execute("PRAGMA journal_mode = WAL");
   await migrate(drizzle(client), {
     migrationsFolder: path.resolve(__dirname, "../../src/db/migrations"),
   });

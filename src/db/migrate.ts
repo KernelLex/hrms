@@ -18,6 +18,13 @@ async function main() {
   const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN, timeout: 5000 });
   const db = drizzle(client);
 
+  // A local file only: WAL mode lets a reader and a writer work at once
+  // instead of blocking each other, which is what the test suite's
+  // sequential-but-overlapping file handoffs need. It is stored in the file
+  // itself, so this only has to run once, and Turso's own remote connections
+  // do not speak this pragma at all.
+  if (url.startsWith("file:")) await client.execute("PRAGMA journal_mode = WAL");
+
   console.log(`Migrating ${url}`);
   await migrate(db, { migrationsFolder: "./src/db/migrations" });
   console.log("Migrations applied.");
