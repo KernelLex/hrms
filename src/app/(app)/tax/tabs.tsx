@@ -6,6 +6,7 @@ import { Tabs, Tab } from "@/components/ui";
 const ITEMS = [
   { href: "/tax/sections", label: "Sections and rates" },
   { href: "/tax/declarations", label: "Declarations" },
+  { href: "/tax/proofs", label: "Proof verification" },
   { href: "/tax/register", label: "Deduction register" },
   { href: "/tax/form16", label: "Form 16" },
 ];

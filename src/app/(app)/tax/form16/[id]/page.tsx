@@ -2,12 +2,16 @@ import { notFound, redirect } from "next/navigation";
 import { can, requirePage } from "@/lib/access";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tdsForm16, tdsDeductionRegister } from "@/db/schema";
+import { tdsForm16, tdsDeductionRegister, tdsPerquisite, tdsArrearsRelief } from "@/db/schema";
 import { logAccess } from "@/lib/access-log";
 import { getEmployee, fullName } from "@/lib/repositories/employees";
-import { Card, PageHeader } from "@/components/ui";
+import { formatINR } from "@/lib/money";
+import { Card, CardHeader, PageHeader, Table, Th, Tr, Td, EmptyState } from "@/components/ui";
 import { Form16 } from "@/components/form16";
 import { PrintButton } from "@/components/print-button";
+import { Generate12BA } from "../generate-12ba";
+import { ArrearsReliefForm } from "../arrears-relief";
+import { Gift } from "lucide-react";
 
 /** The certificate itself, Parts A and B on one page. */
 export default async function Form16CertificatePage(props: {
@@ -35,7 +39,7 @@ export default async function Form16CertificatePage(props: {
     resourceId: certificate.financialYear,
   });
 
-  const [quarters, employee] = await Promise.all([
+  const [quarters, employee, perquisites] = await Promise.all([
     db
       .select()
       .from(tdsDeductionRegister)
@@ -47,7 +51,14 @@ export default async function Form16CertificatePage(props: {
       )
       .orderBy(asc(tdsDeductionRegister.quarter)),
     getEmployee(certificate.employeeId),
+    db
+      .select()
+      .from(tdsPerquisite)
+      .where(and(eq(tdsPerquisite.employeeId, certificate.employeeId), eq(tdsPerquisite.financialYear, certificate.financialYear))),
   ]);
+  const reliefs = can(session, "tax.manage")
+    ? await db.select().from(tdsArrearsRelief).where(and(eq(tdsArrearsRelief.employeeId, certificate.employeeId), eq(tdsArrearsRelief.financialYear, certificate.financialYear)))
+    : [];
 
   return (
     <>
@@ -94,6 +105,67 @@ export default async function Form16CertificatePage(props: {
           }))}
         />
       </Card>
+
+      <div className="mt-6 print:hidden">
+        <Card>
+          <CardHeader
+            title="Form 12BA — perquisites"
+            description="Loans are the only source computed today."
+            actions={can(session, "tax.manage") ? <Generate12BA employeeId={certificate.employeeId} financialYear={certificate.financialYear} /> : undefined}
+          />
+          {perquisites.length === 0 ? (
+            <EmptyState icon={<Gift />} title="No perquisite value for this year" />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Type</Th>
+                  <Th numeric>Value</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {perquisites.map((p) => (
+                  <Tr key={p.id}>
+                    <Td>{p.perquisiteType}</Td>
+                    <Td numeric>{formatINR(p.amountPaise)}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card>
+      </div>
+
+      {can(session, "tax.manage") ? (
+        <div className="mt-6 print:hidden">
+          <Card>
+            <CardHeader title="Section 89 relief — Form 10E" description="For arrears this year's figures include, that relate to an earlier one already issued its own Form 16." />
+            <div className="px-6 pb-5">
+              <ArrearsReliefForm employeeId={certificate.employeeId} financialYear={certificate.financialYear} />
+              {reliefs.length > 0 ? (
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Relates to</Th>
+                      <Th numeric>Arrears</Th>
+                      <Th numeric>Relief</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reliefs.map((r) => (
+                      <Tr key={r.id}>
+                        <Td>{r.relatesToYear}</Td>
+                        <Td numeric>{formatINR(r.arrearsPaise)}</Td>
+                        <Td numeric>{formatINR(r.reliefPaise)}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              ) : null}
+            </div>
+          </Card>
+        </div>
+      ) : null}
     </>
   );
 }

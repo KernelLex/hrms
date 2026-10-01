@@ -110,15 +110,18 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ### Money
 
-- **Loans and advances**: ask for a loan and see it approved with its whole EMI schedule generated at once; each instalment is then recovered through payroll automatically, closing the loan at zero. **Prepay** at any time to shorten what is left, at the same EMI. A concessional or interest-free loan's taxable value is worked out automatically, every month, ready for its certificate later.
+- **Loans and advances**: ask for a loan and see it approved with its whole EMI schedule generated at once; each instalment is then recovered through payroll automatically, closing the loan at zero. **Prepay** at any time to shorten what is left, at the same EMI. A concessional or interest-free loan's taxable value is worked out automatically, every month, and shown on Form 12BA.
 - **Reimbursement claims**: submit a claim with its bills, checked against your category's limit — fuel, phone, medical and LTA, out of the box, with higher limits settable by grade — before it goes for approval. Approved claims, manager then finance, are paid through the very next payroll run. An expense already approved in your ERP arrives the same way, without anyone retyping it.
 
 ### Tax and Form 16
 
 - Tax sections and slabs for each year and both regimes.
 - Employee declarations, with tax deducted evenly across the year.
-- The quarterly register of tax deducted and deposited.
-- **Form 16**, Part A and Part B, which reconcile with each other, including the new regime's marginal relief under section 87A.
+- **A comparison of both regimes**, on your own declared figures, right on the declaration — the same arithmetic your monthly tax actually uses.
+- **HRA worked out from your rent**: tell us the rent, the landlord and the city, and the exemption is computed for you — the least of three, as the law sets it out — instead of a figure you type in yourself.
+- **Proof, verified**: HR opens a window for each year; file a receipt against what you declared, and HR verifies or rejects it. After the window closes, only what was verified still reduces your tax.
+- The quarterly register of tax deducted and deposited, with a **24Q** file for each quarter.
+- **Form 16**, Part A and Part B, which reconcile with each other, including the new regime's marginal relief under section 87A — with **Form 12BA** alongside it for perquisites, and **Section 89 relief** worked out for arrears that belong to an earlier year.
 
 ### Recruitment
 
@@ -168,7 +171,6 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ## Coming next
 
-- **Tax**: investment proofs, HRA worked out from rent, a comparison of the two regimes, Form 12BA, relief on arrears, and the quarterly TDS return file.
 - **Recruitment**: interview slots and calendar invitations, scorecards, offer letters signed online, referrals, and hiring reports.
 - **Performance and learning**: check-ins through the year, 360-degree feedback, improvement plans, and training with certificate expiry alerts.
 - **Reports**: trends over time, the value of untaken leave, and reports emailed on a schedule.

@@ -62,7 +62,7 @@ const ROUTES = [
   "/recruitment/my-interviews",
   "/performance", "/performance/cycles", "/performance/goals", "/performance/ratings",
   "/performance/calibration", "/performance/increments", "/performance/mine",
-  "/tax", "/tax/sections", "/tax/declarations", "/tax/register", "/tax/form16",
+  "/tax", "/tax/sections", "/tax/declarations", "/tax/proofs", "/tax/register", "/tax/form16",
   "/inbox", "/inbox/preferences", "/change-log", "/outbox",
   "/approvals", "/admin/roles", "/admin/roles/new", "/admin/roles/HR_ADMIN", "/admin/roles/RECRUITER",
   "/admin/approval-flows", "/admin/approval-flows/leave", "/admin/approval-flows/headcount",

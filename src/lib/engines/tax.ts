@@ -1,7 +1,8 @@
 import "server-only";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tdsTaxSlab, pyTaxConstant, type TaxRegime } from "@/db/schema";
+import { tdsTaxSlab, pyTaxConstant, tdsProofWindow, tdsProof, type TaxRegime } from "@/db/schema";
+import { todayInIndia } from "@/lib/dates";
 
 /**
  * Income tax computation.
@@ -196,10 +197,86 @@ export function computeAnnualTaxWith(opts: AnnualTaxInput, slabs: Slab[], consta
 }
 
 /**
+ * Both regimes on the same figures — exactly the computation payroll's own
+ * `annualTaxFor` would do for either one, so the comparison a declaration
+ * screen shows can never disagree with what a month's TDS actually takes.
+ */
+export async function compareRegimes(opts: {
+  grossSalaryPaise: number;
+  financialYear: string;
+  chapterViaPaise: number;
+  section10ExemptPaise: number;
+  otherIncomePaise: number;
+}): Promise<{ old: TaxComputation; new: TaxComputation; betterRegime: TaxRegime; savingsPaise: number }> {
+  const [oldTax, newTax] = await Promise.all([
+    computeAnnualTax({ ...opts, regime: "Old" }),
+    computeAnnualTax({ ...opts, regime: "New" }),
+  ]);
+  const betterRegime: TaxRegime = oldTax.totalTaxPaise <= newTax.totalTaxPaise ? "Old" : "New";
+  return { old: oldTax, new: newTax, betterRegime, savingsPaise: Math.abs(oldTax.totalTaxPaise - newTax.totalTaxPaise) };
+}
+
+/**
  * Tax on a whole year's salary, for a declaration — the regime and the amounts
  * it claims. The payroll engine and Form 16 both go through this, so the
  * monthly deductions and the certificate cannot use different rules.
  */
+/**
+ * What a declaration's own three figures are capped to once a proof window
+ * has closed: no more than what was actually verified for each section —
+ * never more than what was declared, only less, if proof fell short. Still
+ * the raw declared figures while a window is open, or before one is even
+ * set for the year, exactly as before this phase.
+ */
+export async function effectiveDeclarationAmounts(
+  employeeId: number,
+  financialYear: string,
+  raw: { section80CPaise: number; section80DPaise: number; hraExemptionPaise: number },
+): Promise<{ section80CPaise: number; section80DPaise: number; hraExemptionPaise: number }> {
+  const window = await db.query.tdsProofWindow.findFirst({ where: eq(tdsProofWindow.financialYear, financialYear) });
+  if (!window || window.closesAt > todayInIndia()) return raw;
+
+  const verified = await db
+    .select({ section: tdsProof.section, total: tdsProof.amountPaise })
+    .from(tdsProof)
+    .where(and(eq(tdsProof.employeeId, employeeId), eq(tdsProof.financialYear, financialYear), eq(tdsProof.status, "Verified")));
+  const verifiedFor = (section: string) => verified.filter((v) => v.section === section).reduce((s, v) => s + v.total, 0);
+
+  return {
+    section80CPaise: Math.min(raw.section80CPaise, verifiedFor("80C")),
+    section80DPaise: Math.min(raw.section80DPaise, verifiedFor("80D")),
+    hraExemptionPaise: Math.min(raw.hraExemptionPaise, verifiedFor("HRA")),
+  };
+}
+
+/**
+ * HRA exemption under section 10(13A): the least of three, every one of
+ * them an annual figure — actual HRA received, rent paid less 10% of
+ * basic, and 50% (metro) or 40% (elsewhere) of basic. Never negative.
+ */
+export function hraExemption(opts: { actualHraPaise: number; rentPaise: number; basicPaise: number; isMetro: boolean }): number {
+  const rentLessTenPercent = Math.max(0, opts.rentPaise - Math.round(opts.basicPaise * 0.1));
+  const cityLimit = Math.round(opts.basicPaise * (opts.isMetro ? 0.5 : 0.4));
+  return Math.max(0, Math.min(opts.actualHraPaise, rentLessTenPercent, cityLimit));
+}
+
+/**
+ * Section 89 relief, as Form 10E works it out: the extra tax arrears cost
+ * in the year they were paid, less the extra tax they would have cost in
+ * the year they relate to, had they been paid on time. Never negative —
+ * relief never turns into an extra charge.
+ */
+export function section89Relief(opts: {
+  taxWithArrearsThisYearPaise: number;
+  taxWithoutArrearsThisYearPaise: number;
+  taxWithArrearsThatYearPaise: number;
+  taxWithoutArrearsThatYearPaise: number;
+}): number {
+  const extraThisYear = opts.taxWithArrearsThisYearPaise - opts.taxWithoutArrearsThisYearPaise;
+  const extraThatYear = opts.taxWithArrearsThatYearPaise - opts.taxWithoutArrearsThatYearPaise;
+  return Math.max(0, extraThisYear - extraThatYear);
+}
+
 export function annualTaxFor(
   grossSalaryPaise: number,
   declaration: {

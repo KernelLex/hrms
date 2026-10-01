@@ -74,6 +74,17 @@ export default async function RegisterPage(props: {
         selected={financialYear ?? ""}
       />
 
+      {financialYear && rows.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {QUARTERS.map((label, i) => (
+            <ButtonAnchor key={label} href={`/api/tax/24q?financialYear=${financialYear}&quarter=${i + 1}`} download>
+              <Download />
+              24Q, {label}
+            </ButtonAnchor>
+          ))}
+        </div>
+      ) : null}
+
       {rows.length > 0 ? (
         <div className="mt-6">
           <FigureRow>

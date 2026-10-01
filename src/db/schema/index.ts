@@ -9,6 +9,7 @@ export * from "./statutory";
 export * from "./loans";
 export * from "./exits";
 export * from "./tax";
+export * from "./tax-proofs";
 export * from "./recruitment";
 export * from "./performance";
 export * from "./app";

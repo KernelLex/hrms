@@ -255,6 +255,12 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     saveChallan: ["tax.manage"],
     generateForm16: ["tax.manage"],
     deleteForm16: ["tax.manage"],
+    saveProofWindow: ["tax.manage"],
+    submitProof: ["self.tax", "tax.manage"],
+    decideProof: ["tax.manage"],
+    saveRent: ["self.tax", "tax.manage"],
+    generate12BA: ["tax.manage"],
+    computeArrearsRelief: ["tax.manage"],
   },
   time: {
     submitLeaveRequest: ["self.leave", "time.manage"],

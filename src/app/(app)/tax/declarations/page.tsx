@@ -1,13 +1,16 @@
 import { can, requirePage } from "@/lib/access";
 import { asc, count, desc, eq } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, rawClient } from "@/lib/db";
 import { tdsEmployeeDeclaration, tdsTaxSlab } from "@/db/schema";
 import { listEmployees, fullName } from "@/lib/repositories/employees";
 import { formatINR, toRupees } from "@/lib/money";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveDeclaration, deleteDeclaration } from "@/app/actions/tax";
-import { Status, TwoLine, Notice } from "@/components/ui";
+import { compareRegimes, financialYearOf } from "@/lib/engines/tax";
+import { todayInIndia } from "@/lib/dates";
+import { Status, TwoLine, Notice, Card, CardHeader, Table, Th, Tr, Td } from "@/components/ui";
 import { TaxTabs } from "../tabs";
+import { RentForm, ProofForm } from "./extras";
 import { Pagination, pageFrom } from "@/components/pagination";
 
 const COLUMNS: Column[] = [
@@ -43,6 +46,29 @@ export default async function DeclarationsPage(props: {
     listEmployees(),
     db.selectDistinct({ fy: tdsTaxSlab.financialYear }).from(tdsTaxSlab),
   ]);
+
+  const currentYear = financialYearOf(todayInIndia());
+  const [currentDeclaration, basicPayRow, rentRow] = !isHr && session.employeeId
+    ? await Promise.all([
+        db.query.tdsEmployeeDeclaration.findFirst({ where: (d, { and, eq }) => and(eq(d.employeeId, session.employeeId!), eq(d.financialYear, currentYear)) }),
+        rawClient().execute({
+          sql: "SELECT amount_paise FROM pa_it0008_basic_pay WHERE employee_id = ? AND valid_from <= date('now') AND valid_to >= date('now') LIMIT 1",
+          args: [session.employeeId],
+        }),
+        rawClient().execute({ sql: "SELECT * FROM tds_rent WHERE employee_id = ? AND financial_year = ?", args: [session.employeeId, currentYear] }),
+      ])
+    : [undefined, undefined, undefined];
+  const basicPaise = basicPayRow?.rows[0] ? Number(basicPayRow.rows[0].amount_paise) : 0;
+  const rent = rentRow?.rows[0];
+  const comparison = basicPaise
+    ? await compareRegimes({
+        grossSalaryPaise: basicPaise * 12 * 2, // a rough projection: basic is roughly half of gross under a typical structure
+        financialYear: currentYear,
+        chapterViaPaise: (currentDeclaration?.section80CPaise ?? 0) + (currentDeclaration?.section80DPaise ?? 0),
+        section10ExemptPaise: currentDeclaration?.hraExemptionPaise ?? 0,
+        otherIncomePaise: currentDeclaration?.otherIncomePaise ?? 0,
+      })
+    : null;
 
   const years = [...new Set(slabs.map((s) => s.fy))].sort().reverse();
   const name = new Map(employees.map((e) => [e.id, fullName(e)]));
@@ -183,6 +209,50 @@ export default async function DeclarationsPage(props: {
           },
         }))}
       />
+
+      {!isHr && comparison ? (
+        <div className="mt-6">
+          <Card>
+            <CardHeader title="Old regime versus new" description={`Projected for ${currentYear}, from your current basic pay — what payroll's own monthly TDS computes from, under each regime.`} />
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Regime</Th>
+                  <Th numeric>Taxable income</Th>
+                  <Th numeric>Total tax</Th>
+                </tr>
+              </thead>
+              <tbody>
+                <Tr>
+                  <Td>Old {comparison.betterRegime === "Old" ? <Status tone="done">Lower</Status> : null}</Td>
+                  <Td numeric>{formatINR(comparison.old.taxableIncomePaise)}</Td>
+                  <Td numeric>{formatINR(comparison.old.totalTaxPaise)}</Td>
+                </Tr>
+                <Tr>
+                  <Td>New {comparison.betterRegime === "New" ? <Status tone="done">Lower</Status> : null}</Td>
+                  <Td numeric>{formatINR(comparison.new.taxableIncomePaise)}</Td>
+                  <Td numeric>{formatINR(comparison.new.totalTaxPaise)}</Td>
+                </Tr>
+              </tbody>
+            </Table>
+            <div className="px-6 pb-5 text-[13px] text-secondary">The {comparison.betterRegime.toLowerCase()} regime saves {formatINR(comparison.savingsPaise)} here.</div>
+          </Card>
+        </div>
+      ) : null}
+
+      {!isHr ? (
+        <div className="mt-6 grid gap-6 sm:grid-cols-2">
+          <RentForm
+            financialYear={currentYear}
+            rent={
+              rent
+                ? { monthlyRent: String(toRupees(Number(rent.monthly_rent_paise))), landlordName: String(rent.landlord_name), landlordPan: rent.landlord_pan ? String(rent.landlord_pan) : "", isMetro: Number(rent.is_metro) === 1 }
+                : undefined
+            }
+          />
+          <ProofForm financialYear={currentYear} />
+        </div>
+      ) : null}
     </>
   );
 }

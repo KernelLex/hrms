@@ -2,7 +2,7 @@ import "server-only";
 import type { InStatement } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { now, type RunType, type TaxRegime } from "@/db/schema";
-import { annualTaxFor, financialYearOf, slabsForYear, constantsForYear, type Slab, type TaxConstants } from "./tax";
+import { annualTaxFor, financialYearOf, slabsForYear, constantsForYear, effectiveDeclarationAmounts, type Slab, type TaxConstants } from "./tax";
 import {
   pfRateFor,
   esiRateFor,
@@ -370,6 +370,13 @@ async function loadFacts(
   const [emp, basic, bank, recurring, absences, oneOffs, declaration, history, lines, openingBalance, calendar, statutoryDetails] = rs;
   if (emp.rows.length === 0) return null;
   const d = declaration.rows[0];
+  // Capped to what was verified once a proof window has closed for this
+  // year — open, or no window set yet, and the declared figures stand.
+  const effective = await effectiveDeclarationAmounts(employeeId, financialYear, {
+    section80CPaise: Number(d?.section_80c_paise ?? 0),
+    section80DPaise: Number(d?.section_80d_paise ?? 0),
+    hraExemptionPaise: Number(d?.hra_exemption_paise ?? 0),
+  });
   const rows = <T>(r: (typeof rs)[number]) => r.rows as unknown as T[];
 
   const allAbsences = rows<{
@@ -400,8 +407,8 @@ async function loadFacts(
     })),
     declaration: {
       regime: ((d?.regime as TaxRegime | undefined) ?? "New") as TaxRegime,
-      section10ExemptPaise: Number(d?.hra_exemption_paise ?? 0),
-      chapterViaPaise: Number(d?.section_80c_paise ?? 0) + Number(d?.section_80d_paise ?? 0),
+      section10ExemptPaise: effective.hraExemptionPaise,
+      chapterViaPaise: effective.section80CPaise + effective.section80DPaise,
       otherIncomePaise: Number(d?.other_income_paise ?? 0),
     },
     history: rows<Facts["history"][number]>(history).map((h) => ({

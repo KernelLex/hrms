@@ -121,6 +121,8 @@ export const paStatutoryDetails = sqliteTable(
     uan: text("uan"),
     esiNumber: text("esi_number"),
     professionalTaxState: text("professional_tax_state"),
+    /** Held from phase 21, for Form 16 and the 24Q return. */
+    pan: text("pan"),
     validFrom: text("valid_from").notNull(),
     validTo: text("valid_to").notNull(),
     seq: integer("seq").notNull().default(1),

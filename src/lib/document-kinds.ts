@@ -29,7 +29,9 @@ export function documentSummary(doc: {
       ? { employeeId: doc.ownerId }
       : doc.ownerType === "claim_line"
         ? { claimLineId: doc.ownerId }
-        : { candidateId: doc.ownerId }),
+        : doc.ownerType === "tds_proof"
+          ? { proofId: doc.ownerId }
+          : { candidateId: doc.ownerId }),
     kind: doc.kind,
     fileName: doc.fileName,
     sizeBytes: doc.sizeBytes,
