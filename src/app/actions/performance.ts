@@ -3,13 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, desc, gte, inArray, lte } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
-import { can, requireAnyPermission, requirePermission, type Access } from "@/lib/access";
+import { can, requireAccess, requireAnyPermission, requirePermission, type Access } from "@/lib/access";
 import {
   pmAppraisalCycle,
   pmGoal,
+  pmGoalCheckin,
   pmAppraisal,
   pmCalibration,
   pmIncrementRecommendation,
+  pmFeedbackRequest,
+  pmFeedback,
+  pmPip,
+  pmPipCheckin,
+  FEEDBACK_RELATIONSHIPS,
   paBasicPay,
   paEmployee,
   now,
@@ -769,6 +775,213 @@ export async function pushIncrementsToPayroll(
 
   revalidatePerformance();
   if (pushed === 0) return fail("Nothing could be pushed.");
+  return OK;
+}
+
+/* ------------------------------------------------------- PM-06 check-ins */
+
+/**
+ * A progress update on a goal, from either side: the goal's own employee
+ * (`self.appraisal`) or whoever may rate them. Each is its own row — a
+ * conversation over time, not one record two people take turns editing.
+ */
+export async function saveGoalCheckin(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requireAnyPermission("self.appraisal", "performance.rate_any", "performance.rate_team");
+  const actor = actorOf(session);
+  const goalId = num(form.get("goalId"));
+  const status = str(form.get("status"));
+  const comment = str(form.get("comment"));
+  if (!["On track", "At risk", "Behind"].includes(status)) return fail("Say whether this is on track, at risk or behind.");
+  if (!comment) return fail("Add a word on progress.");
+
+  const goal = await db.query.pmGoal.findFirst({ where: eq(pmGoal.id, goalId) });
+  if (!goal) return fail("That goal no longer exists.");
+
+  const own = session.employeeId === goal.employeeId;
+  const authorType = own ? "Employee" : "Manager";
+  if (!own && !(await mayRateEmployee(session, goal.employeeId))) {
+    return fail("You can only check in on goals for people who report to you.");
+  }
+
+  const [checkin] = await db
+    .insert(pmGoalCheckin)
+    .values({ goalId, checkinDate: now().slice(0, 10), status, comment, authorType, createdBy: session.displayName, createdAt: now() })
+    .returning();
+  await recordCreated(actor, "pm_goal_checkin", [checkin]);
+
+  revalidatePerformance();
+  return OK;
+}
+
+/* ------------------------------------------------------- PM-07 360 feedback */
+
+const FEEDBACK_COMPETENCIES = ["Communication", "Collaboration", "Execution", "Leadership"] as const;
+
+/** HR or a rater asks named people for feedback on someone, for one cycle. */
+export async function requestFeedback(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requireAnyPermission("performance.manage", "performance.rate_any", "performance.rate_team");
+  const actor = actorOf(session);
+  const cycleId = num(form.get("cycleId"));
+  const revieweeEmployeeId = num(form.get("revieweeEmployeeId"));
+  const reviewerEmployeeId = num(form.get("reviewerEmployeeId"));
+  const relationship = str(form.get("relationship"));
+  if (!cycleId || !revieweeEmployeeId || !reviewerEmployeeId) return fail("Choose a cycle, who it is about, and who is asked.");
+  if (!(FEEDBACK_RELATIONSHIPS as readonly string[]).includes(relationship)) return fail("Say how the reviewer relates to them.");
+  if (!can(session, "performance.manage") && !(await mayRateEmployee(session, revieweeEmployeeId))) {
+    return fail("You can only ask for feedback on people who report to you.");
+  }
+
+  const existing = await db.query.pmFeedbackRequest.findFirst({
+    where: and(eq(pmFeedbackRequest.cycleId, cycleId), eq(pmFeedbackRequest.revieweeEmployeeId, revieweeEmployeeId), eq(pmFeedbackRequest.reviewerEmployeeId, reviewerEmployeeId)),
+  });
+  if (existing) return fail("That person has already been asked.");
+
+  const [request] = await db
+    .insert(pmFeedbackRequest)
+    .values({ cycleId, revieweeEmployeeId, reviewerEmployeeId, relationship, status: "Requested", requestedBy: session.displayName, requestedAt: now() })
+    .returning();
+  await recordCreated(actor, "pm_feedback_request", [request]);
+
+  const users = await usersForEmployees([reviewerEmployeeId]);
+  const userId = users.get(reviewerEmployeeId);
+  if (userId) {
+    await rawClient().batch(
+      await notificationStatements([
+        {
+          userId,
+          kind: "feedback.requested",
+          title: "You are asked for feedback",
+          body: "Rate a few competencies and leave a comment — it takes a few minutes.",
+          link: "/performance/mine",
+          dedupeKey: `feedback.requested:${request.id}`,
+        },
+      ]),
+      "write",
+    );
+  }
+
+  revalidatePerformance();
+  return OK;
+}
+
+/** The reviewer's own answer: a rating and a comment per competency. */
+export async function submitFeedback(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requireAccess();
+  const id = num(form.get("id"));
+  const request = await db.query.pmFeedbackRequest.findFirst({ where: eq(pmFeedbackRequest.id, id) });
+  if (!request) return fail("That request no longer exists.");
+  if (session.employeeId !== request.reviewerEmployeeId) return fail("That request is not yours to answer.");
+  if (request.status === "Submitted") return fail("You have already answered this one.");
+
+  const rows = FEEDBACK_COMPETENCIES.map((competency) => ({
+    requestId: id,
+    competency,
+    rating: ratingOf(form.get(`rating:${competency}`)),
+    comments: opt(form.get(`comments:${competency}`)),
+    createdAt: now(),
+  }));
+  if (rows.some((r) => r.rating === null)) return fail("Rate every competency from 1 to 5.");
+
+  await db.insert(pmFeedback).values(rows);
+  await db.update(pmFeedbackRequest).set({ status: "Submitted" }).where(eq(pmFeedbackRequest.id, id));
+
+  revalidatePerformance();
+  return OK;
+}
+
+/* --------------------------------------------- PM-08 improvement plans */
+
+export async function savePip(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("performance.manage");
+  const actor = actorOf(session);
+  const id = opt(form.get("id"));
+  const employeeId = num(form.get("employeeId"));
+  const reason = str(form.get("reason"));
+  const goals = str(form.get("goals"));
+  const startDate = str(form.get("startDate"));
+  const endDate = str(form.get("endDate"));
+  if (!employeeId) return fail("Choose who this plan is for.");
+  if (!reason) return fail("Say why this plan is needed.");
+  if (!goals) return fail("Set out what needs to improve.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || endDate <= startDate) {
+    return fail("Enter a start and end date, the end after the start.");
+  }
+
+  if (id) {
+    const pip = await db.query.pmPip.findFirst({ where: eq(pmPip.id, Number(id)) });
+    if (!pip) return fail("That plan no longer exists.");
+    if (pip.outcome !== "Ongoing") return fail("That plan is already closed.");
+    await audited(
+      actor,
+      { entity: "pm_pip", entityId: Number(id), subjectEmployeeId: subjectOf },
+      () => db.query.pmPip.findFirst({ where: eq(pmPip.id, Number(id)) }),
+      () => db.update(pmPip).set({ reason, goals, startDate, endDate }).where(eq(pmPip.id, Number(id))),
+    );
+  } else {
+    await recordCreated(
+      actor,
+      "pm_pip",
+      await db.insert(pmPip).values({ employeeId, reason, goals, startDate, endDate, outcome: "Ongoing", createdBy: session.displayName, createdAt: now() }).returning(),
+    );
+  }
+
+  revalidatePerformance();
+  return OK;
+}
+
+export async function addPipCheckin(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("performance.manage");
+  const actor = actorOf(session);
+  const pipId = num(form.get("pipId"));
+  const note = str(form.get("note"));
+  if (!note) return fail("Add a note.");
+  const pip = await db.query.pmPip.findFirst({ where: eq(pmPip.id, pipId) });
+  if (!pip) return fail("That plan no longer exists.");
+
+  const [checkin] = await db.insert(pmPipCheckin).values({ pipId, note, createdBy: session.displayName, createdAt: now() }).returning();
+  await recordCreated(actor, "pm_pip_checkin", [checkin]);
+
+  revalidatePerformance();
+  return OK;
+}
+
+export async function closePip(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("performance.manage");
+  const actor = actorOf(session);
+  const id = num(form.get("id"));
+  const outcome = str(form.get("outcome"));
+  if (!["Passed", "Failed"].includes(outcome)) return fail("Say whether the plan was passed or failed.");
+
+  const pip = await db.query.pmPip.findFirst({ where: eq(pmPip.id, id) });
+  if (!pip) return fail("That plan no longer exists.");
+  if (pip.outcome !== "Ongoing") return fail("That plan is already closed.");
+
+  await audited(
+    actor,
+    { entity: "pm_pip", entityId: id, subjectEmployeeId: subjectOf },
+    () => db.query.pmPip.findFirst({ where: eq(pmPip.id, id) }),
+    () => db.update(pmPip).set({ outcome, closedBy: session.displayName, closedAt: now() }).where(eq(pmPip.id, id)),
+  );
+
+  revalidatePerformance();
   return OK;
 }
 

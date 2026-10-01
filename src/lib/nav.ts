@@ -73,6 +73,8 @@ export const NAV: NavGroup[] = [
       { label: "Refer someone", href: "/refer", icon: "UserPlus", anyOf: ["self.profile"] },
       { label: "Performance", href: "/performance", icon: "Target", anyOf: ["performance.manage", "performance.rate_any", "performance.rate_team"] },
       { label: "My appraisal", href: "/performance/mine", icon: "ClipboardCheck", anyOf: ["self.appraisal"] },
+      { label: "Training", href: "/training", icon: "FileBadge", anyOf: ["training.manage"] },
+      { label: "My training", href: "/training/my-training", icon: "FileBadge", anyOf: ["self.training"] },
     ],
   },
   {

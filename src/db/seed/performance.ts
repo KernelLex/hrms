@@ -146,8 +146,36 @@ export async function seedPerformance(db: Db): Promise<string[]> {
     }
   }
 
+  // A check-in on Arjun's first goal, and Ravi asked to give feedback on him.
+  if (arjun) {
+    const arjunGoal = await db.query.pmGoal.findFirst({ where: and(eq(s.pmGoal.cycleId, cycle.id), eq(s.pmGoal.employeeId, arjun.id)) });
+    if (arjunGoal) {
+      const hasCheckin = await db.query.pmGoalCheckin.findFirst({ where: eq(s.pmGoalCheckin.goalId, arjunGoal.id) });
+      if (!hasCheckin) {
+        await db.insert(s.pmGoalCheckin).values({ goalId: arjunGoal.id, checkinDate: s.today(), status: "On track", comment: "On schedule for the module.", authorType: "Employee", createdBy: "Arjun Mehta", createdAt });
+      }
+    }
+
+    if (ravi) {
+      const existingRequest = await db.query.pmFeedbackRequest.findFirst({
+        where: and(eq(s.pmFeedbackRequest.cycleId, cycle.id), eq(s.pmFeedbackRequest.revieweeEmployeeId, arjun.id), eq(s.pmFeedbackRequest.reviewerEmployeeId, ravi.id)),
+      });
+      if (!existingRequest) {
+        const [request] = await db
+          .insert(s.pmFeedbackRequest)
+          .values({ cycleId: cycle.id, revieweeEmployeeId: arjun.id, reviewerEmployeeId: ravi.id, relationship: "Manager", status: "Submitted", requestedBy: "seed", requestedAt: createdAt })
+          .returning();
+        await db.insert(s.pmFeedback).values([
+          { requestId: request.id, competency: "Communication", rating: 4, comments: "Clear in stand-ups and writes things down.", createdAt },
+          { requestId: request.id, competency: "Execution", rating: 4, comments: null, createdAt },
+        ]);
+      }
+    }
+  }
+
   notes.push("  3 appraisal templates, 1 active cycle");
   notes.push(`  ${employees.length * 3} goals and ${employees.length} appraisals`);
   notes.push("  1 finalised in calibration, 1 waiting on a manager");
+  notes.push("  a goal check-in, and one manager's 360 feedback submitted");
   return notes;
 }

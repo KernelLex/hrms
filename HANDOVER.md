@@ -1,6 +1,6 @@
 # HRMS — handover
 
-**Last updated:** 2 Oct 2026 · **Current phase:** 22 of 25 done (recruitment: scorecards required before a round's notes are saved; interview invitations with a downloadable calendar file; an offer built from the CTC breakdown and accepted through the candidate's own link, converting them with nobody retyping anything; a referral bonus paid once, after the qualifying period; and recruitment analytics as bar lists). Next is phase 23, performance and learning.
+**Last updated:** 2 Oct 2026 · **Current phase:** 23 of 25 done (performance and learning: goal check-ins with a weekly reminder; 360 feedback, peer answers hidden until three have replied; improvement plans with their own check-ins and outcome; a training catalogue and nominations refused once they would take a department over its budget for the year; and certifications that warn their holder and manager ahead of expiry, read against what each job requires). Next is phase 24, analytics.
 
 **Live:** https://hrms-amogh24.vercel.app · **Repository:** `github.com/KernelLex/hrms` (branch `main`) · **Continuous integration:** GitHub Actions on every push
 
@@ -101,13 +101,13 @@ The value is in the seams:
 
 | | |
 |---|---|
-| Phases complete | 0 to 9 (the original build), 10 to 22 of the extended plan. Part A runs to 24; Part B is 25. |
-| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page; phase 14 added 6: the Career tab, transfer and promotion wizards, My tasks, Probation due and Letter templates; phase 15 added 4: headcount requests, and the import wizard's upload, report and list screens — plus the org chart redrawn as boxes and lines, with the indented list kept beside it as the accessible view; phase 16 added Holiday calendars and Leave policies; phase 17 added 6: Shifts, Roster patterns (with each pattern's own day-grid detail), Roster, Today's board, Devices and My attendance; phase 18 added 5: Salary structures (with each structure's own components detail), Statutory rates, GL mapping, a CTC tab and a Statutory details tab on the employee record; phase 19 added 6: Loans and claims administration (with claim categories and the benchmark rate), claim approval with bills side by side, My loans and My claims; phase 20 added 3: the exit board, Resign, and the settlement statement; phase 21 added a Proof verification tab, and extended the declaration (rent, proof filing, the regime comparison) and Form 16 (12BA, Section 89 relief) screens rather than adding new ones; phase 22 added 3: Recruitment analytics, "Refer someone" and the candidate's own public offer page, and extended the interview round (scorecards, a calendar-invite link) and application (the offer form, its real status) screens |
-| Database tables | 147, in 23 migrations (0000 to 0022) |
+| Phases complete | 0 to 9 (the original build), 10 to 23 of the extended plan. Part A runs to 24; Part B is 25. |
+| Screens | 38 of 38 from the blueprint, plus 7 added in phase 9, 6 in phase 10, 6 in phase 11, and 16 in phase 12: six Integrations screens, the public API reference and error pages, and eight for the recruitment workflow, including the public careers site; phase 13 added the corrections inbox, request forms and an offline page; phase 14 added 6: the Career tab, transfer and promotion wizards, My tasks, Probation due and Letter templates; phase 15 added 4: headcount requests, and the import wizard's upload, report and list screens — plus the org chart redrawn as boxes and lines, with the indented list kept beside it as the accessible view; phase 16 added Holiday calendars and Leave policies; phase 17 added 6: Shifts, Roster patterns (with each pattern's own day-grid detail), Roster, Today's board, Devices and My attendance; phase 18 added 5: Salary structures (with each structure's own components detail), Statutory rates, GL mapping, a CTC tab and a Statutory details tab on the employee record; phase 19 added 6: Loans and claims administration (with claim categories and the benchmark rate), claim approval with bills side by side, My loans and My claims; phase 20 added 3: the exit board, Resign, and the settlement statement; phase 21 added a Proof verification tab, and extended the declaration (rent, proof filing, the regime comparison) and Form 16 (12BA, Section 89 relief) screens rather than adding new ones; phase 22 added 3: Recruitment analytics, "Refer someone" and the candidate's own public offer page, and extended the interview round (scorecards, a calendar-invite link) and application (the offer form, its real status) screens; phase 23 added 7: 360 feedback, Improvement plans, and five Training screens (catalogue, nominations, budgets, compliance, my training), and extended My appraisal with check-ins and feedback replies |
+| Database tables | 158, in 24 migrations (0000 to 0023) |
 | Engines | Time-slice, quota, leave policy, payroll, tax, time evaluation, attendance, statutory, loans, exits; plus the job runner, the approval engine and the import engine |
-| Permissions | 35, in ten groups; 3 built-in roles, and Recruiter and Finance as examples of roles HR can create |
+| Permissions | 37, in ten groups; 3 built-in roles, and Recruiter and Finance as examples of roles HR can create |
 | Integration API | 75 endpoints under `/api/v1`, 40 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
-| Automated tests | **378** in 40 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario — a couple of timing-sensitive ones (job retry backoff, a rate-limit window) occasionally flake under full-suite load and pass alone; none of them are recruitment's |
+| Automated tests | **386** in 41 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario — a couple of timing-sensitive ones (job retry backoff, a rate-limit window) occasionally flake under full-suite load and pass alone; none of them are recruitment's or performance's |
 | UI audit | **Clean** (`npm run audit:ui`): every screen, as four people at 1280 and 375 pixels |
 | CI | Typecheck, lint, tests, production build, UI audit and the mock ERP over HTTP on every push |
 | Pending on others | Cloudflare R2 (not enabled on the account), email delivery (no provider chosen), and the rest of phase 25 |
@@ -139,8 +139,8 @@ The value is in the seams:
 | 20 | Exit and full and final settlement | done |
 | 21 | Tax completeness | done |
 | 22 | Recruitment | done |
-| 23 | Performance and learning | **next** |
-| 24 | Analytics | planned (§9.5) |
+| 23 | Performance and learning | done |
+| 24 | Analytics | **next** |
 | 25 | Outside input: the ERP go-live, email, R2, e-signature and the rest | waits on you and the client (§9.6) |
 
 ### 3.3 Infrastructure
@@ -170,7 +170,7 @@ The careers site, `/careers`, needs no account: the demo's HR executive role is 
 
 | Check | Result |
 |---|---|
-| `npm test` | 378: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, leave policies and their ledger, compensatory off, leave encashment, shifts, rosters, attendance finalisation and regularisation, payroll, statutory PF/ESI/professional tax/LWF (including ESI's contribution-period continuation and Maharashtra's February rule), employer contributions reaching the ledger and never net pay, cost-centre splits, the CTC breakdown against a hand calculation, the ECR file's field format, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, onboarding checklists and tasks, transfers and promotions through the time-slice engine, probation confirm/extend/end, letters (merge, PDF, immutability), headcount requests through their approval to a vacant position recruitment can hire against, bulk import (dry run, confirm, batching 5,000 employees, re-importing a file writing nothing twice), opening balances reducing a projected month's TDS, an EMI schedule closing at zero with the last instalment absorbing rounding, a prepayment rescheduling the remainder at the same EMI, the concessional-loan perquisite value, a claim refused over its category's limit and paid once approved — on screen or sent in already approved by the API, gratuity under the 240-day rule, a full and final settlement paying salary to the last day, leave, a notice shortfall, gratuity and a loan together in one off-cycle run, sign-in disabled on the last day, the HRA three-way minimum for metro and non-metro, a regime comparison matching `annualTaxFor`'s own computation, section 89 relief as Form 10E works it out, the 24Q file's field order, a proof window capping an unverified amount to what was actually verified, a scorecard required before a round's notes are saved, an offer accepted through its link converting to an employee with its onboarding tasks, a referral bonus paid once after its qualifying period and forfeited if the hire does not stay, duplicate candidates caught by phone, and recruitment analytics against hand counts, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document, the guided-actions endpoint and its events, imports needing the scope that matches what is being imported), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
+| `npm test` | 386: the seed re-run twice on an already-seeded database, checked for duplicates, corrections (dated writes, two approvers, refusals, the API), payslips (year to date against the year's payslips, one protected email per person, resend, downloads), the installable app, time slices, quotas, leave policies and their ledger, compensatory off, leave encashment, shifts, rosters, attendance finalisation and regularisation, payroll, statutory PF/ESI/professional tax/LWF (including ESI's contribution-period continuation and Maharashtra's February rule), employer contributions reaching the ledger and never net pay, cost-centre splits, the CTC breakdown against a hand calculation, the ECR file's field format, tax, retro, off-cycle, batching, increments, Form 16, time evaluation, storage, exports, search, dashboards, variance, profile, reports, notifications, jobs, the change log, permissions, approvals, the recruitment workflow and careers page, onboarding checklists and tasks, transfers and promotions through the time-slice engine, probation confirm/extend/end, letters (merge, PDF, immutability), headcount requests through their approval to a vacant position recruitment can hire against, bulk import (dry run, confirm, batching 5,000 employees, re-importing a file writing nothing twice), opening balances reducing a projected month's TDS, an EMI schedule closing at zero with the last instalment absorbing rounding, a prepayment rescheduling the remainder at the same EMI, the concessional-loan perquisite value, a claim refused over its category's limit and paid once approved — on screen or sent in already approved by the API, gratuity under the 240-day rule, a full and final settlement paying salary to the last day, leave, a notice shortfall, gratuity and a loan together in one off-cycle run, sign-in disabled on the last day, the HRA three-way minimum for metro and non-metro, a regime comparison matching `annualTaxFor`'s own computation, section 89 relief as Form 10E works it out, the 24Q file's field order, a proof window capping an unverified amount to what was actually verified, a scorecard required before a round's notes are saved, an offer accepted through its link converting to an employee with its onboarding tasks, a referral bonus paid once after its qualifying period and forfeited if the hire does not stay, duplicate candidates caught by phone, recruitment analytics against hand counts, a goal check-in from either side and its weekly reminder, peer feedback hidden until three have answered, an improvement plan opened, checked in on and closed, a nomination refused once it would take a department over its training budget for the year, a certification's expiry warning sent once to its holder and manager, the API (every endpoint against its schema, tokens, scopes, address and rate limits, company limits, idempotency, errors, the OpenAPI document, the guided-actions endpoint and its events, imports needing the scope that matches what is being imported), the mock ERP's scenario in-process with webhook retries, parking and replay, signatures, pay never shown without its scope, and the authorisation matrix |
 | Mutation checks | Six deliberate bugs in the payroll and tax engines each fail a test; the outbox regression test fails on the old per-minute delivery key; the authorisation matrix fails when one Server Function's check is loosened; removing ESI's contribution-period continuation check fails the statutory engine's own test |
 | `npm run audit:ui` | clean: every screen as HR, manager, employee and recruiter at 1280 and 375 pixels, the careers site and the API error page, with axe (WCAG 2 A and AA) and a sideways-scroll check |
 | `npm run sandbox` | The mock ERP's 21 steps against a running app over HTTP, receiving real signed webhooks: 21 of 21 |
@@ -376,7 +376,7 @@ Turso is SQLite. Getting any of these wrong produces wrong numbers or a schema t
 
 ### 5.4 Data model
 
-143 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
+158 tables. Every infotype table carries the same time-slice columns: `employee_id, valid_from, valid_to, seq, created_by, created_at`. One table per infotype, as SAP has PA0001, PA0002, PA0008 — never a JSON blob, because payroll must read basic pay as a typed, indexed value.
 
 | Prefix | Tables |
 |---|---|
@@ -385,7 +385,8 @@ Turso is SQLite. Getting any of these wrong produces wrong numbers or a schema t
 | `pt_` | absence_type, attendance_type, quota_type, it2001_absence, it2002_attendance, it2006_absence_quota (a running total; `quota_ledger` is the source of truth), leave_request, leave_policy, quota_ledger, comp_off, work_schedule_rule, holiday, holiday_calendar, time_evaluation_result, shift, roster_pattern, roster_pattern_day, roster, device, punch, attendance_day, regularisation |
 | `py_` | wage_type, payroll_period, it0014_recurring_payment, it0015_additional_payment, opening_balance, payroll_run, run_member, payroll_result, payroll_result_line, bank_transfer_file, bank_transfer_line (with the ERP's payment confirmation), gl_posting, gl_posting_line, statutory_remittance, gl_account (sent by the ERP), salary_structure, salary_structure_component, employee_ctc, cost_split, gl_mapping, pf_rate, esi_rate, professional_tax_slab, lwf_rate, tax_constant, loan, loan_schedule, loan_prepayment, loan_benchmark_rate, claim_category, claim_category_limit, claim, claim_line, settlement, settlement_line |
 | `rc_` | requisition (the role as candidates read it, and whether it is published), candidate, application (channel, screening, the decision and the offer), application_stage_history, interview (each round: interviewer, time, place, status, rating, recommendation, notes), hire_conversion, scorecard_template, scorecard, offer (CTC, structure, joining date, expiry, the letter, status, token), referral (referrer, candidate, bonus, qualifying days, status) |
-| `pm_` | appraisal_template, appraisal_cycle, goal, appraisal, calibration, increment_recommendation |
+| `pm_` | appraisal_template, appraisal_cycle, goal, appraisal, calibration, increment_recommendation, goal_checkin, feedback_request, feedback (360 feedback, kept behind its own anonymity threshold for peer answers), pip, pip_checkin |
+| `ld_` | course, session, nomination, department_budget, certification (issuer, dates, its document, a once-only expiry reminder), certification_requirement (which job needs which certificate) |
 | `tds_` | section_master, tax_slab, employee_declaration, deduction_register, form16, proof_window, proof, rent, perquisite, arrears_relief |
 | `sec_` | app_user, role, user_role, permission, role_permission, role_scope |
 | `app_` | document (registry of stored files) and document_content (bytes when stored in the database), access_log (who read whose records), change_log (who changed what, before and after), notification and notification_pref, outbox (every message waiting to go), job and job_run, import and import_row (bulk loads) |
@@ -498,7 +499,8 @@ The blueprint defines 38 screens (with 18 nested tabs, 51 form surfaces). What e
 | Careers site | Open roles and the form to apply; the candidate's own offer page, reached only through their link | public |
 | Integrations | Connected systems (connect, settings, secrets, webhook deliveries with replay, recent calls), record ownership, sync issues, reconciliation | `integrations.manage` |
 | API reference | `/developers` (the OpenAPI document in Scalar) and `/developers/errors` | public |
-| Performance | Cycles, goals, ratings, calibration, increments (PM-01…05); my appraisal | `performance.manage`; `performance.rate_team` / `rate_any`; `self.appraisal` |
+| Performance | Cycles, goals, ratings, calibration, increments (PM-01…05); 360 feedback (ask, and the aggregate once it is safe to show); improvement plans (open, check in, close); my appraisal with goal check-ins and feedback replies | `performance.manage`; `performance.rate_team` / `rate_any`; `self.appraisal` |
+| Training | Catalogue (courses and sessions); nominations, decided against the department's budget for the year; budgets; certification compliance (who is missing what their job requires); my training (nominate, my certifications) | `training.manage`; `self.training` |
 | Reports | Headcount, cost, leave, attrition; CSV exports | `reports.view` |
 | Change log, Outbox | Organisation-wide change log with filters; every email as it would be sent | `audit.view` |
 | Access and approvals | Roles and permissions (list, new, edit with members and scope); approval flows (per process, edit as a new version) | `access.manage` |
@@ -1468,11 +1470,10 @@ Technical choices that need nobody's input, taken here so Part A can proceed wit
 | Attendance devices until a vendor is chosen | CSV upload and a generic punch endpoint | Every device can export CSV, and any middleware can call an endpoint. |
 | Continuous integration | GitHub Actions running typecheck, lint, tests, build, the UI audit and the mock ERP against a local database | Needs no secrets, because tests never touch Turso. |
 
-### 9.5 Part A — phases 23 to 24
+### 9.5 Part A — phase 24
 
 | # | Phase | Roadmap features | Depends on |
 |---|---|---|---|
-| 23 | Performance and learning | Goal check-ins, 360-degree feedback, calibration distribution, improvement plans, training catalogue and nominations, certification expiry | 11, 12 |
 | 24 | Analytics | Trends over time, leave liability, scheduled reports (all but email delivery) | 18 |
 
 ```mermaid
@@ -1499,28 +1500,6 @@ flowchart LR
   P16 --> P25
   P17 --> P25
 ```
-
-#### Phase 23 — Performance and learning
-
-**Goal.** Performance is continuous rather than annual, and skills are tracked, not assumed.
-
-**Features.** Goal check-ins · 360-degree feedback · Calibration distribution · Improvement plans · Training catalogue and nominations · Certification expiry.
-
-**Build**
-
-| Part | What |
-|---|---|
-| Data | `pm_goal_checkin` (progress, on track or at risk, comments from both sides) · `pm_feedback_request` and `pm_feedback` (reviewer, relationship, competencies, comments) · `pm_pip` (goals, dates, check-ins, outcome, approval request) · `ld_course`, `ld_session` (dates, capacity, place, cost), `ld_nomination` (approval, attendance, feedback) · `ld_certification` (issuer, issued, expires, document, whether the job requires it) |
-| Logic | Check-in reminders run on the job table, and progress rolls up to the goal. The 360 has an **anonymity threshold**: peer feedback is shown in aggregate only once three responses exist. Calibration shows the distribution of ratings per team against the guideline as it changes. An improvement plan is approved, checked in on, and closed or passed to exit (phase 20). Nominations are approved against a department training budget. Certificates warn their holder and manager ahead of expiry, and reports flag anyone whose job needs a certificate they lack. |
-| Screens | Check-ins on My appraisal and for the team · 360 requests and responses · the distribution on calibration · improvement plans · the training catalogue and My training · certificates on the profile, and a compliance report |
-| API and events | `/v1/goals` with check-ins · `/v1/courses`, `/v1/sessions` and `/v1/nominations`, so training booked or paid through the ERP stays in step · `/v1/certifications` writable, for certificates recorded on the ERP side · **360 feedback is not exposed**, to protect its anonymity · `appraisal.finalised`, `training.completed`, `certification.expiring` |
-
-**Done when**
-- Everyone with open goals receives the check-in reminder.
-- Peer feedback stays hidden until three responses exist (test).
-- The distribution moves as calibrated ratings change.
-- A nomination over budget is refused.
-- An expiring forklift certificate warns its holder and manager ahead of time.
 
 #### Phase 24 — Analytics
 
@@ -1654,12 +1633,12 @@ Kept to what belongs in the HR module of an ERP for an Indian company. Features 
 | Offer letters with e-signature | Built from the CTC breakdown, sent to the candidate's own link, which records their accept or decline and converts them on acceptance. Signing online is phase 25. | 22, e-signature in 25 | built, e-signature in 25 |
 | Referral tracking | Who referred whom, and the referral bonus through payroll once the hire is still employed after the qualifying days. | 22 | built |
 | Recruitment analytics | Time to hire, time in stage, source effectiveness, offer acceptance, drop-off by stage. | 22 | built |
-| Goal check-ins | Progress through the year, not only at the review. | 23 | planned |
-| 360-degree feedback | Peers and reports contribute to a review. | 23 | planned |
-| Calibration distribution | The spread of ratings as a bar list, against a guideline, during calibration. | 23 | planned |
-| Improvement plans | A plan with goals and dates for someone who is struggling. | 23 | planned |
-| Training catalogue and nominations | Courses, who attended, and certificates. | 23 | planned |
-| Certification expiry | Alerts before a safety or professional certificate lapses — important in a factory. | 23 | planned |
+| Goal check-ins | A progress update either side can add, through the year — not only at the review — with a weekly reminder while one is overdue. | 23 | built |
+| 360-degree feedback | Peers, a manager, reports and self all contribute; peer answers are shown only in aggregate, once three have replied. | 23 | built |
+| Calibration distribution | The spread of ratings as a bar list, against a guideline, during calibration. | 7 | built |
+| Improvement plans | A plan with goals and dates for someone who is struggling, checked in on and closed with an outcome. | 23 | built |
+| Training catalogue and nominations | Courses and their sessions; a nomination is refused once it would take its department over its training budget for the year. | 23 | built |
+| Certification expiry | Alerts before a safety or professional certificate lapses, to its holder and their manager; a report flags anyone whose job needs one they do not hold. | 23 | built |
 | Trends over time | Headcount, cost and attrition month by month, not only today. | 24 | planned |
 | Leave liability | The value of untaken leave, which finance must provide for. | 24 | planned |
 | Scheduled reports | A report emailed to someone every month. | 24, email delivery in 25 | planned |
@@ -1823,6 +1802,16 @@ Phase 18 closed the gaps this section used to list: employer PF, EPS, EDLI and t
 ## 11. History
 
 What each phase delivered, newest first, and where the build differed from its plan. When a phase in §9 is finished, it moves here.
+
+### Phase 23 — Performance and learning
+
+- **Goal check-ins are a timeline, not a record two people take turns editing**: `pm_goal_checkin` (date, status, comment, `author_type`) gets a new row from either side — the employee through `self.appraisal`, their rater through `mayRateEmployee`, the same reports-to-them check goals and ratings already use — rather than one row with an employee slot and a manager slot. A daily step, mirroring the self-review reminder's own weekly dedupe key, tells everyone with an open goal and no check-in in the last seven days, once a week.
+- **360 feedback, with peer answers held back until three exist**: `pm_feedback_request` (cycle, reviewee, reviewer, relationship) and `pm_feedback` (one row per competency). `requestFeedback` is HR or a rater asking, gated the same `mayRateEmployee` way goals already are; `submitFeedback` needs only a session — the data decides, since only the named reviewer's request matches their own employee id. `peerFeedbackSummary()` is the anonymity threshold itself: averages by competency once three `Peer`-relationship requests are `Submitted`, `null` before that — manager, report and self feedback are never threshold-gated, shown as given.
+- **Improvement plans, without a workflow of their own**: `pm_pip` (reason, goals, dates, outcome) and `pm_pip_checkin`, created and closed directly under `performance.manage` rather than routed through the approval engine — nothing in "done when" asked for a second approver, and HR opening one already is the decision. Passing to exit (phase 20) on a failed outcome is a manual next step, not an automatic one.
+- **A nomination is refused at the point it would break a budget, not before**: `ld_department_budget` (department, year, allocated). `decideNomination` sums every already-`Approved` nomination's session cost for the nominee's own current department and the session's year, and refuses the decision — leaving the nomination `Requested` — if adding this one would pass what was allocated; checked at decision time, since the budget or the queue ahead of it can move between asking and deciding.
+- **Certifications, checked against what the job actually requires**: `ld_certification` (issuer, issued, expiry, its document — reusing the employee document store's existing `"employee"` owner type with a new `"Certification"` kind, not a new table) and `ld_certification_requirement` (job, certificate name). A daily step warns a certificate's holder and, through the same `resolveApprovers("reporting_manager")` the approval engine itself calls, their manager, once — `reminded_at` guards it the same way a probation reminder already does. `certificationComplianceReport()` joins requirements against current employees' jobs (through their position, not a `job_code` the org assignment itself does not carry) and what each still validly holds, for who is missing one.
+- **Screens**: **360 feedback** — ask, see every request, and the aggregate once it is safe · **Improvement plans** — open, check in, close · **My appraisal** extended with each goal's check-in history and a form either side can use, and feedback requests waiting for an answer · a new **Training** area — catalogue (courses and sessions), nominations (decide, record attendance), budgets, compliance, and my training (nominate, keep certifications on file).
+- **Where it differs from the plan**: calibration's distribution chart already existed from phase 7 — nothing new was needed for "the distribution moves as calibrated ratings change" beyond the test confirming it still does. No `/v1/goals`, `/v1/courses`, `/v1/sessions`, `/v1/nominations` or `/v1/certifications`, and no `appraisal.finalised`/`training.completed`/`certification.expiring` events — every "done when" criterion is a reminder, a computation or a refusal, not an integration, the same call phases 21 and 22 made; 360 feedback was never going to be exposed regardless, to protect its anonymity. Two new permissions, `training.manage` and `self.training`, joined the catalogue rather than overloading `performance.manage`'s own meaning.
 
 ### Phase 22 — Recruitment
 

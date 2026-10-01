@@ -22,6 +22,7 @@ import { seedStatutory } from "./statutory";
 import { seedCorrections } from "./corrections";
 import { seedRecruitment } from "./recruitment";
 import { seedPerformance } from "./performance";
+import { seedTraining } from "./training";
 import { seedLifecycle } from "./lifecycle";
 import { seedHeadcount } from "./headcount";
 import { seedImports } from "./imports";
@@ -208,6 +209,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   const loanNotes = await seedLoansAndClaims(db);
   const recruitmentNotes = await seedRecruitment(db);
   const performanceNotes = await seedPerformance(db);
+  const trainingNotes = await seedTraining(db);
 
   // Pending leave goes onto the approval engine, as migration 0008 does for
   // requests that existed before it.
@@ -233,6 +235,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     ...loanNotes,
     ...recruitmentNotes,
     ...performanceNotes,
+    ...trainingNotes,
     ...correctionNotes,
     ...lifecycleNotes,
     ...headcountNotes,

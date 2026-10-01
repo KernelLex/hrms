@@ -7,6 +7,7 @@ export const EMPLOYEE_DOCUMENT_KINDS = [
   "Bank proof",
   "Education certificate",
   "Relieving letter",
+  "Certification",
   "Other",
 ] as const;
 

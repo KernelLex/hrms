@@ -13,7 +13,7 @@ import { queueDueLoanInstallments } from "@/lib/engines/loans";
 import { processExitsDue } from "@/lib/services/exits";
 import { payQualifyingReferrals } from "@/lib/recruitment";
 import { enqueueJob, requeueJob } from "./queue";
-import { escalateOverdue } from "@/lib/workflow/engine";
+import { escalateOverdue, resolveApprovers } from "@/lib/workflow/engine";
 import { deliverWebhooks, nextWebhookRetry, wakeDeliveryStatement } from "@/lib/api/events";
 import { changeStatement, recordChanges, systemActor } from "@/lib/change-log";
 import { payslipEmailStatements } from "@/lib/payslip-mail";
@@ -93,6 +93,79 @@ async function notifyProbationDue(): Promise<number> {
     args: [new Date().toISOString(), ...due.map((d) => d.id)],
   });
   return due.length;
+}
+
+/** Everyone with an open goal, and no check-in on it in the last week, told once a week. */
+async function notifyGoalCheckinsDue(): Promise<number> {
+  const r = await rawClient().execute(
+    `SELECT g.id, g.employee_id FROM pm_goal g
+     JOIN pm_appraisal_cycle c ON c.id = g.cycle_id
+     WHERE c.status = 'Active'
+       AND NOT EXISTS (SELECT 1 FROM pm_goal_checkin k WHERE k.goal_id = g.id AND k.checkin_date >= date('now', '-7 days'))`,
+  );
+  const users = await usersForEmployees(r.rows.map((g) => Number(g.employee_id)));
+  const week = isoWeek(todayInIndia());
+  const items: NotificationItem[] = [];
+  for (const g of r.rows) {
+    const userId = users.get(Number(g.employee_id));
+    if (!userId) continue;
+    items.push({
+      userId,
+      kind: "goal_checkin.due",
+      title: "Check in on your goal",
+      body: "A word on progress keeps your appraisal, and whoever rates you, up to date.",
+      link: "/performance/mine",
+      dedupeKey: `goal_checkin.due:${g.id}:${week}`,
+    });
+  }
+  await notify(items);
+  return items.length;
+}
+
+/** A certification expiring within 30 days warns its holder and manager, once. */
+async function notifyCertificationsExpiring(asOfDate: string): Promise<number> {
+  const r = await rawClient().execute({
+    sql: `SELECT id, employee_id, name, expiry_date FROM ld_certification
+          WHERE expiry_date IS NOT NULL AND reminded_at IS NULL AND expiry_date <= date(?, '+30 days')`,
+    args: [asOfDate],
+  });
+  if (r.rows.length === 0) return 0;
+  const employeeIds = r.rows.map((c) => Number(c.employee_id));
+  const holders = await usersForEmployees(employeeIds);
+  const managers = await managerUserIdsOf(employeeIds);
+
+  const items: NotificationItem[] = [];
+  for (const c of r.rows) {
+    const employeeId = Number(c.employee_id);
+    const body = `${c.name} expires ${c.expiry_date}.`;
+    const holderUserId = holders.get(employeeId);
+    if (holderUserId) {
+      items.push({ userId: holderUserId, kind: "certification.expiring", title: "Your certification is expiring", body, link: "/training/my-training", dedupeKey: `certification.expiring:${c.id}:holder` });
+    }
+    for (const managerUserId of managers.get(employeeId) ?? []) {
+      items.push({ userId: managerUserId, kind: "certification.expiring", title: "A certification on your team is expiring", body, link: "/training/compliance", dedupeKey: `certification.expiring:${c.id}:${managerUserId}` });
+    }
+  }
+  await notify(items);
+  await rawClient().execute({
+    sql: `UPDATE ld_certification SET reminded_at = ? WHERE id IN (${r.rows.map(() => "?").join(", ")})`,
+    args: [new Date().toISOString(), ...r.rows.map((c) => c.id)],
+  });
+  return r.rows.length;
+}
+
+/** Each employee's current reporting manager's sign-in, where they have one. */
+async function managerUserIdsOf(employeeIds: number[]): Promise<Map<number, number[]>> {
+  if (employeeIds.length === 0) return new Map();
+  const result = new Map<number, number[]>();
+  for (const employeeId of employeeIds) {
+    const userIds = await resolveApprovers(
+      { stepOrder: 1, approverType: "reporting_manager", approverRole: null, approverUserId: null, conditionField: null, conditionMin: null, escalateAfterDays: null },
+      { subjectEmployeeId: employeeId, requesterUserId: null },
+    );
+    result.set(employeeId, userIds);
+  }
+  return result;
 }
 
 /**
@@ -287,6 +360,8 @@ export const HANDLERS: Record<string, JobHandler> = {
   async "daily"() {
     await notifySelfReviews(null);
     await notifyProbationDue();
+    await notifyGoalCheckinsDue();
+    await notifyCertificationsExpiring(todayInIndia());
     await runLeavePolicyTicks(todayInIndia());
     await runDailyAttendanceTick(todayInIndia());
     await queueDueLoanInstallments(todayInIndia());

@@ -67,6 +67,7 @@ export const PERMISSIONS = {
   "performance.manage": { group: "Performance", can: "run appraisal cycles, calibration and increments", sensitive: true },
   "performance.rate_team": { group: "Performance", can: "set goals for and rate the people who report to them" },
   "performance.rate_any": { group: "Performance", can: "set goals for and rate anyone" },
+  "training.manage": { group: "Performance", can: "keep the training catalogue, decide nominations and budgets, and see the certification compliance report" },
 
   "reports.view": { group: "Reports and records", can: "see HR reports and download exports", sensitive: true },
   "audit.view": { group: "Reports and records", can: "read the change log, access logs and outbox" },
@@ -83,13 +84,14 @@ export const PERMISSIONS = {
   "self.loans": { group: "Self-service", can: "ask for a loan and see their own schedule and balance" },
   "self.claims": { group: "Self-service", can: "submit reimbursement claims with bills and see their own" },
   "self.exit": { group: "Self-service", can: "resign, and see their own exit, clearance and settlement" },
+  "self.training": { group: "Self-service", can: "nominate themselves for training, see their own training and certifications" },
 } as const satisfies Record<string, Def>;
 
 export type Permission = keyof typeof PERMISSIONS;
 
 export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[];
 
-const SELF: Permission[] = ["self.profile", "self.leave", "self.pay", "self.tax", "self.appraisal", "self.attendance", "self.loans", "self.claims", "self.exit"];
+const SELF: Permission[] = ["self.profile", "self.leave", "self.pay", "self.tax", "self.appraisal", "self.attendance", "self.loans", "self.claims", "self.exit", "self.training"];
 
 /**
  * The built-in roles, exactly as they behaved before permissions existed:

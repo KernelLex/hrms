@@ -1,6 +1,6 @@
 import { requirePage } from "@/lib/access";
 import { asc, desc, eq } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, rawClient } from "@/lib/db";
 import {
   pmAppraisal,
   pmAppraisalCycle,
@@ -23,7 +23,7 @@ import {
   KeyValueRow,
 } from "@/components/ui";
 import { Target } from "lucide-react";
-import { SelfReviewForm } from "./form";
+import { SelfReviewForm, CheckinForm, FeedbackResponseForm } from "./form";
 import { formatDate } from "@/lib/dates";
 
 /** Employee self-service: your goals and your self review. */
@@ -73,6 +73,32 @@ export default async function MyAppraisalPage() {
     : [];
   const myGoals = goals.filter((g) => g.employeeId === employeeId);
 
+  const checkins =
+    myGoals.length > 0
+      ? (
+          await rawClient().execute({
+            sql: `SELECT * FROM pm_goal_checkin WHERE goal_id IN (${myGoals.map(() => "?").join(", ")}) ORDER BY created_at DESC`,
+            args: myGoals.map((g) => g.id),
+          })
+        ).rows
+      : [];
+  const checkinsByGoal = new Map<number, typeof checkins>();
+  for (const c of checkins) {
+    const goalId = Number(c.goal_id);
+    checkinsByGoal.set(goalId, [...(checkinsByGoal.get(goalId) ?? []), c]);
+  }
+
+  const feedbackRequests = (
+    await rawClient().execute({
+      sql: `SELECT r.id, r.relationship, c.full_name AS reviewee_name
+            FROM pm_feedback_request r
+            JOIN pa_employee e ON e.id = r.reviewee_employee_id
+            LEFT JOIN (SELECT employee_id, TRIM(COALESCE(first_name,'')||' '||COALESCE(last_name,'')) AS full_name FROM pa_it0002_personal_data WHERE valid_from <= date('now') AND valid_to >= date('now')) c ON c.employee_id = r.reviewee_employee_id
+            WHERE r.reviewer_employee_id = ? AND r.status = 'Requested'`,
+      args: [employeeId],
+    })
+  ).rows;
+
   // The calibrated rating is what the employee is finally told.
   const calibration = current
     ? await db.query.pmCalibration.findFirst({
@@ -114,36 +140,45 @@ export default async function MyAppraisalPage() {
                 Your manager sets these at the start of the cycle.
               </EmptyState>
             ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <Th>Category</Th>
-                    <Th>Goal</Th>
-                    <Th numeric>Weightage</Th>
-                    <Th>Target</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {myGoals.map((g) => (
-                    <Tr key={g.id}>
-                      <Td>
-                        <span className="text-secondary">{g.category}</span>
-                      </Td>
-                      <Td>{g.description}</Td>
-                      <Td numeric>{g.weightagePercent}%</Td>
-                      <Td>
-                        {g.targetDate ? (
-                          <span className="tabular text-secondary">{formatDate(g.targetDate)}</span>
-                        ) : (
-                          <span className="text-decor">&mdash;</span>
-                        )}
-                      </Td>
-                    </Tr>
-                  ))}
-                </tbody>
-              </Table>
+              <ul>
+                {myGoals.map((g) => {
+                  const history = checkinsByGoal.get(g.id) ?? [];
+                  return (
+                    <li key={g.id} className="border-b border-soft px-6 py-4 last:border-0">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <span className="text-[15px] font-medium text-ink">{g.description}</span>
+                        <span className="text-[13px] text-muted">
+                          {g.category} · {g.weightagePercent}%{g.targetDate ? ` · due ${formatDate(g.targetDate)}` : ""}
+                        </span>
+                      </div>
+                      {history.length > 0 ? (
+                        <ul className="mt-2 flex flex-col gap-1.5">
+                          {history.map((c) => (
+                            <li key={String(c.id)} className="text-[13px] text-ink-hover">
+                              <span className="tabular text-muted">{formatDate(String(c.checkin_date))}</span>{" "}
+                              <Status tone={c.status === "On track" ? "done" : c.status === "At risk" ? "waiting" : "problem"}>{String(c.status)}</Status>{" "}
+                              {String(c.author_type)}: {String(c.comment)}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <div className="mt-3">
+                        <CheckinForm goalId={g.id} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </Card>
+
+          {feedbackRequests.length > 0 ? (
+            <div className="flex flex-col gap-4">
+              {feedbackRequests.map((r) => (
+                <FeedbackResponseForm key={String(r.id)} id={Number(r.id)} revieweeName={String(r.reviewee_name ?? "them")} />
+              ))}
+            </div>
+          ) : null}
 
           {current.status === "Pending self review" ? (
             <SelfReviewForm

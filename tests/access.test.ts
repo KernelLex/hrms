@@ -63,8 +63,8 @@ describe("the catalogue", () => {
     const [h, m, e] = await Promise.all([hr, manager, employee].map((p) => accessFor(p.session)));
 
     expect(hrefs(h.permissions)).toEqual(expect.arrayContaining(["/org", "/core-hr", "/payroll", "/approvals", "/admin/roles", "/change-log"]));
-    expect(hrefs(m.permissions)).toEqual(["/me", "/core-hr", "/tasks", "/headcount-requests", "/exit", "/approvals", "/time/calendar", "/time/my-leave", "/time/my-attendance", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/loans-claims/my-loans", "/loans-claims/my-claims", "/recruitment/my-interviews", "/refer", "/performance", "/performance/mine"]);
-    expect(hrefs(e.permissions)).toEqual(["/me", "/tasks", "/exit", "/time/my-leave", "/time/my-attendance", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/loans-claims/my-loans", "/loans-claims/my-claims", "/recruitment/my-interviews", "/refer", "/performance/mine"]);
+    expect(hrefs(m.permissions)).toEqual(["/me", "/core-hr", "/tasks", "/headcount-requests", "/exit", "/approvals", "/time/calendar", "/time/my-leave", "/time/my-attendance", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/loans-claims/my-loans", "/loans-claims/my-claims", "/recruitment/my-interviews", "/refer", "/performance", "/performance/mine", "/training/my-training"]);
+    expect(hrefs(e.permissions)).toEqual(["/me", "/tasks", "/exit", "/time/my-leave", "/time/my-attendance", "/payroll/my-payslips", "/tax/declarations", "/tax/form16", "/loans-claims/my-loans", "/loans-claims/my-claims", "/recruitment/my-interviews", "/refer", "/performance/mine", "/training/my-training"]);
     expect(m.roleNames[0]).toBe("Manager");
   });
 });

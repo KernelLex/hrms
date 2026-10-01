@@ -97,6 +97,22 @@ export const NOTIFICATION_KINDS = {
     label: "My referral bonus",
     description: "When a bonus for someone you referred is paid.",
   },
+  "feedback.requested": {
+    label: "Feedback asked of me",
+    description: "When someone's 360 review asks for your feedback.",
+  },
+  "goal_checkin.due": {
+    label: "Goal check-in reminders",
+    description: "Weekly, while a goal has not had a check-in recently.",
+  },
+  "certification.expiring": {
+    label: "Certifications expiring",
+    description: "When one of your certifications, or your team's, is due to expire.",
+  },
+  "nomination.decided": {
+    label: "Decisions on my training",
+    description: "When a nomination for training you asked for is approved or rejected.",
+  },
 } as const;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

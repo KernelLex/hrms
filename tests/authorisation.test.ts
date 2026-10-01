@@ -24,6 +24,7 @@ import * as search from "@/app/actions/search";
 import * as statutory from "@/app/actions/statutory";
 import * as tax from "@/app/actions/tax";
 import * as time from "@/app/actions/time";
+import * as training from "@/app/actions/training";
 import { GET as documentRoute } from "@/app/api/documents/[id]/route";
 import { GET as exportEmployees } from "@/app/api/export/employees/route";
 import { GET as exportPayrollRun } from "@/app/api/export/payroll-run/[id]/route";
@@ -71,6 +72,7 @@ const MODULES = {
   statutory,
   tax,
   time,
+  training,
 } as const;
 
 const org_ = (fns: string[]): Record<string, Rule> => Object.fromEntries(fns.map((f) => [f, ["org.edit"]]));
@@ -224,6 +226,13 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     approveIncrement: ["performance.manage"],
     pushIncrementsToPayroll: ["performance.manage"],
     setIncrementSalary: ["performance.manage"],
+    saveGoalCheckin: ["self.appraisal", "performance.rate_any", "performance.rate_team"],
+    requestFeedback: ["performance.manage", "performance.rate_any", "performance.rate_team"],
+    // Only the named reviewer may answer; the data decides, not a permission.
+    submitFeedback: "signed-in",
+    savePip: ["performance.manage"],
+    addPipCheckin: ["performance.manage"],
+    closePip: ["performance.manage"],
   },
   recruitment: {
     saveRequisition: ["recruitment.manage"],
@@ -282,6 +291,20 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     deleteHolidayCalendar: ["time.manage"],
     saveLeavePolicy: ["time.manage"],
     deleteLeavePolicy: ["time.manage"],
+  },
+  training: {
+    saveCourse: ["training.manage"],
+    deleteCourse: ["training.manage"],
+    saveSession: ["training.manage"],
+    deleteSession: ["training.manage"],
+    nominate: ["self.training", "training.manage"],
+    decideNomination: ["training.manage"],
+    recordAttendance: ["training.manage"],
+    saveDepartmentBudget: ["training.manage"],
+    saveCertification: ["self.training", "training.manage"],
+    deleteCertification: ["self.training", "training.manage"],
+    saveCertificationRequirement: ["training.manage"],
+    deleteCertificationRequirement: ["training.manage"],
   },
 };
 

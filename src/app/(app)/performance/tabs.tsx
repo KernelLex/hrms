@@ -9,6 +9,8 @@ const ITEMS = [
   { href: "/performance/ratings", label: "Ratings" },
   { href: "/performance/calibration", label: "Calibration" },
   { href: "/performance/increments", label: "Increments" },
+  { href: "/performance/feedback", label: "360 feedback" },
+  { href: "/performance/pip", label: "Improvement plans" },
 ];
 
 export function PerformanceTabs() {

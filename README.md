@@ -137,8 +137,19 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 ### Performance
 
 - Yearly appraisal cycles with goals, self reviews and manager ratings.
+- **Goal check-ins** through the year — either side can add one — with a reminder while a goal has gone quiet.
+- **360-degree feedback**: ask peers, a manager, reports and the person themself; peer answers are only ever shown averaged together, once three people have replied.
 - **Calibration** of ratings across the organisation.
+- **Improvement plans** with goals, dates, their own check-ins, and an outcome.
 - **Increments** that become the next month's pay automatically.
+
+### Training
+
+- A **course catalogue** with scheduled sessions, place and cost.
+- Employees **nominate themselves**, or are nominated; a nomination is refused once it would take its department over its training budget for the year.
+- **Certifications** kept on each person's own record, with their issuer and expiry.
+- A certificate due to expire **warns its holder and their manager** ahead of time.
+- A **compliance report** flags anyone whose role needs a certificate they do not hold.
 
 ### Approvals
 
@@ -174,7 +185,6 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 ## Coming next
 
 - **Recruitment**: letting a candidate choose from several offered interview times, and signing the offer letter online.
-- **Performance and learning**: check-ins through the year, 360-degree feedback, improvement plans, and training with certificate expiry alerts.
 - **Reports**: trends over time, the value of untaken leave, and reports emailed on a schedule.
 - **Switching on**: email delivery, cloud storage for documents, and going live with your ERP.
 
