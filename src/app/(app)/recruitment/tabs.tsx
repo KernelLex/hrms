@@ -9,6 +9,7 @@ const ITEMS = [
   { href: "/recruitment/interviews", label: "Interviews", also: [] },
   { href: "/recruitment/candidates", label: "Candidates", also: [] },
   { href: "/recruitment/hire", label: "Hire conversion", also: [] },
+  { href: "/recruitment/analytics", label: "Analytics", also: [] },
 ];
 
 export function RecruitmentTabs({ counts }: { counts?: Record<string, number> }) {

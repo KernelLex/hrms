@@ -50,7 +50,7 @@ export default async function InterviewPage(props: { params: Promise<{ id: strin
                 }
               />
               <div className="px-6 pb-6">
-                <FeedbackForm id={i.id} existing={{ rating: i.rating, recommendation: i.recommendation, feedback: i.feedback }} />
+                <FeedbackForm id={i.id} existing={{ rating: i.rating, recommendation: i.recommendation, feedback: i.feedback }} scorecard={i.scorecard} />
               </div>
             </Card>
           ) : i.status === "Completed" ? (
@@ -95,7 +95,16 @@ export default async function InterviewPage(props: { params: Promise<{ id: strin
 
         <div className="flex flex-col gap-6">
           <Card>
-            <CardHeader title="When and where" />
+            <CardHeader
+              title="When and where"
+              actions={
+                i.scheduledTime ? (
+                  <a href={`/api/recruitment/interviews/${i.id}/ics`} className="text-[13px] font-medium text-ink underline underline-offset-2">
+                    Download invite
+                  </a>
+                ) : undefined
+              }
+            />
             <div className="px-6 pb-4">
               <KeyValue>
                 <KeyValueRow label="Date">{formatDate(i.scheduledDate)}</KeyValueRow>

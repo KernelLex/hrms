@@ -12,8 +12,9 @@ import { documentSummary } from "@/lib/document-kinds";
 import { queueEmailStatement, renderEmail } from "@/lib/email";
 import { requeueStatement } from "@/lib/jobs/queue";
 import { todayInIndia } from "@/lib/dates";
-import { announceApplication, applicationStatements } from "@/lib/recruitment";
+import { announceApplication, announceOfferResponse, applicationStatements, performConversion, stageStatements } from "@/lib/recruitment";
 import { kickJobs } from "@/lib/jobs/runner";
+import { toRupees } from "@/lib/money";
 
 /**
  * Applying from the public careers page — the one Server Function anyone may
@@ -106,8 +107,14 @@ export async function applyForJob(_prev: ApplyState, form: FormData): Promise<Ap
   const at = new Date().toISOString();
 
   // One record per person: someone applying again, or for another role, is
-  // the same candidate, with their details brought up to date.
-  const existing = (await rawClient().execute({ sql: "SELECT id FROM rc_candidate WHERE email = ?", args: [v.email] })).rows[0];
+  // the same candidate, with their details brought up to date. Caught by
+  // phone as well as email, so a new address does not split their history.
+  const existing = (
+    await rawClient().execute({
+      sql: "SELECT id FROM rc_candidate WHERE email = ? OR (phone <> '' AND phone = ?) LIMIT 1",
+      args: [v.email, v.phone],
+    })
+  ).rows[0];
   let candidateId: number;
   let created = false;
   if (existing) {
@@ -183,4 +190,87 @@ export async function applyForJob(_prev: ApplyState, form: FormData): Promise<Ap
 
   revalidatePath("/recruitment", "layout");
   return { ok: true };
+}
+
+/* -------------------------------------------------------------- RC offers */
+
+export type OfferResponseState = { error?: string; ok?: boolean; accepted?: boolean };
+
+/** Where in the request this came from, to record with a reply only the candidate could send. */
+async function clientIp(): Promise<string | null> {
+  try {
+    const h = await headers();
+    return h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The candidate's own reply to their offer, through the link only they have
+ * — no sign-in, so trusted only as far as the token itself: unguessable,
+ * single-use, and checked against the offer's own expiry.
+ */
+export async function respondToOffer(_prev: OfferResponseState, form: FormData): Promise<OfferResponseState> {
+  const token = str(form.get("token"));
+  const decision = str(form.get("decision"));
+  if (!token || (decision !== "accept" && decision !== "decline")) {
+    return { error: "Something went wrong. Reload the page and try again." };
+  }
+
+  const offerRow = (await rawClient().execute({ sql: "SELECT * FROM rc_offer WHERE token = ?", args: [token] })).rows[0];
+  if (!offerRow) return { error: "That link is not valid." };
+  if (String(offerRow.status) !== "Sent") return { error: "This offer has already been responded to." };
+  const today = todayInIndia();
+  if (String(offerRow.expiry_date) < today) {
+    await rawClient().execute({ sql: "UPDATE rc_offer SET status = 'Expired' WHERE id = ?", args: [offerRow.id] });
+    return { error: "This offer has expired. Please contact recruitment." };
+  }
+
+  const appRow = (await rawClient().execute({ sql: "SELECT * FROM rc_application WHERE id = ?", args: [offerRow.application_id] })).rows[0];
+  if (!appRow) return { error: "That application no longer exists." };
+  const candidateRow = (await rawClient().execute({ sql: "SELECT full_name FROM rc_candidate WHERE id = ?", args: [appRow.candidate_id] })).rows[0];
+  const candidateName = candidateRow ? String(candidateRow.full_name) : "The candidate";
+
+  const actor = systemActor("Candidate, via offer link");
+  const respondedAt = new Date().toISOString();
+  const ip = await clientIp();
+
+  if (decision === "decline") {
+    await rawClient().batch(
+      [
+        { sql: "UPDATE rc_offer SET status = 'Declined', responded_at = ?, responded_ip = ? WHERE id = ?", args: [respondedAt, ip, offerRow.id] },
+        ...stageStatements(
+          actor,
+          { id: Number(appRow.id), stage: String(appRow.stage), candidateId: Number(appRow.candidate_id) },
+          "Rejected",
+          { rejected_reason: "Declined the offer", rejected_at: respondedAt, rejected_by: "Candidate" },
+          "Declined through their offer link",
+        ),
+        ...(await announceOfferResponse(Number(appRow.id), candidateName, "Declined")),
+      ],
+      "write",
+    );
+    await kickJobs();
+    return { ok: true, accepted: false };
+  }
+
+  await rawClient().execute({
+    sql: "UPDATE rc_offer SET status = 'Accepted', responded_at = ?, responded_ip = ? WHERE id = ?",
+    args: [respondedAt, ip, offerRow.id],
+  });
+  const result = await performConversion({
+    applicationId: Number(appRow.id),
+    hireDate: String(offerRow.joining_date),
+    salary: toRupees(Number(appRow.offered_salary_paise)),
+    actorName: "Candidate, via offer link",
+    actor,
+  });
+  if (!result.ok) return { error: `Your acceptance is recorded, but joining could not be completed yet: ${result.error} Recruitment has been told.` };
+
+  await rawClient().batch(await announceOfferResponse(Number(appRow.id), candidateName, "Accepted"), "write");
+  await kickJobs();
+  revalidatePath("/recruitment", "layout");
+  revalidatePath("/core-hr", "layout");
+  return { ok: true, accepted: true };
 }

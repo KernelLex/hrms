@@ -11,6 +11,7 @@ import { accrueForPeriod, expireCompOffs, runYearEnd } from "@/lib/engines/leave
 import { runDailyAttendance } from "@/lib/engines/attendance";
 import { queueDueLoanInstallments } from "@/lib/engines/loans";
 import { processExitsDue } from "@/lib/services/exits";
+import { payQualifyingReferrals } from "@/lib/recruitment";
 import { enqueueJob, requeueJob } from "./queue";
 import { escalateOverdue } from "@/lib/workflow/engine";
 import { deliverWebhooks, nextWebhookRetry, wakeDeliveryStatement } from "@/lib/api/events";
@@ -290,6 +291,7 @@ export const HANDLERS: Record<string, JobHandler> = {
     await runDailyAttendanceTick(todayInIndia());
     await queueDueLoanInstallments(todayInIndia());
     await processExitsDue(todayInIndia());
+    await payQualifyingReferrals(todayInIndia());
 
     // Approval steps that have waited longer than their flow allows.
     await escalateOverdue();

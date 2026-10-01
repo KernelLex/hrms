@@ -41,3 +41,23 @@ export const INTERVIEW_TONE: Record<string, "waiting" | "done" | "neutral" | "pr
   "No-show": "problem",
 };
 export const RECOMMENDATION_LABEL: Record<string, string> = { Advance: "Move forward", Hold: "Not sure", Reject: "Do not move forward" };
+
+/* ------------------------------------------------------------- phase 22 */
+
+export const OFFER_STATUS = ["Sent", "Accepted", "Declined", "Expired"] as const;
+export type OfferStatus = (typeof OFFER_STATUS)[number];
+export const OFFER_LABEL: Record<string, string> = { Sent: "Waiting on the candidate", Accepted: "Accepted", Declined: "Declined", Expired: "Expired" };
+export const OFFER_TONE: Record<string, "waiting" | "done" | "neutral" | "problem"> = {
+  Sent: "waiting",
+  Accepted: "done",
+  Declined: "neutral",
+  Expired: "problem",
+};
+
+export const REFERRAL_STATUS = ["Pending", "Paid", "Forfeited"] as const;
+export type ReferralStatus = (typeof REFERRAL_STATUS)[number];
+export const REFERRAL_LABEL: Record<string, string> = { Pending: "Waiting on the hire", Paid: "Bonus paid", Forfeited: "Forfeited" };
+
+/** The company-wide default, until a requisition sets its own. */
+export const DEFAULT_REFERRAL_BONUS_PAISE = 1_000_000;
+export const DEFAULT_REFERRAL_QUALIFYING_DAYS = 90;

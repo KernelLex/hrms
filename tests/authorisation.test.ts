@@ -101,7 +101,7 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   },
   auth: { signInAction: "public", demoSignInAction: "public", signOutAction: "public" },
   // The careers page: anyone, signed in or not, may apply.
-  careers: { applyForJob: "public" },
+  careers: { applyForJob: "public", respondToOffer: "public" },
   "core-hr": {
     hireEmployee: ["employee.edit"], // and pay.view: see below
     saveInfotypeSlice: ["employee.edit"],
@@ -244,6 +244,7 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     setInterviewStatus: ["recruitment.manage"],
     deleteInterview: ["recruitment.manage"],
     convertToEmployee: ["recruitment.hire"],
+    referCandidate: ["self.profile"],
   },
   search: { searchPeople: "signed-in" },
   tax: {

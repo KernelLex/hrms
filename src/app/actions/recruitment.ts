@@ -5,10 +5,10 @@ import { and, eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db, rawClient } from "@/lib/db";
 import { requireAnyPermission, requirePermission, can } from "@/lib/access";
+import { DEFAULT_REFERRAL_BONUS_PAISE, DEFAULT_REFERRAL_QUALIFYING_DAYS } from "@/lib/recruitment-values";
 import {
   actorOf,
   audited,
-  changeStatement,
   recordCreated,
   recordDeleted,
   subjectOf,
@@ -19,16 +19,18 @@ import {
   rcCandidate,
   rcApplication,
   rcInterview,
+  rcScorecardTemplate,
+  rcScorecard,
+  rcOffer,
+  rcReferral,
   omPosition,
   paEmployee,
-  OPEN_ENDED,
   EMPLOYMENT_TYPES,
   WORK_MODES,
   RECOMMENDATIONS,
   now,
 } from "@/db/schema";
-import { toPaise } from "@/lib/money";
-import { startOnboarding } from "@/lib/services/checklist";
+import { toPaise, formatINR } from "@/lib/money";
 import { documentSummary } from "@/lib/document-kinds";
 import {
   storeDocument,
@@ -38,11 +40,17 @@ import {
 } from "@/lib/storage";
 import { appDocument } from "@/db/schema";
 import { todayInIndia } from "@/lib/dates";
+import { previewCtc } from "@/lib/engines/payroll";
 import {
   announceInterview,
   applicationStatements,
+  duplicateCandidate,
   employeeName,
   interviewClash,
+  offerLetterText,
+  offerSentStatements,
+  offerToken,
+  performConversion,
   stageStatements,
 } from "@/lib/recruitment";
 
@@ -305,10 +313,10 @@ export async function saveCandidate(
   });
   if (!parsed.success) return fail(firstIssue(parsed.error));
 
-  // One record per person: the same email is the same candidate.
-  const sameEmail = await db.query.rcCandidate.findFirst({ where: eq(rcCandidate.email, parsed.data.email) });
-  if (sameEmail && sameEmail.code !== original) {
-    return fail(`${sameEmail.fullName} (${sameEmail.code}) already has that email address.`);
+  // One record per person: the same email or phone is the same candidate.
+  const dup = await duplicateCandidate(parsed.data.email, parsed.data.phone);
+  if (dup && dup.code !== original) {
+    return fail(`${dup.fullName} (${dup.code}) already has that email address or phone number.`);
   }
 
   if (original) {
@@ -553,20 +561,62 @@ export async function selectCandidate(
   return OK;
 }
 
-/** An approved candidate is offered the role, at a monthly salary. */
+/**
+ * An approved candidate is offered the role: a CTC breakdown by structure,
+ * built into a letter and sent to the candidate's own link. A CTC above the
+ * requisition's budgeted band needs `recruitment.hire` — the same, more
+ * senior permission that turns an offer into an employee — rather than a
+ * full approval chain for a check this narrow.
+ */
 export async function makeOffer(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const actor = actorOf(await requirePermission("recruitment.manage"));
+  const session = await requirePermission("recruitment.manage");
+  const actor = actorOf(session);
   const application = await applicationFor(num(form.get("id")));
   if (!application) return fail("That application no longer exists.");
   if (application.rejectedAt) return fail("That application was rejected.");
   if (application.stage !== "Selected") return fail("Approve the candidate before making an offer.");
-  const salary = rupeesToPaise(form.get("offeredSalary"));
-  if (salary === null || !Number.isFinite(salary) || salary <= 0) return fail("Enter the monthly salary offered.");
 
-  await move(actor, application, "Offered", { stage: "Offered", offered_salary_paise: salary, offered_at: now() }, opt(form.get("note")));
+  const annualCtc = rupeesToPaise(form.get("annualCtc"));
+  if (annualCtc === null || !Number.isFinite(annualCtc) || annualCtc <= 0) return fail("Enter the annual CTC offered.");
+  const structureCode = str(form.get("structureCode"));
+  if (!structureCode) return fail("Choose a salary structure.");
+  const joiningDate = str(form.get("joiningDate"));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(joiningDate)) return fail("Enter a joining date.");
+  const expiryDate = str(form.get("expiryDate"));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate) || expiryDate < todayInIndia()) return fail("Enter an expiry date, today or later.");
+
+  const [requisition, candidate] = await Promise.all([
+    db.query.rcRequisition.findFirst({ where: eq(rcRequisition.id, application.requisitionId) }),
+    db.query.rcCandidate.findFirst({ where: eq(rcCandidate.id, application.candidateId) }),
+  ]);
+  if (!requisition || !candidate) return fail("The requisition or candidate is missing.");
+  const monthlyCeiling = requisition.budgetMaxPaise;
+  if (monthlyCeiling && Math.round(annualCtc / 12) > monthlyCeiling && !can(session, "recruitment.hire")) {
+    return fail(`${formatINR(annualCtc)} a year is above this role's budgeted band (up to ${formatINR(monthlyCeiling)} a month). Ask someone who can hire to send it.`);
+  }
+
+  const breakdown = await previewCtc(structureCode, annualCtc, joiningDate);
+  const roleTitle = requisition.title || "the role";
+  const letterText = offerLetterText({ candidateName: candidate.fullName, roleTitle, ctcPaise: annualCtc, breakdown, joiningDate, expiryDate });
+  const token = offerToken();
+  const sentAt = now();
+
+  const [offer] = await db
+    .insert(rcOffer)
+    .values({ applicationId: application.id, ctcPaise: annualCtc, structureCode, joiningDate, expiryDate, letterText, status: "Sent", token, sentAt, createdBy: session.displayName })
+    .returning();
+  await recordCreated(actor, "rc_offer", [offer]);
+
+  const statements = [
+    ...stageStatements(actor, application, "Offered", { stage: "Offered", offered_salary_paise: breakdown.monthlyCtcPaise, offered_at: sentAt }, opt(form.get("note"))),
+    ...offerSentStatements({ offerId: offer.id, token, candidateEmail: candidate.email, roleTitle, ctcPaise: annualCtc, expiryDate }),
+  ];
+  await rawClient().batch(statements, "write");
+
+  revalidateRecruitment();
   return OK;
 }
 
@@ -660,9 +710,14 @@ export async function scheduleInterview(
     id = created.id;
   }
 
-  const candidate = await db.query.rcCandidate.findFirst({ where: eq(rcCandidate.id, application.candidateId) });
-  const notices = await announceInterview({ id, ...values }, candidate?.fullName ?? "a candidate");
-  if (notices.length > 0) await rawClient().batch(notices, "write");
+  const [candidate, requisition] = await Promise.all([
+    db.query.rcCandidate.findFirst({ where: eq(rcCandidate.id, application.candidateId) }),
+    db.query.rcRequisition.findFirst({ where: eq(rcRequisition.id, application.requisitionId) }),
+  ]);
+  if (candidate) {
+    const notices = await announceInterview({ id, ...values }, { name: candidate.fullName, email: candidate.email }, requisition?.title || "the role");
+    if (notices.length > 0) await rawClient().batch(notices, "write");
+  }
 
   revalidateRecruitment();
   return { ok: true, id };
@@ -704,6 +759,22 @@ export async function recordInterviewFeedback(
   });
   if (!parsed.success) return fail(firstIssue(parsed.error));
 
+  const requisition = await db.query.rcRequisition.findFirst({ where: eq(rcRequisition.id, application.requisitionId) });
+  const template = requisition
+    ? await db
+        .select({ criterion: rcScorecardTemplate.criterion })
+        .from(rcScorecardTemplate)
+        .where(and(eq(rcScorecardTemplate.jobCode, requisition.jobCode), eq(rcScorecardTemplate.isActive, true)))
+    : [];
+  const scorecard: { criterion: string; rating: number }[] = [];
+  for (const { criterion } of template) {
+    const rating = num(form.get(`sc:${criterion}`));
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return fail(`Rate "${criterion}" from 1 to 5 before saving: this role's scorecard is required.`);
+    }
+    scorecard.push({ criterion, rating });
+  }
+
   await audited(
     actor,
     { entity: "rc_interview", entityId: id, subjectEmployeeId: subjectOf },
@@ -714,6 +785,12 @@ export async function recordInterviewFeedback(
         .set({ ...parsed.data, status: "Completed", completedAt: now(), completedBy: session.displayName })
         .where(eq(rcInterview.id, id)),
   );
+
+  if (template.length > 0) {
+    await db.delete(rcScorecard).where(eq(rcScorecard.interviewId, id));
+    await db.insert(rcScorecard).values(scorecard.map((s) => ({ interviewId: id, criterion: s.criterion, rating: s.rating, createdAt: now() })));
+  }
+
   revalidateRecruitment();
   return OK;
 }
@@ -761,225 +838,84 @@ export async function deleteInterview(
 
 /* --------------------------------------------------- RC-05 hire conversion */
 
-/**
- * Turns an offered candidate into an employee.
- *
- * This is the integration point with Core HR, and it deliberately does exactly
- * what the hire action does — employee plus five infotypes, position marked
- * filled — in one transaction. Two ways of creating an employee would drift
- * apart, and one of them would be the one missing an infotype payroll needs.
- */
+/** An offered candidate becomes an employee, through the screen HR uses directly. */
 export async function convertToEmployee(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const session = await requirePermission("recruitment.hire");
-  const actor = actorOf(session);
-
   const applicationId = num(form.get("applicationId"));
   const hireDate = str(form.get("hireDate"));
   const salary = num(form.get("salary"));
-
   if (!/^\d{4}-\d{2}-\d{2}$/.test(hireDate)) return fail("Enter a hire date.");
   if (!Number.isFinite(salary) || salary <= 0) return fail("Enter the offered salary.");
 
-  const application = await db.query.rcApplication.findFirst({
-    where: eq(rcApplication.id, applicationId),
+  const result = await performConversion({ applicationId, hireDate, salary, actorName: session.username, actor: actorOf(session) });
+  if (result.ok) revalidateRecruitment();
+  return result.ok ? result : fail(result.error);
+}
+
+/* -------------------------------------------------------- phase 22: referrals */
+
+const ReferralInput = z.object({
+  fullName: z.string().min(1, "Enter their name.").max(120),
+  email: z.email("Enter a valid email address."),
+  phone: z.string().max(40).nullable(),
+  requisitionId: z.number().int().positive().nullable(),
+});
+
+/** Any employee refers a candidate for an open role, earning a bonus once the hire sticks. */
+export async function referCandidate(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("self.profile");
+  if (session.employeeId === null) return fail("Only an employee can refer someone.");
+  const actor = actorOf(session);
+
+  const parsed = ReferralInput.safeParse({
+    fullName: str(form.get("fullName")),
+    email: str(form.get("email")).toLowerCase(),
+    phone: opt(form.get("phone")),
+    requisitionId: optInt(form.get("requisitionId")),
   });
-  if (!application) return fail("That application no longer exists.");
-  if (application.stage !== "Offered" || application.rejectedAt) {
-    return fail("Only a candidate at the offered stage can be converted.");
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+  const v = parsed.data;
+
+  const dup = await duplicateCandidate(v.email, v.phone);
+  let candidateId: number;
+  if (dup) {
+    candidateId = dup.id;
+  } else {
+    const [last] = await db.select({ code: rcCandidate.code }).from(rcCandidate).orderBy(desc(rcCandidate.id)).limit(1);
+    const next = last ? Number(last.code.replace(/\D/g, "")) + 1 : 1;
+    const [candidate] = await db
+      .insert(rcCandidate)
+      .values({ code: `CAND${String(next).padStart(4, "0")}`, fullName: v.fullName, email: v.email, phone: v.phone, source: "Referral", createdAt: now() })
+      .returning();
+    await recordCreated(actor, "rc_candidate", [candidate]);
+    candidateId = candidate.id;
   }
 
-  const [requisition, candidate] = await Promise.all([
-    db.query.rcRequisition.findFirst({
-      where: eq(rcRequisition.id, application.requisitionId),
-    }),
-    db.query.rcCandidate.findFirst({ where: eq(rcCandidate.id, application.candidateId) }),
-  ]);
-  if (!requisition || !candidate) return fail("The requisition or candidate is missing.");
+  const existingReferral = await db.query.rcReferral.findFirst({ where: eq(rcReferral.candidateId, candidateId) });
+  if (existingReferral) return fail(`${dup ? dup.fullName : v.fullName} has already been referred.`);
 
-  const position = await db.query.omPosition.findFirst({
-    where: eq(omPosition.code, requisition.positionCode),
-  });
-  if (!position) return fail("That position no longer exists.");
-  if (!position.isVacant) {
-    return fail(`${position.code} has already been filled.`);
+  if (v.requisitionId) {
+    const requisition = await db.query.rcRequisition.findFirst({ where: eq(rcRequisition.id, v.requisitionId) });
+    if (!requisition || requisition.status !== "Open") return fail("That role is no longer open.");
+    await applicationStatements(actor, { candidateId, requisitionId: v.requisitionId, channel: "Added by HR", coverNote: `Referred by ${session.displayName}`, today: todayInIndia() });
   }
 
-  // Ordered by the number itself, not the text — see people.ts's hire().
-  const last = (
-    await rawClient().execute(
-      "SELECT employee_number AS n FROM pa_employee WHERE employee_number LIKE 'EMP%' ORDER BY CAST(SUBSTR(employee_number, 4) AS INTEGER) DESC LIMIT 1",
-    )
-  ).rows[0];
-  const employeeNumber = `EMP${(last ? Number(String(last.n).replace(/\D/g, "")) : 1000) + 1}`;
-
-  // Split the candidate's name the way the hire form would have.
-  const parts = candidate.fullName.trim().split(/\s+/);
-  const firstName = parts[0] ?? candidate.fullName;
-  const lastName = parts.length > 1 ? parts.slice(1).join(" ") : "—";
-
-  const createdAt = now();
-  const client = rawClient();
-  const tx = await client.transaction("write");
-  let employeeId: number;
-
-  try {
-    const inserted = await tx.execute({
-      sql: `INSERT INTO pa_employee (employee_number, hire_date, employment_status, created_at)
-            VALUES (?, ?, 'Active', ?) RETURNING id`,
-      args: [employeeNumber, hireDate, createdAt],
-    });
-    employeeId = inserted.rows[0].id as number;
-    const common = [employeeId, hireDate, OPEN_ENDED, 1, session.username, createdAt];
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0000_action
-            (employee_id, valid_from, valid_to, seq, created_by, created_at, action_type, reason)
-            VALUES (?,?,?,?,?,?,?,?)`,
-      args: [...common, "Hire", `Recruitment ${requisition.code}`],
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0001_org_assignment
-            (employee_id, valid_from, valid_to, seq, created_by, created_at,
-             company_code, area_code, sub_area_code, org_unit_code, position_code, cost_center)
-            VALUES (?,?,?,?,?,?,
-             (SELECT company_code FROM om_org_unit WHERE code = ?),
-             (SELECT area_code FROM om_org_unit WHERE code = ?),
-             NULL, ?, ?, NULL)`,
-      args: [
-        ...common,
-        requisition.orgUnitCode,
-        requisition.orgUnitCode,
-        requisition.orgUnitCode,
-        requisition.positionCode,
-      ],
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0002_personal_data
-            (employee_id, valid_from, valid_to, seq, created_by, created_at,
-             first_name, last_name, date_of_birth, gender, marital_status, nationality)
-            VALUES (?,?,?,?,?,?,?,?,NULL,NULL,NULL,NULL)`,
-      args: [...common, firstName, lastName],
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0007_planned_working_time
-            (employee_id, valid_from, valid_to, seq, created_by, created_at,
-             work_schedule_code, weekly_hours, employment_percent)
-            VALUES (?,?,?,?,?,?, 'WS01', 40, 100)`,
-      args: common,
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0008_basic_pay
-            (employee_id, valid_from, valid_to, seq, created_by, created_at,
-             pay_scale_type, pay_scale_area, pay_scale_group, amount_paise, currency)
-            VALUES (?,?,?,?,?,?, 'Monthly salaried', NULL, NULL, ?, 'INR')`,
-      args: [...common, toPaise(salary)],
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0105_communication
-            (employee_id, valid_from, valid_to, seq, created_by, created_at, comm_type, value)
-            VALUES (?,?,?,?,?,?, 'Email (official)', ?)`,
-      args: [...common, candidate.email],
-    });
-
-    await tx.execute({
-      sql: "UPDATE om_position SET is_vacant = 0 WHERE code = ?",
-      args: [requisition.positionCode],
-    });
-
-    await tx.execute({
-      sql: "UPDATE rc_application SET stage = 'Hired' WHERE id = ?",
-      args: [applicationId],
-    });
-
-    const logged = [
-      changeStatement(actor, {
-        entity: "pa_employee",
-        entityId: employeeId,
-        subjectEmployeeId: employeeId,
-        action: "create",
-        after: {
-          employeeNumber,
-          actionType: "Hire",
-          hireDate,
-          firstName,
-          lastName,
-          orgUnitCode: requisition.orgUnitCode,
-          positionCode: requisition.positionCode,
-          amountPaise: toPaise(salary),
-        },
-        reason: `Recruitment ${requisition.code}, application ${applicationId}`,
-      }),
-      changeStatement(actor, {
-        entity: "om_position",
-        entityId: requisition.positionCode,
-        action: "update",
-        before: { isVacant: true },
-        after: { isVacant: false },
-        reason: `Filled by ${employeeNumber}`,
-      }),
-      changeStatement(actor, {
-        entity: "rc_application",
-        entityId: applicationId,
-        action: "update",
-        before: { stage: "Offered" },
-        after: { stage: "Hired" },
-      }),
-    ];
-    for (const st of logged) if (st) await tx.execute(st);
-
-    await tx.execute({
-      sql: `INSERT INTO rc_hire_conversion
-            (application_id, employee_id, hire_date, offered_salary_paise, converted_by, converted_at)
-            VALUES (?,?,?,?,?,?)`,
-      args: [applicationId, employeeId, hireDate, toPaise(salary), session.username, createdAt],
-    });
-
-    await tx.execute({
-      sql: `INSERT INTO rc_application_stage_history
-            (application_id, from_stage, to_stage, changed_by, changed_at, note)
-            VALUES (?, 'Offered', 'Hired', ?, ?, ?)`,
-      args: [applicationId, session.username, createdAt, `Became ${employeeNumber}`],
-    });
-
-    // Close the requisition once its openings are filled, and take it off
-    // the careers page.
-    const hiredCount = await tx.execute({
-      sql: `SELECT COUNT(*) AS n FROM rc_application
-            WHERE requisition_id = ? AND stage = 'Hired'`,
-      args: [requisition.id],
-    });
-    if (Number(hiredCount.rows[0].n) >= requisition.openings) {
-      await tx.execute({
-        sql: "UPDATE rc_requisition SET status = 'Closed', is_published = 0, updated_at = ? WHERE id = ?",
-        args: [createdAt, requisition.id],
-      });
-    }
-
-    await startOnboarding(tx, actor, {
-      employeeId,
-      positionCode: requisition.positionCode,
-      effectiveDate: hireDate,
-      createdBy: session.username,
-    });
-
-    await tx.commit();
-  } catch (err) {
-    await tx.rollback();
-    return fail(
-      err instanceof Error
-        ? `The conversion could not be completed: ${err.message}`
-        : "The conversion could not be completed.",
-    );
-  }
+  const [referral] = await db
+    .insert(rcReferral)
+    .values({
+      referrerEmployeeId: session.employeeId,
+      candidateId,
+      bonusPaise: DEFAULT_REFERRAL_BONUS_PAISE,
+      qualifyingDays: DEFAULT_REFERRAL_QUALIFYING_DAYS,
+      status: "Pending",
+      createdAt: now(),
+    })
+    .returning();
+  await recordCreated(actor, "rc_referral", [referral]);
 
   revalidateRecruitment();
-  return { ok: true, employeeId };
+  return OK;
 }

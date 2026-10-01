@@ -89,6 +89,14 @@ export const NOTIFICATION_KINDS = {
     label: "My final settlement",
     description: "When your full and final settlement is paid.",
   },
+  "offer.responded": {
+    label: "Offers accepted or declined",
+    description: "When a candidate accepts or declines their offer. Only for people who run recruitment.",
+  },
+  "referral.paid": {
+    label: "My referral bonus",
+    description: "When a bonus for someone you referred is paid.",
+  },
 } as const;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

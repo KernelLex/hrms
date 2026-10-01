@@ -68,7 +68,9 @@ export const NAV: NavGroup[] = [
     label: "Talent",
     items: [
       { label: "Recruitment", href: "/recruitment", icon: "UserPlus", anyOf: ["recruitment.manage"] },
+      { label: "Recruitment analytics", href: "/recruitment/analytics", icon: "ChartBar", anyOf: ["recruitment.manage"] },
       { label: "My interviews", href: "/recruitment/my-interviews", icon: "CalendarClock", anyOf: ["recruitment.interview"] },
+      { label: "Refer someone", href: "/refer", icon: "UserPlus", anyOf: ["self.profile"] },
       { label: "Performance", href: "/performance", icon: "Target", anyOf: ["performance.manage", "performance.rate_any", "performance.rate_team"] },
       { label: "My appraisal", href: "/performance/mine", icon: "ClipboardCheck", anyOf: ["self.appraisal"] },
     ],

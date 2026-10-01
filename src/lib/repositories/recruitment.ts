@@ -307,12 +307,13 @@ export type ApplicationDetail = {
   history: { from: string | null; to: string; by: string; at: string; note: string | null }[];
   employeeId: number | null;
   otherApplications: { id: number; roleTitle: string; stage: string; rejected: boolean }[];
+  offer: { status: string; ctcPaise: number; joiningDate: string; expiryDate: string; sentAt: string; respondedAt: string | null } | null;
 };
 
 export async function getApplication(id: number): Promise<ApplicationDetail | null> {
   const [a] = await rows("SELECT * FROM rc_application WHERE id = ?", [id]);
   if (!a) return null;
-  const [[c], [req], interviews, history, [resume], [hire], others] = await Promise.all([
+  const [[c], [req], interviews, history, [resume], [hire], others, [offer]] = await Promise.all([
     rows("SELECT * FROM rc_candidate WHERE id = ?", [Number(a.candidate_id)]),
     rows(`${REQUISITION_SELECT} WHERE r.id = ?2`, [today(), Number(a.requisition_id)]),
     rows("SELECT * FROM rc_interview WHERE application_id = ? ORDER BY scheduled_date, scheduled_time, id", [id]),
@@ -328,6 +329,7 @@ export async function getApplication(id: number): Promise<ApplicationDetail | nu
        WHERE a.candidate_id = ? AND a.id <> ? ORDER BY a.applied_date DESC`,
       [Number(a.candidate_id), id],
     ),
+    rows("SELECT * FROM rc_offer WHERE application_id = ? ORDER BY id DESC LIMIT 1", [id]),
   ]);
   return {
     id,
@@ -346,6 +348,9 @@ export async function getApplication(id: number): Promise<ApplicationDetail | nu
     history: history.map((h) => ({ from: s(h.from_stage), to: String(h.to_stage), by: String(h.changed_by), at: String(h.changed_at), note: s(h.note) })),
     employeeId: hire ? Number(hire.employee_id) : null,
     otherApplications: others.map((o) => ({ id: Number(o.id), roleTitle: String(o.role_title), stage: String(o.stage), rejected: o.rejected_at !== null })),
+    offer: offer
+      ? { status: String(offer.status), ctcPaise: Number(offer.ctc_paise), joiningDate: String(offer.joining_date), expiryDate: String(offer.expiry_date), sentAt: String(offer.sent_at), respondedAt: s(offer.responded_at) }
+      : null,
   };
 }
 
@@ -388,23 +393,33 @@ export async function listInterviews(when: "upcoming" | "past", employeeId?: num
   return (await rows(sql, args)).map(interviewRowOf);
 }
 
+export type ScorecardCriterion = { criterion: string; weight: number; rating: number | null };
+
 export type InterviewDetail = InterviewRow & {
   candidate: Candidate;
   resume: { id: number; fileName: string } | null;
   requisition: Requisition;
   coverNote: string | null;
+  scorecard: ScorecardCriterion[];
 };
 
 export async function getInterview(id: number): Promise<InterviewDetail | null> {
   const [i] = await rows(`${INTERVIEW_SELECT} WHERE i.id = ?`, [id]);
   if (!i) return null;
   const [a] = await rows("SELECT candidate_id, requisition_id, cover_note FROM rc_application WHERE id = ?", [Number(i.application_id)]);
-  const [[c], [req], [resume]] = await Promise.all([
+  const [[c], [req], [resume], scorecard] = await Promise.all([
     rows("SELECT * FROM rc_candidate WHERE id = ?", [Number(a.candidate_id)]),
     rows(`${REQUISITION_SELECT} WHERE r.id = ?2`, [today(), Number(a.requisition_id)]),
     rows(
       "SELECT id, file_name FROM app_document WHERE owner_type = 'candidate' AND owner_id = ? AND kind = 'Resume' ORDER BY id DESC LIMIT 1",
       [Number(a.candidate_id)],
+    ),
+    rows(
+      `SELECT t.criterion, t.weight, sc.rating FROM rc_scorecard_template t
+       LEFT JOIN rc_scorecard sc ON sc.interview_id = ? AND sc.criterion = t.criterion
+       WHERE t.job_code = (SELECT job_code FROM rc_requisition WHERE id = ?) AND t.is_active = 1
+       ORDER BY t.sort_order, t.criterion`,
+      [id, Number(a.requisition_id)],
     ),
   ]);
   return {
@@ -413,6 +428,7 @@ export async function getInterview(id: number): Promise<InterviewDetail | null> 
     resume: resume ? { id: Number(resume.id), fileName: String(resume.file_name) } : null,
     requisition: requisitionOf(req),
     coverNote: s(a.cover_note),
+    scorecard: scorecard.map((r) => ({ criterion: String(r.criterion), weight: Number(r.weight), rating: r.rating === null ? null : Number(r.rating) })),
   };
 }
 
@@ -426,4 +442,129 @@ export async function employeeChoices(): Promise<{ id: number; label: string }[]
     [today()],
   );
   return found.map((e) => ({ id: Number(e.id), label: `${s(e.name) || String(e.employee_number)} (${String(e.employee_number)})` }));
+}
+
+/* ------------------------------------------------------------------ offers */
+
+export type OfferByToken = {
+  id: number;
+  candidateName: string;
+  roleTitle: string;
+  ctcPaise: number;
+  letterText: string;
+  joiningDate: string;
+  expiryDate: string;
+  status: string;
+};
+
+export type Referral = {
+  id: number;
+  candidateName: string;
+  roleTitle: string | null;
+  status: string;
+  bonusPaise: number;
+  createdAt: string;
+  paidAt: string | null;
+};
+
+/** One employee's own referrals, newest first. */
+export async function referralsByEmployee(employeeId: number): Promise<Referral[]> {
+  const found = await rows(
+    `SELECT f.id, f.status, f.bonus_paise, f.created_at, f.paid_at, c.full_name,
+            (SELECT COALESCE(NULLIF(r.title, ''), pos.title) FROM rc_application a
+             JOIN rc_requisition r ON r.id = a.requisition_id JOIN om_position pos ON pos.code = r.position_code
+             WHERE a.candidate_id = f.candidate_id ORDER BY a.applied_date DESC LIMIT 1) AS role_title
+     FROM rc_referral f JOIN rc_candidate c ON c.id = f.candidate_id
+     WHERE f.referrer_employee_id = ? ORDER BY f.id DESC`,
+    [employeeId],
+  );
+  return found.map((f) => ({
+    id: Number(f.id),
+    candidateName: String(f.full_name),
+    roleTitle: s(f.role_title),
+    status: String(f.status),
+    bonusPaise: Number(f.bonus_paise),
+    createdAt: String(f.created_at),
+    paidAt: s(f.paid_at),
+  }));
+}
+
+/** The one thing the candidate's own link can read: their offer, nothing else. */
+export async function getOfferByToken(token: string): Promise<OfferByToken | null> {
+  const [o] = await rows(
+    `SELECT o.*, c.full_name, COALESCE(NULLIF(r.title, ''), pos.title) AS role_title
+     FROM rc_offer o
+     JOIN rc_application a ON a.id = o.application_id
+     JOIN rc_candidate c ON c.id = a.candidate_id
+     JOIN rc_requisition r ON r.id = a.requisition_id
+     JOIN om_position pos ON pos.code = r.position_code
+     WHERE o.token = ?`,
+    [token],
+  );
+  if (!o) return null;
+  return {
+    id: Number(o.id),
+    candidateName: String(o.full_name),
+    roleTitle: String(o.role_title),
+    ctcPaise: Number(o.ctc_paise),
+    letterText: String(o.letter_text),
+    joiningDate: String(o.joining_date),
+    expiryDate: String(o.expiry_date),
+    status: String(o.status),
+  };
+}
+
+/* --------------------------------------------------------------- analytics */
+
+export type Bar = { label: string; value: number };
+
+export type RecruitmentAnalytics = {
+  /** Average days from applying to being hired. */
+  timeToHireDays: number | null;
+  /** Average days spent in each stage, before moving to the next or being decided. */
+  timeInStage: Bar[];
+  /** Applications and hires by source. */
+  sourceEffectiveness: { source: string; applications: number; hires: number }[];
+  /** Offers by how the candidate (or time) responded. */
+  offersByStatus: Bar[];
+  /** Rejections by the stage reached. */
+  dropOffByStage: Bar[];
+};
+
+/**
+ * Time to hire, time in stage, source effectiveness, offer acceptance and
+ * drop-off — each a plain count or average over every application on
+ * record, for the bar lists on the analytics screen.
+ */
+export async function recruitmentAnalytics(): Promise<RecruitmentAnalytics> {
+  const [[hire], stages, sources, offers, dropOff] = await Promise.all([
+    rows(
+      `SELECT AVG(julianday(h.changed_at) - julianday(a.applied_date)) AS avg_days
+       FROM rc_application a JOIN rc_application_stage_history h ON h.application_id = a.id AND h.to_stage = 'Hired'
+       WHERE a.stage = 'Hired'`,
+    ),
+    rows(
+      `SELECT h.to_stage AS stage, AVG(julianday(nxt.changed_at) - julianday(h.changed_at)) AS avg_days
+       FROM rc_application_stage_history h
+       JOIN rc_application_stage_history nxt
+         ON nxt.application_id = h.application_id
+        AND nxt.id = (SELECT MIN(id) FROM rc_application_stage_history WHERE application_id = h.application_id AND id > h.id)
+       WHERE h.to_stage <> 'Rejected'
+       GROUP BY h.to_stage`,
+    ),
+    rows(
+      `SELECT c.source, COUNT(*) AS applications, SUM(a.stage = 'Hired') AS hires
+       FROM rc_application a JOIN rc_candidate c ON c.id = a.candidate_id
+       GROUP BY c.source ORDER BY applications DESC`,
+    ),
+    rows("SELECT status, COUNT(*) AS n FROM rc_offer GROUP BY status"),
+    rows("SELECT stage, COUNT(*) AS n FROM rc_application WHERE rejected_at IS NOT NULL GROUP BY stage"),
+  ]);
+  return {
+    timeToHireDays: hire && hire.avg_days !== null ? Math.round(Number(hire.avg_days) * 10) / 10 : null,
+    timeInStage: stages.map((r) => ({ label: String(r.stage), value: Math.round(Number(r.avg_days) * 10) / 10 })),
+    sourceEffectiveness: sources.map((r) => ({ source: String(r.source), applications: Number(r.applications), hires: Number(r.hires ?? 0) })),
+    offersByStatus: offers.map((r) => ({ label: String(r.status), value: Number(r.n) })),
+    dropOffByStage: dropOff.map((r) => ({ label: String(r.stage), value: Number(r.n) })),
+  };
 }

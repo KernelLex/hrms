@@ -454,26 +454,46 @@ export function DecisionActions({ id, blocker }: { id: number; blocker: string |
   );
 }
 
-/** An approved candidate's offer: the monthly salary. */
-export function OfferForm({ id, hint }: { id: number; hint: string }) {
-  const [state, action, pending] = useAction(makeOffer, "Offer recorded");
+/** An approved candidate's offer: the CTC breakdown, joining date and expiry. Builds the letter and sends it to the candidate's own link. */
+export function OfferForm({ id, hint, structures, today }: { id: number; hint: string; structures: { code: string; name: string }[]; today: string }) {
+  const [state, action, pending] = useAction(makeOffer, "Offer sent to the candidate");
   const formId = React.useId();
+  const expiry = new Date(`${today}T00:00:00Z`);
+  expiry.setUTCDate(expiry.getUTCDate() + 7);
+  const defaultExpiry = expiry.toISOString().slice(0, 10);
   return (
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name="id" value={id} />
       <FormGrid>
-        <Field label="Monthly salary offered" htmlFor={`${formId}-salary`} required hint={hint}>
-          <Input id={`${formId}-salary`} name="offeredSalary" inputMode="decimal" required placeholder="72000" />
+        <Field label="Annual CTC" htmlFor={`${formId}-ctc`} required hint={hint}>
+          <Input id={`${formId}-ctc`} name="annualCtc" inputMode="decimal" required placeholder="864000" />
         </Field>
-        <Field label="Note" htmlFor={`${formId}-note`}>
-          <Input id={`${formId}-note`} name="note" maxLength={500} placeholder="Joining in four weeks" />
+        <Field label="Salary structure" htmlFor={`${formId}-structure`} required>
+          <Select id={`${formId}-structure`} name="structureCode" required defaultValue={structures[0]?.code ?? ""}>
+            {structures.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
         </Field>
+        <Field label="Joining date" htmlFor={`${formId}-joining`} required>
+          <DateInput id={`${formId}-joining`} name="joiningDate" required min={today} defaultValue={today} />
+        </Field>
+        <Field label="Offer open until" htmlFor={`${formId}-expiry`} required>
+          <DateInput id={`${formId}-expiry`} name="expiryDate" required min={today} defaultValue={defaultExpiry} />
+        </Field>
+        <FormFull>
+          <Field label="Note" htmlFor={`${formId}-note`}>
+            <Input id={`${formId}-note`} name="note" maxLength={500} placeholder="Joining in four weeks" />
+          </Field>
+        </FormFull>
       </FormGrid>
       {state.error ? <FormError>{state.error}</FormError> : null}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" variant="primary" disabled={pending}>
           <Spinner on={pending} />
-          Record offer
+          Send offer
         </Button>
         <RejectButton
           id={id}
@@ -700,31 +720,38 @@ function PillChoice({
   );
 }
 
-/** How a round went: a rating, a recommendation and notes. */
+const RATING_OPTIONS = [
+  { value: "1", label: "1 · Poor" },
+  { value: "2", label: "2 · Weak" },
+  { value: "3", label: "3 · Good" },
+  { value: "4", label: "4 · Strong" },
+  { value: "5", label: "5 · Exceptional" },
+];
+
+/** How a round went: the role's scorecard if it has one, a rating, a recommendation and notes. */
 export function FeedbackForm({
   id,
   existing,
+  scorecard = [],
 }: {
   id: number;
   existing: { rating: number | null; recommendation: string | null; feedback: string | null };
+  scorecard?: { criterion: string; rating: number | null }[];
 }) {
   const [state, action, pending] = useAction(recordInterviewFeedback, "Notes saved");
   const formId = React.useId();
   return (
     <form action={action} className="flex flex-col gap-5">
       <input type="hidden" name="id" value={id} />
-      <PillChoice
-        name="rating"
-        legend="Rating"
-        defaultValue={existing.rating ? String(existing.rating) : ""}
-        options={[
-          { value: "1", label: "1 · Poor" },
-          { value: "2", label: "2 · Weak" },
-          { value: "3", label: "3 · Good" },
-          { value: "4", label: "4 · Strong" },
-          { value: "5", label: "5 · Exceptional" },
-        ]}
-      />
+      {scorecard.length > 0 ? (
+        <fieldset className="flex flex-col gap-4 rounded-xl bg-canvas p-4">
+          <legend className="px-0.5 text-[13px] font-semibold text-ink">Scorecard</legend>
+          {scorecard.map((c) => (
+            <PillChoice key={c.criterion} name={`sc:${c.criterion}`} legend={c.criterion} defaultValue={c.rating ? String(c.rating) : ""} options={RATING_OPTIONS} />
+          ))}
+        </fieldset>
+      ) : null}
+      <PillChoice name="rating" legend="Rating" defaultValue={existing.rating ? String(existing.rating) : ""} options={RATING_OPTIONS} />
       <PillChoice
         name="recommendation"
         legend="Recommendation"

@@ -84,8 +84,10 @@ async function openRequisition(extra: Record<string, string> = {}): Promise<stri
 
 const pdf = (name = "resume.pdf") => new File([new TextEncoder().encode("%PDF-1.4\n% a resume\n%%EOF")], name, { type: "application/pdf" });
 
+// A phone of its own per call, the way two different candidates would have:
+// duplicates are now also caught by phone, so sharing one would merge them.
 function applicationForm(code: string, email: string, extra: Record<string, string | File> = {}) {
-  const f = form({ code, fullName: "Asha Nair", email, phone: "+91 98450 00000", experienceYears: 3, noticePeriodDays: 30, consent: "on", coverNote: "Hello." });
+  const f = form({ code, fullName: "Asha Nair", email, phone: `+91 98450 ${String(Math.floor(Math.random() * 100000)).padStart(5, "0")}`, experienceYears: 3, noticePeriodDays: 30, consent: "on", coverNote: "Hello." });
   f.set("resume", pdf());
   for (const [k, v] of Object.entries(extra)) f.set(k, v);
   return f;
@@ -259,10 +261,13 @@ describe("interview rounds", () => {
     expect((await notes(first.id!, 2)).error).toMatch(/decision/);
     actAs(null);
 
-    expect((await makeOffer({}, form({ id }))).error).toMatch(/salary/);
-    expect((await makeOffer({}, form({ id, offeredSalary: "72,000" }))).ok).toBe(true);
+    expect((await makeOffer({}, form({ id }))).error).toMatch(/CTC/);
+    expect((await makeOffer({}, form({ id, annualCtc: "864000", structureCode: "STANDARD", joiningDate: day(14), expiryDate: day(21) }))).ok).toBe(true);
     const offered = await one("SELECT stage, offered_salary_paise FROM rc_application WHERE id = ?", [id]);
     expect(offered).toMatchObject({ stage: "Offered", offered_salary_paise: 7_200_000 });
+    const offerRow = await one("SELECT status, ctc_paise, token FROM rc_offer WHERE application_id = ?", [id]);
+    expect(offerRow).toMatchObject({ status: "Sent", ctc_paise: 86_400_000 });
+    expect(offerRow!.token).toBeTruthy();
 
     const hired = await convertToEmployee({}, form({ applicationId: id, hireDate: day(14), salary: 72000 }));
     expect(hired.employeeId).toBeGreaterThan(0);

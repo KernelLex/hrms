@@ -126,10 +126,12 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 ### Recruitment
 
 - **Requisitions** for vacant positions that describe the role: title, description, qualifications, skills, experience, place, and a salary budget only HR sees.
-- **A public careers site** where candidates apply for published roles with their resume — no account needed. Candidates get an acknowledgement, and recruiters are told.
+- **A public careers site** where candidates apply for published roles with their resume — no account needed. Candidates get an acknowledgement, and recruiters are told. Duplicates are caught by email or phone, so the same person is one record.
 - **Screening**: reject a profile, or take it to interview.
-- **Interview rounds**, as many as each candidate needs, each with its own interviewer, date, time and place. Interviewers are told, and record their own notes, rating and recommendation.
-- **Approve or reject** a candidate once the rounds are done, **make the offer**, and **turn them into an employee** without retyping anything.
+- **Interview rounds**, as many as each candidate needs, each with its own interviewer, date, time and place. Interviewers are told, record their own notes against the role's own **scorecard** where it has one, and can download a calendar invite; the candidate gets a confirmation email.
+- **Approve or reject** a candidate once the rounds are done, and **make the offer** — a CTC breakdown built into a letter, sent to a link only the candidate has. They accept or decline there, and accepting **turns them into an employee automatically**, with nothing retyped. An offer above a role's budgeted band needs a more senior sign-off.
+- **Refer someone** — any employee can refer a candidate for an open role, and earns a bonus once the hire is still with us after a qualifying period.
+- **Recruitment analytics**: time to hire, time in each stage, which sources turn into hires, offer acceptance, and where candidates are not taken forward.
 - One record per candidate, whichever roles they apply for, with their resume and history.
 
 ### Performance
@@ -171,7 +173,7 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 
 ## Coming next
 
-- **Recruitment**: interview slots and calendar invitations, scorecards, offer letters signed online, referrals, and hiring reports.
+- **Recruitment**: letting a candidate choose from several offered interview times, and signing the offer letter online.
 - **Performance and learning**: check-ins through the year, 360-degree feedback, improvement plans, and training with certificate expiry alerts.
 - **Reports**: trends over time, the value of untaken leave, and reports emailed on a schedule.
 - **Switching on**: email delivery, cloud storage for documents, and going live with your ERP.

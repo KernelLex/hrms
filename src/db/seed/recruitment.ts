@@ -281,7 +281,38 @@ export async function seedRecruitment(db: Db): Promise<string[]> {
     }
   }
 
+  // A scorecard for the role: every completed round rates against it.
+  await db
+    .insert(s.rcScorecardTemplate)
+    .values([
+      { jobCode: vacant.jobCode, criterion: "Statutory knowledge", weight: 2, sortOrder: 1, isActive: true },
+      { jobCode: vacant.jobCode, criterion: "Communication", weight: 1, sortOrder: 2, isActive: true },
+      { jobCode: vacant.jobCode, criterion: "Culture fit", weight: 1, sortOrder: 3, isActive: true },
+    ])
+    .onConflictDoNothing();
+  const criteria = await db.select().from(s.rcScorecardTemplate).where(eq(s.rcScorecardTemplate.jobCode, vacant.jobCode));
+  const completedRounds = await db
+    .select({ id: s.rcInterview.id, rating: s.rcInterview.rating })
+    .from(s.rcInterview)
+    .innerJoin(s.rcApplication, eq(s.rcApplication.id, s.rcInterview.applicationId))
+    .where(and(eq(s.rcApplication.requisitionId, requisitionId), eq(s.rcInterview.status, "Completed")));
+  for (const round of completedRounds) {
+    const have = await db.select().from(s.rcScorecard).where(eq(s.rcScorecard.interviewId, round.id));
+    if (have.length > 0) continue;
+    await db.insert(s.rcScorecard).values(criteria.map((c) => ({ interviewId: round.id, criterion: c.criterion, rating: round.rating ?? 4, createdAt })));
+  }
+
+  // Rohan's source is a referral; Ravi gets the credit, still waiting on the qualifying period.
+  const rohan = await db.query.rcCandidate.findFirst({ where: eq(s.rcCandidate.code, "CAND0002") });
+  if (rohan && ravi) {
+    await db
+      .insert(s.rcReferral)
+      .values({ referrerEmployeeId: ravi, candidateId: rohan.id, bonusPaise: 1_000_000, qualifyingDays: 90, status: "Pending", createdAt })
+      .onConflictDoNothing();
+  }
+
   notes.push(`  1 open requisition against ${vacant.code}, published on the careers page`);
   notes.push("  3 candidates — one new from the careers page, one mid-interviews, one offered");
+  notes.push("  a scorecard for the role, rated on every completed round, and one pending referral");
   return notes;
 }

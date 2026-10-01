@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { eq } from "drizzle-orm";
 import { CircleCheck, CircleX, FileText } from "lucide-react";
 import { can, requirePage } from "@/lib/access";
+import { db } from "@/lib/db";
+import { pySalaryStructure } from "@/db/schema";
 import { employeeChoices, getApplication, type Interview } from "@/lib/repositories/recruitment";
-import { INTERVIEW_LABEL, INTERVIEW_TONE, PIPELINE_STAGES, RECOMMENDATION_LABEL, STAGE_LABEL } from "@/lib/recruitment-values";
+import { INTERVIEW_LABEL, INTERVIEW_TONE, OFFER_LABEL, PIPELINE_STAGES, RECOMMENDATION_LABEL, STAGE_LABEL } from "@/lib/recruitment-values";
 import { formatDate, formatTime, formatTimestamp, todayInIndia } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import {
@@ -127,6 +130,7 @@ export default async function ApplicationPage(props: { params: Promise<{ id: str
   const a = await getApplication(Number((await props.params).id));
   if (!a) notFound();
   const employees = a.stage === "Interviewing" && !a.rejected ? await employeeChoices() : [];
+  const structures = a.stage === "Selected" ? await db.select({ code: pySalaryStructure.code, name: pySalaryStructure.name }).from(pySalaryStructure).where(eq(pySalaryStructure.isActive, true)) : [];
   const today = todayInIndia();
   const live = !a.rejected && a.stage === "Interviewing";
   const index = Math.max(0, PIPELINE_STAGES.indexOf(a.stage));
@@ -181,13 +185,17 @@ export default async function ApplicationPage(props: { params: Promise<{ id: str
                       {a.selected ? ` on ${formatDate(a.selected.at.slice(0, 10))}` : ""}
                       {a.selected?.note ? `: ${a.selected.note}` : "."}
                     </p>
-                    <OfferForm id={a.id} hint={budget ? `The budget for this role is ${budget} a month.` : "Per month, in rupees. Carried into the hire."} />
+                    <OfferForm id={a.id} hint={budget ? `The budget for this role is ${budget} a month.` : "A year, in rupees. Above the band needs recruitment.hire."} structures={structures} today={today} />
                   </>
                 ) : a.stage === "Offered" ? (
                   <>
-                    <h2 className="mb-1 text-[15px] font-semibold text-ink">Offered {a.offeredSalaryPaise ? `${formatINR(a.offeredSalaryPaise)} a month` : ""}</h2>
+                    <h2 className="mb-1 text-[15px] font-semibold text-ink">
+                      {a.offer ? `${formatINR(a.offer.ctcPaise)} a year — ${OFFER_LABEL[a.offer.status] ?? a.offer.status}` : a.offeredSalaryPaise ? `${formatINR(a.offeredSalaryPaise)} a month` : ""}
+                    </h2>
                     <p className="mb-4 text-[13px] text-muted">
-                      {a.offeredAt ? `On ${formatDate(a.offeredAt.slice(0, 10))}. ` : ""}When they accept, convert them into an employee; if they decline, close the application.
+                      {a.offer
+                        ? `Sent ${formatDate(a.offer.sentAt.slice(0, 10))}, open until ${formatDate(a.offer.expiryDate)}. Accepting through their link converts them into an employee automatically.`
+                        : "When they accept, convert them into an employee; if they decline, close the application."}
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {can(session, "recruitment.hire") ? (

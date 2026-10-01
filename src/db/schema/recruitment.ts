@@ -1,6 +1,7 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { omPosition, omOrgUnit, omJob } from "./org";
 import { paEmployee } from "./personnel";
+import { pySalaryStructure, pyAdditionalPayment } from "./payroll";
 
 /**
  * Recruitment.
@@ -199,3 +200,92 @@ export const rcHireConversion = sqliteTable("rc_hire_conversion", {
   convertedBy: text("converted_by").notNull(),
   convertedAt: text("converted_at").notNull(),
 });
+
+/* -------------------------------------------------- phase 22: scorecards */
+
+/** The criteria a job's interviewers rate against, each with a weight. */
+export const rcScorecardTemplate = sqliteTable(
+  "rc_scorecard_template",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    jobCode: text("job_code")
+      .notNull()
+      .references(() => omJob.code, { onDelete: "cascade" }),
+    criterion: text("criterion").notNull(),
+    weight: integer("weight").notNull().default(1),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  },
+  (t) => [uniqueIndex("ux_scorecard_template").on(t.jobCode, t.criterion)],
+);
+
+/** One round's rating against one criterion, alongside its overall rating and notes. */
+export const rcScorecard = sqliteTable(
+  "rc_scorecard",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    interviewId: integer("interview_id")
+      .notNull()
+      .references(() => rcInterview.id, { onDelete: "cascade" }),
+    criterion: text("criterion").notNull(),
+    rating: integer("rating").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("ux_scorecard_round").on(t.interviewId, t.criterion)],
+);
+
+/* ------------------------------------------------------- phase 22: offers */
+
+/** A formal offer: its CTC breakdown, letter and the candidate's own reply. */
+export const rcOffer = sqliteTable(
+  "rc_offer",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    applicationId: integer("application_id")
+      .notNull()
+      .references(() => rcApplication.id, { onDelete: "cascade" }),
+    ctcPaise: integer("ctc_paise").notNull(),
+    structureCode: text("structure_code")
+      .notNull()
+      .references(() => pySalaryStructure.code),
+    joiningDate: text("joining_date").notNull(),
+    expiryDate: text("expiry_date").notNull(),
+    /** The merged offer letter, as sent. */
+    letterText: text("letter_text").notNull(),
+    status: text("status").notNull().default("Sent"),
+    /** The candidate's link carries this; nothing else does. */
+    token: text("token").notNull().unique(),
+    sentAt: text("sent_at").notNull(),
+    respondedAt: text("responded_at"),
+    respondedIp: text("responded_ip"),
+    createdBy: text("created_by").notNull(),
+  },
+  (t) => [index("ix_offer_application").on(t.applicationId)],
+);
+export const OFFER_STATUS = ["Sent", "Accepted", "Declined", "Expired"] as const;
+export type OfferStatus = (typeof OFFER_STATUS)[number];
+
+/* ----------------------------------------------------- phase 22: referrals */
+
+/** An employee's referral of a candidate, and the bonus it earns once the hire sticks. */
+export const rcReferral = sqliteTable(
+  "rc_referral",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    referrerEmployeeId: integer("referrer_employee_id")
+      .notNull()
+      .references(() => paEmployee.id),
+    candidateId: integer("candidate_id")
+      .notNull()
+      .references(() => rcCandidate.id, { onDelete: "cascade" }),
+    bonusPaise: integer("bonus_paise").notNull(),
+    qualifyingDays: integer("qualifying_days").notNull().default(90),
+    status: text("status").notNull().default("Pending"),
+    paidAt: text("paid_at"),
+    additionalPaymentId: integer("additional_payment_id").references(() => pyAdditionalPayment.id, { onDelete: "set null" }),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("ux_referral_candidate").on(t.candidateId)],
+);
+export const REFERRAL_STATUS = ["Pending", "Paid", "Forfeited"] as const;
+export type ReferralStatus = (typeof REFERRAL_STATUS)[number];
