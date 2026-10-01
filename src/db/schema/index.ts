@@ -12,6 +12,7 @@ export * from "./tax";
 export * from "./tax-proofs";
 export * from "./recruitment";
 export * from "./performance";
+export * from "./reports";
 export * from "./app";
 export * from "./workflow";
 export * from "./integration";

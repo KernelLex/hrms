@@ -161,6 +161,9 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 ### Reports
 
 - Headcount, payroll cost and leave by department, and attrition.
+- A **24-month headcount trend**, built up automatically and kept current.
+- **Leave liability**: what every encashable leave balance would cost if cashed out today — the figure finance provides for.
+- **Schedule a report** to land in an inbox, as a spreadsheet, on the 1st of every month.
 - Exports to spreadsheet (CSV).
 
 ### Security and control
@@ -185,7 +188,6 @@ The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers
 ## Coming next
 
 - **Recruitment**: letting a candidate choose from several offered interview times, and signing the offer letter online.
-- **Reports**: trends over time, the value of untaken leave, and reports emailed on a schedule.
 - **Switching on**: email delivery, cloud storage for documents, and going live with your ERP.
 
 ---

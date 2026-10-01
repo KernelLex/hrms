@@ -1,9 +1,16 @@
 import { requirePage } from "@/lib/access";
 import { reports } from "@/lib/repositories/reports";
-import { formatLakh } from "@/lib/money";
+import { headcountTrend, REPORT_LABEL, REPORT_NAMES } from "@/lib/reports";
+import { leaveLiabilityAsOf } from "@/lib/engines/leave-policy";
+import { rawClient } from "@/lib/db";
+import { formatLakh, formatINR } from "@/lib/money";
 import { todayInIndia } from "@/lib/dates";
-import { Card, CardHeader, Figure, FigureRow, PageHeader } from "@/components/ui";
+import { Card, CardHeader, Figure, FigureRow, PageHeader, Table, Th, Tr, Td, EmptyState } from "@/components/ui";
 import { BarList } from "@/components/charts";
+import { ScheduleReportForm, DeleteScheduleButton } from "./form";
+
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const shortMonth = (monthKey: string) => `${MONTHS_SHORT[Number(monthKey.slice(5, 7)) - 1]} '${monthKey.slice(2, 4)}`;
 
 /**
  * HR reports: the numbers someone asks for in a meeting — how many people,
@@ -13,7 +20,13 @@ import { BarList } from "@/components/charts";
 export default async function ReportsPage() {
   await requirePage(["reports.view"], "/");
 
-  const r = await reports(todayInIndia());
+  const today = todayInIndia();
+  const [r, trend, liability, schedules] = await Promise.all([
+    reports(today),
+    headcountTrend(today),
+    leaveLiabilityAsOf(today),
+    rawClient().execute("SELECT * FROM rp_schedule ORDER BY id DESC"),
+  ]);
 
   return (
     <>
@@ -58,6 +71,58 @@ export default async function ReportsPage() {
             format={(n) => `${n} ${n === 1 ? "day" : "days"}`}
             empty="No absences recorded this year."
           />
+        </Card>
+
+        <Card>
+          <CardHeader title="Headcount trend" description="The last 24 months, as of each month's end." />
+          <BarList items={trend.map((t) => ({ label: shortMonth(t.month), value: t.value }))} empty="Builds up as the daily job runs." />
+        </Card>
+
+        <Card>
+          <CardHeader title="Leave liability" description="Every encashable balance, priced at its own daily rate — what finance would owe if it were all cashed out today." />
+          <div className="px-6 pb-5">
+            <div className="tabular text-[28px] leading-tight font-semibold tracking-[-0.02em] text-ink">{formatINR(liability.totalPaise)}</div>
+            <p className="mt-1 text-[13px] text-muted">across {liability.byEmployee.length} balance{liability.byEmployee.length === 1 ? "" : "s"}</p>
+          </div>
+        </Card>
+      </div>
+
+      <div className="mt-6">
+        <Card>
+          <CardHeader title="Scheduled reports" description="Rendered to CSV and emailed to their recipients on the 1st of every month." />
+          <div className="px-6 pb-5">
+            <ScheduleReportForm reportNames={[...REPORT_NAMES]} />
+          </div>
+          {schedules.rows.length === 0 ? (
+            <EmptyState title="No reports scheduled yet" />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Report</Th>
+                  <Th>Recipients</Th>
+                  <Th>Last sent</Th>
+                  <Th></Th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedules.rows.map((s) => (
+                  <Tr key={String(s.id)}>
+                    <Td>
+                      <span className="font-medium text-ink">{REPORT_LABEL[String(s.report_name)] ?? String(s.report_name)}</span>
+                    </Td>
+                    <Td>
+                      <span className="text-secondary">{String(s.recipients)}</span>
+                    </Td>
+                    <Td>{s.last_run_at ? <span className="tabular text-secondary">{String(s.last_run_at)}</span> : <span className="text-decor">&mdash;</span>}</Td>
+                    <Td>
+                      <DeleteScheduleButton id={Number(s.id)} />
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
         </Card>
       </div>
     </>

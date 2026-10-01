@@ -20,6 +20,7 @@ import * as org from "@/app/actions/org";
 import * as payroll from "@/app/actions/payroll";
 import * as performance from "@/app/actions/performance";
 import * as recruitment from "@/app/actions/recruitment";
+import * as reports from "@/app/actions/reports";
 import * as search from "@/app/actions/search";
 import * as statutory from "@/app/actions/statutory";
 import * as tax from "@/app/actions/tax";
@@ -68,6 +69,7 @@ const MODULES = {
   payroll,
   performance,
   recruitment,
+  reports,
   search,
   statutory,
   tax,
@@ -254,6 +256,10 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     deleteInterview: ["recruitment.manage"],
     convertToEmployee: ["recruitment.hire"],
     referCandidate: ["self.profile"],
+  },
+  reports: {
+    saveReportSchedule: ["reports.view"],
+    deleteReportSchedule: ["reports.view"],
   },
   search: { searchPeople: "signed-in" },
   tax: {

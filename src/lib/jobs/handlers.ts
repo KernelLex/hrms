@@ -12,6 +12,7 @@ import { runDailyAttendance } from "@/lib/engines/attendance";
 import { queueDueLoanInstallments } from "@/lib/engines/loans";
 import { processExitsDue } from "@/lib/services/exits";
 import { payQualifyingReferrals } from "@/lib/recruitment";
+import { backfillHeadcountSnapshots, runDueSchedules } from "@/lib/reports";
 import { enqueueJob, requeueJob } from "./queue";
 import { escalateOverdue, resolveApprovers } from "@/lib/workflow/engine";
 import { deliverWebhooks, nextWebhookRetry, wakeDeliveryStatement } from "@/lib/api/events";
@@ -367,6 +368,13 @@ export const HANDLERS: Record<string, JobHandler> = {
     await queueDueLoanInstallments(todayInIndia());
     await processExitsDue(todayInIndia());
     await payQualifyingReferrals(todayInIndia());
+
+    // Monthly: snapshots backfill themselves on their first run, and every
+    // schedule not yet sent this month goes out once, on the 1st.
+    await backfillHeadcountSnapshots(todayInIndia());
+    if (todayInIndia().slice(8, 10) === "01") {
+      await runDueSchedules(todayInIndia());
+    }
 
     // Approval steps that have waited longer than their flow allows.
     await escalateOverdue();

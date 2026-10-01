@@ -473,7 +473,7 @@ export async function expireCompOffs(tx: Executor, opts: { asOf: string; actor: 
 /* --------------------------------------------------------------- encashment */
 
 /** The pay-per-day rate encashment uses: current basic, over the month's working days. */
-async function dailyRatePaise(employeeId: number, asOf: string, calendarCode: string): Promise<number> {
+export async function dailyRatePaise(employeeId: number, asOf: string, calendarCode: string): Promise<number> {
   const basic = await rawClient().execute({
     sql: `SELECT amount_paise FROM pa_it0008_basic_pay WHERE employee_id = ? AND valid_from <= ? AND valid_to >= ? ORDER BY valid_from DESC LIMIT 1`,
     args: [employeeId, asOf, asOf],
@@ -566,4 +566,52 @@ export async function encashLeave(
   if (logged) await tx.execute(logged);
 
   return { ok: true, amountPaise };
+}
+
+/* ---------------------------------------------------------- leave liability */
+
+export type LeaveLiabilityRow = { employeeId: number; quotaTypeCode: string; units: number; amountPaise: number };
+
+/**
+ * What finance would owe if every encashable balance were cashed out today:
+ * each quota type's balance, capped at what its policy lets someone encash
+ * in a year and reduced by what they already have this year, at the same
+ * daily rate `encashLeave` would price it at — read only, nothing posted.
+ */
+export async function leaveLiabilityAsOf(asOfDate: string): Promise<{ totalPaise: number; byEmployee: LeaveLiabilityRow[] }> {
+  const year = Number(asOfDate.slice(0, 4));
+  const employees = await rawClient().execute({
+    sql: `SELECT id FROM pa_employee WHERE employment_status <> 'Terminated' AND hire_date <= ?`,
+    args: [asOfDate],
+  });
+
+  const byEmployee: LeaveLiabilityRow[] = [];
+  for (const e of employees.rows) {
+    const employeeId = Number(e.id);
+    const balances = await balancesFor(employeeId, year);
+    let rate: number | null = null;
+    for (const b of balances) {
+      const policy = await policyFor(employeeId, b.quotaTypeCode, asOfDate);
+      if (!policy || policy.encashableHalfDaysPerYear <= 0) continue;
+
+      const already = await rawClient().execute({
+        sql: `SELECT COALESCE(SUM(-half_days), 0) AS n FROM pt_quota_ledger
+              WHERE employee_id = ? AND quota_type_code = ? AND year = ? AND entry_type = 'Encashment'`,
+        args: [employeeId, b.quotaTypeCode, year],
+      });
+      const usedUp = Number(already.rows[0].n);
+      const stillEncashable = Math.max(0, policy.encashableHalfDaysPerYear - usedUp);
+      const units = Math.min(b.balanceUnits, stillEncashable);
+      if (units <= 0) continue;
+
+      if (rate === null) {
+        const calendarCode = await calendarFor(employeeId, asOfDate);
+        rate = await dailyRatePaise(employeeId, asOfDate, calendarCode);
+      }
+      const amountPaise = Math.round((rate * units) / 2);
+      if (amountPaise > 0) byEmployee.push({ employeeId, quotaTypeCode: b.quotaTypeCode, units, amountPaise });
+    }
+  }
+
+  return { totalPaise: byEmployee.reduce((s, r) => s + r.amountPaise, 0), byEmployee };
 }

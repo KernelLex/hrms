@@ -23,6 +23,7 @@ import { seedCorrections } from "./corrections";
 import { seedRecruitment } from "./recruitment";
 import { seedPerformance } from "./performance";
 import { seedTraining } from "./training";
+import { seedReports } from "./reports";
 import { seedLifecycle } from "./lifecycle";
 import { seedHeadcount } from "./headcount";
 import { seedImports } from "./imports";
@@ -219,6 +220,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   const headcountNotes = await seedHeadcount(client);
   const importNotes = await seedImports(client);
   const attendanceNotes = await seedAttendance(client);
+  const reportsNotes = await seedReports(client);
 
   // Integration sandbox: known API credentials, only where asked for.
   const sandboxSecret = process.env.SANDBOX_CLIENT_SECRET?.trim();
@@ -241,6 +243,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     ...headcountNotes,
     ...importNotes,
     ...attendanceNotes,
+    ...reportsNotes,
     ...sandboxNotes,
   ];
 }

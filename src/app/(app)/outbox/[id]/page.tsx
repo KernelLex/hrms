@@ -72,25 +72,29 @@ export default async function OutboxMessagePage(props: { params: Promise<{ id: s
                 description="Made when the message is sent, never stored. A payslip opens with its employee's password."
               />
               <ul className="px-6 pb-4">
-                {message.attachments.map((a, i) => (
-                  <li key={i} className="border-b border-soft py-2.5 text-[13px] last:border-0">
-                    {can(session, "payroll.view") ? (
-                      <a href={`/api/outbox/${message.id}/attachments/${i}`} className="inline-flex items-center gap-1.5 font-medium text-ink hover:underline">
-                        <FileText className="size-4" />
-                        {a.fileName}
-                      </a>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 text-ink">
-                        <FileText className="size-4" />
-                        {a.fileName}
-                      </span>
-                    )}
-                    <div className="mt-0.5 text-xs text-muted">
-                      {a.protected ? "Password-protected PDF" : "PDF"}
-                      {can(session, "payroll.view") ? "" : "; opening it needs the right to see payroll"}
-                    </div>
-                  </li>
-                ))}
+                {message.attachments.map((a, i) => {
+                  const needs = a.type === "payslip" ? "payroll.view" : "reports.view";
+                  const allowed = can(session, needs);
+                  return (
+                    <li key={i} className="border-b border-soft py-2.5 text-[13px] last:border-0">
+                      {allowed ? (
+                        <a href={`/api/outbox/${message.id}/attachments/${i}`} className="inline-flex items-center gap-1.5 font-medium text-ink hover:underline">
+                          <FileText className="size-4" />
+                          {a.fileName}
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-ink">
+                          <FileText className="size-4" />
+                          {a.fileName}
+                        </span>
+                      )}
+                      <div className="mt-0.5 text-xs text-muted">
+                        {a.type === "payslip" ? (a.protected ? "Password-protected PDF" : "PDF") : "CSV"}
+                        {allowed ? "" : `; opening it needs the right to see ${a.type === "payslip" ? "payroll" : "reports"}`}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </Card>
           ) : null}

@@ -101,3 +101,24 @@ export async function reports(today: string): Promise<Reports> {
     leaveByType: toItems(leave.rows),
   };
 }
+
+/** Headcount as of any date — past or present — the way the dashboard's own figure is read, without the rest of `reports()`'s batch. */
+export async function headcountAsOf(date: string): Promise<number> {
+  const r = await rawClient().execute({
+    sql: `SELECT COUNT(*) AS n FROM pa_employee WHERE hire_date <= ? AND (termination_date IS NULL OR termination_date > ?)`,
+    args: [date, date],
+  });
+  return Number(r.rows[0].n);
+}
+
+/** The last 24 month-ends, oldest first, as "YYYY-MM-01" — the snapshot's own key, and the trend's own x-axis. */
+export function trailingMonths(asOf: string, count = 24): string[] {
+  const months: string[] = [];
+  const d = new Date(`${asOf.slice(0, 7)}-01T00:00:00Z`);
+  for (let i = count - 1; i >= 0; i--) {
+    const m = new Date(d);
+    m.setUTCMonth(m.getUTCMonth() - i);
+    months.push(m.toISOString().slice(0, 10));
+  }
+  return months;
+}
