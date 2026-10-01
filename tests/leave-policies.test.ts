@@ -91,6 +91,30 @@ describe("monthly and yearly accrual", () => {
     const balance = await balanceOf(employeeId, "CASUAL", 2026);
     expect(balance!.entitledHalfDays).toBe(12); // the full 6 days, not pro-rated
   });
+
+  it("does not stack a yearly grant on top of one posted from outside the engine", async () => {
+    // The demo seed writes an employee's first year of entitlement straight
+    // to the ledger (ref_type 'seed', not this engine's own ref id), because
+    // seed code cannot import an engine guarded with "server-only". A yearly
+    // grant posted that way must still count as this year's entitlement, or
+    // the next time this runs — the daily job, every day, company-wide — it
+    // grants a second one on top, exactly as it once did in production data.
+    const employeeId = await hire("2020-01-01");
+    await rawClient().execute({
+      sql: `INSERT INTO pt_quota_ledger (employee_id, quota_type_code, year, entry_type, half_days, note, ref_type, ref_id, created_by, created_at)
+            VALUES (?, 'ANNUAL', 2026, 'Accrual', 36, 'Seeded entitlement', 'seed', 'ANNUAL:2026', 'seed', ?)`,
+      args: [employeeId, new Date().toISOString()],
+    });
+    await rawClient().execute({
+      sql: `INSERT INTO pt_it2006_absence_quota (employee_id, quota_type_code, year, entitled_half_days, used_half_days, created_at)
+            VALUES (?, 'ANNUAL', 2026, 36, 0, ?)`,
+      args: [employeeId, new Date().toISOString()],
+    });
+
+    await accrueForPeriod(rawClient(), { year: 2026, month: 9, employeeIds: [employeeId], createdBy: "test", actor });
+    const balance = await balanceOf(employeeId, "ANNUAL", 2026);
+    expect(balance!.entitledHalfDays).toBe(36);
+  });
 });
 
 describe("year end", () => {

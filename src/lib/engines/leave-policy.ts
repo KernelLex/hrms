@@ -62,7 +62,7 @@ export async function accrueForPeriod(
   const yearEnd = `${year}-12-31`;
   const only = opts.employeeIds?.length ? opts.employeeIds : null;
 
-  const [policiesR, employeesR, factsR, postedR] = await Promise.all([
+  const [policiesR, employeesR, factsR, postedR, yearlyGrantedR] = await Promise.all([
     rawClient().execute({ sql: "SELECT * FROM pt_leave_policy WHERE is_active = 1", args: [] }),
     rawClient().execute({
       sql: `SELECT id, hire_date FROM pa_employee
@@ -78,6 +78,14 @@ export async function accrueForPeriod(
     }),
     rawClient().execute({
       sql: "SELECT employee_id, quota_type_code, ref_id FROM pt_quota_ledger WHERE ref_type = 'pt_leave_policy' AND year = ?",
+      args: [year],
+    }),
+    // A yearly grant is a one-time thing, whoever posted it: an import or the
+    // demo seed giving someone their year's entitlement up front counts the
+    // same as this engine granting it, so a later run never stacks a second
+    // one just because its own ref id was not the one that posted it.
+    rawClient().execute({
+      sql: "SELECT DISTINCT employee_id, quota_type_code FROM pt_quota_ledger WHERE entry_type = 'Accrual' AND year = ?",
       args: [year],
     }),
   ]);
@@ -96,6 +104,7 @@ export async function accrueForPeriod(
     });
   }
   const posted = new Set(postedR.rows.map((r) => `${r.employee_id}:${r.quota_type_code}:${r.ref_id}`));
+  const yearlyGranted = new Set(yearlyGrantedR.rows.map((r) => `${r.employee_id}:${r.quota_type_code}`));
 
   let granted = 0;
   for (const e of employeesR.rows as unknown as { id: number; hire_date: string }[]) {
@@ -137,6 +146,7 @@ export async function accrueForPeriod(
       } else {
         const refId = `${policy.code}:${year}`;
         if (posted.has(`${employeeId}:${quotaTypeCode}:${refId}`)) continue;
+        if (yearlyGranted.has(`${employeeId}:${quotaTypeCode}`)) continue;
 
         const proRated = hireDate > yearStart;
         let halfDays = policy.entitlementHalfDaysPerYear;
