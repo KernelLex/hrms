@@ -182,9 +182,8 @@ The careers site, `/careers`, needs no account: the demo's HR executive role is 
 
 Honest about what the software does not do yet. What production needs is in §10.
 
-- **Statutory scope is partial.** Employee provident fund and income tax only: no ESI, professional tax, labour welfare fund, gratuity, employer PF or EPS, and no ECR or 24Q files (phase 18 and 21).
+- **Statutory bonus is not calculated.** Provident fund (including the employer's share), ESI, professional tax, the labour welfare fund, gratuity and income tax are; the Payment of Bonus Act is not.
 - **Retro sees additions, not deletions,** and stops at the financial year. The change log now records deletions, which phase 21 uses.
-- **One-off payments are taxed as salary,** without section 89 relief for arrears (phase 21).
 - **Employee pickers load everyone.** Fine at hundreds, wrong at thousands.
 - **Scope on screens covers employee records only.** A role limited to some companies sees only their people on the employee list, record, search, documents and export; payroll, time, tax and performance screens are organisation-wide for anyone holding their permission. API clients, by contrast, are held to their companies on every resource.
 - **The service layer holds what the API writes** — hiring, employee fields, absences, one-off and recurring payments, remittance payments, cost centres, accounts, acknowledgements and payment confirmations. Other Server Functions keep their logic until their module is next worked on.
