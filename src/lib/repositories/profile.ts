@@ -30,6 +30,11 @@ export type Profile = {
     status: string;
     requestedAt: string;
     decisionNote: string | null;
+    /** Who asked for it: the employee themselves, HR, or a connected system. */
+    requestedByName: string;
+    channel: string;
+    /** Whoever it is waiting on right now, while it is pending. */
+    waitingOn: string | null;
   }[];
 };
 
@@ -95,8 +100,17 @@ export async function getProfile(employeeId: number, today: string): Promise<Pro
         args: [employeeId],
       },
       {
-        sql: `SELECT id, section, subtype, effective_date, status, requested_at, decision_note
-              FROM pa_change_request WHERE employee_id = ?1 ORDER BY id DESC LIMIT 10`,
+        // Who asked, and who it is sitting with: a request that says only
+        // "waiting" tells its own employee nothing they can act on.
+        sql: `SELECT cr.id, cr.section, cr.subtype, cr.effective_date, cr.status, cr.requested_at,
+                     cr.decision_note, cr.requested_by_name, cr.channel,
+                     (SELECT GROUP_CONCAT(u.display_name, ', ')
+                        FROM wf_request r
+                        JOIN wf_assignee a ON a.request_id = r.id AND a.step_order = r.current_step
+                        JOIN sec_app_user u ON u.id = a.user_id
+                       WHERE r.subject_type = 'pa_change_request' AND r.subject_id = CAST(cr.id AS TEXT)
+                         AND r.status = 'Pending') AS waiting_on
+              FROM pa_change_request cr WHERE cr.employee_id = ?1 ORDER BY cr.id DESC LIMIT 10`,
         args: [employeeId],
       },
     ],
@@ -148,6 +162,9 @@ export async function getProfile(employeeId: number, today: string): Promise<Pro
       status: String(q.status),
       requestedAt: String(q.requested_at),
       decisionNote: str(q.decision_note),
+      requestedByName: String(q.requested_by_name),
+      channel: String(q.channel),
+      waitingOn: str(q.waiting_on),
     })),
   };
 }

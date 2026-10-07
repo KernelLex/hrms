@@ -176,6 +176,10 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     { username: "ravi.kumar", displayName: "Ravi Kumar", roles: ["MANAGER", "EMPLOYEE"] },
     { username: "arjun.mehta", displayName: "Arjun Mehta", roles: ["EMPLOYEE"] },
     { username: "neha.iyer", displayName: "Neha Iyer", roles: ["RECRUITER"] },
+    // The money side, as its own person: payroll, statutory rates, tax and
+    // the reports behind them, and no power over who works here. The role
+    // itself comes from migration 0014, its permissions from 0025.
+    { username: "deepa.rao", displayName: "Deepa Rao", roles: ["FINANCE"] },
   ] as const;
 
   for (const u of users) {

@@ -25,6 +25,32 @@ async function one(sql: string, args: (string | number | null)[]): Promise<Row |
 }
 
 
+/**
+ * Why a requisition takes no new application, or null when it still does.
+ * A role stops taking them once every opening it has is offered or hired —
+ * an offer out is a seat taken — and starts again if an offer is declined,
+ * since a declined application counts as rejected rather than offered.
+ * Every way in goes through this: HR's own screen, the careers page and a
+ * referral.
+ */
+export async function requisitionClosedReason(requisitionId: number): Promise<string | null> {
+  const req = await one("SELECT code, status, openings FROM rc_requisition WHERE id = ?", [requisitionId]);
+  if (!req) return "That role no longer exists.";
+  const code = String(req.code);
+  if (String(req.status) !== "Open") return `${code} is ${String(req.status).toLowerCase()}, so it takes no applications.`;
+
+  const taken = await one(
+    `SELECT COUNT(*) AS n FROM rc_application
+     WHERE requisition_id = ? AND stage IN ('Offered', 'Hired') AND (rejected_at IS NULL OR stage = 'Hired')`,
+    [requisitionId],
+  );
+  const openings = Number(req.openings);
+  if (Number(taken?.n ?? 0) >= openings) {
+    return `${code} has ${openings === 1 ? "its opening" : `all ${openings} openings`} offered or filled, so it takes no new applications.`;
+  }
+  return null;
+}
+
 /** The history row for a move, and the change-log row for the application. */
 export function stageStatements(
   actor: Actor,
@@ -121,11 +147,10 @@ export async function announceApplication(applicationId: number, candidateName: 
 
 /**
  * Tells an interviewer they have a round to take, and tells the candidate
- * it is confirmed. Both are a calendar invitation: the interviewer, who can
- * sign in, gets a link to the round where a "Download invite" button builds
- * the file on request; the candidate, who cannot, gets the when and where in
- * the email itself — the file attaches once a real provider sends it
- * (phase 25).
+ * it is confirmed. Both get a calendar invitation: the interviewer, who can
+ * sign in, through the "Download invite" button on the round itself; the
+ * candidate, who cannot, as an `.ics` file attached to their email, built
+ * when the message is sent or opened rather than stored.
  */
 export async function announceInterview(
   interview: { id: number; round: string; scheduledDate: string; scheduledTime: string | null; durationMinutes: number; mode: string; location: string | null; interviewerEmployeeId: number | null },
@@ -169,6 +194,10 @@ export async function announceInterview(
         }),
       },
       { kind: "interview.confirmed", interviewId: interview.id },
+      // The invite itself, so the candidate can put it straight in their
+      // calendar. Only when the round has a time: without one there is no
+      // event to describe.
+      interview.scheduledTime ? [{ type: "interview", interviewId: interview.id, fileName: `interview-${interview.id}.ics` }] : [],
     ),
   );
   return statements;

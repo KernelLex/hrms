@@ -5,6 +5,7 @@ import { formatTimestamp, todayInIndia } from "@/lib/dates";
 import { CalendarCheck } from "lucide-react";
 import { RegulariseForm } from "./form";
 import { CancelRegularisation } from "./cancel";
+import { ClockCard } from "./clock";
 
 const TONE: Record<string, "done" | "waiting" | "problem" | "neutral"> = {
   Present: "done",
@@ -30,7 +31,7 @@ export default async function MyAttendancePage() {
   const today = todayInIndia();
   const weekAgo = new Date(new Date(`${today}T00:00:00Z`).getTime() - 30 * 86_400_000).toISOString().slice(0, 10);
 
-  const [days, requests] = await Promise.all([
+  const [days, requests, todaysPunches] = await Promise.all([
     rawClient().execute({
       sql: `SELECT a.date, a.shift_code, a.first_in, a.last_out, a.worked_minutes, a.late_minutes, a.overtime_minutes, a.status, s.name AS shift_name
             FROM pt_attendance_day a LEFT JOIN pt_shift s ON s.code = a.shift_code
@@ -42,7 +43,20 @@ export default async function MyAttendancePage() {
             WHERE employee_id = ? ORDER BY submitted_at DESC LIMIT 20`,
       args: [employeeId],
     }),
+    // What they have clocked today, so the card can say where they stand
+    // before the overnight run turns it into a day.
+    rawClient().execute({
+      sql: `SELECT direction, MIN(at) AS first_at, MAX(at) AS last_at FROM pt_punch
+            WHERE employee_id = ? AND substr(at, 1, 10) = ? GROUP BY direction`,
+      args: [employeeId, today],
+    }),
   ]);
+
+  const punchAt = (direction: "In" | "Out") => {
+    const row = todaysPunches.rows.find((r) => String(r.direction) === direction);
+    if (!row) return null;
+    return formatTimestamp(String(direction === "In" ? row.first_at : row.last_at)).split(", ").pop() ?? null;
+  };
 
   const workedHours = days.rows.reduce((s, r) => s + Number(r.worked_minutes), 0) / 60;
   const lateDays = days.rows.filter((r) => r.status === "Late").length;
@@ -59,6 +73,10 @@ export default async function MyAttendancePage() {
         <Figure label="Absent" value={absentDays} hint="no punch at all" />
         <Figure label="Awaiting a decision" value={pendingCount} hint={pendingCount === 1 ? "request" : "requests"} />
       </FigureRow>
+
+      <div className="mt-6">
+        <ClockCard lastIn={punchAt("In")} lastOut={punchAt("Out")} />
+      </div>
 
       <div className="mt-6">
         <RegulariseForm />

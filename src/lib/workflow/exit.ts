@@ -1,6 +1,7 @@
 import "server-only";
 import { changeStatement, type Actor as LogActor } from "@/lib/change-log";
-import type { NotificationItem } from "@/lib/notifications";
+import { usersWithPermission, type NotificationItem } from "@/lib/notifications";
+import { noticeShortfallDays } from "@/lib/engines/exits";
 import type { Completion } from "./engine";
 
 /**
@@ -10,6 +11,12 @@ import type { Completion } from "./engine";
  * else — clearance, the termination itself, the settlement — for the last
  * day: nothing is paid or changed on the record yet. Rejecting only marks
  * the exit, so the employee's record is untouched and they keep working.
+ *
+ * One thing is told at approval rather than left to the last day: a last day
+ * that does not serve the notice period. Whoever runs payroll hears about it
+ * as soon as it is approved, because the shortfall is theirs to recover — or
+ * for HR to waive on the exit board — and waiting until the settlement runs
+ * would be too late to decide either.
  */
 export const completeExit: Completion = async (tx, request, outcome) => {
   const { decision, actor, comment, decidedAt } = outcome;
@@ -51,5 +58,21 @@ export const completeExit: Completion = async (tx, request, outcome) => {
         },
       ]
     : [];
+
+  if (approved && !exit.notice_waived) {
+    const shortfall = noticeShortfallDays(Number(exit.notice_days), String(exit.requested_at).slice(0, 10), lastDay);
+    if (shortfall > 0) {
+      for (const userId of await usersWithPermission("payroll.run")) {
+        notices.push({
+          userId,
+          kind: "exit.notice_shortfall",
+          title: `${request.summary.split(":")[0]} is leaving ${shortfall} day${shortfall === 1 ? "" : "s"} short of notice`,
+          body: `Their last day is ${lastDay}. The shortfall is recovered in their final settlement at their basic pay, unless HR waives it on the exit board.`,
+          link: "/exits",
+          dedupeKey: `exit.notice_shortfall:${exitId}:${userId}`,
+        });
+      }
+    }
+  }
   return { notices };
 };

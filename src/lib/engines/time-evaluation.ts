@@ -70,7 +70,7 @@ export async function evaluatePeriod(opts: {
               WHERE o.valid_from <= ? AND o.valid_to >= ? ${only ? `AND o.employee_id IN (${only.map(() => "?").join(", ")})` : ""}`,
         args: [to, to, ...ids],
       },
-      { sql: "SELECT date, calendar_code FROM pt_holiday WHERE date BETWEEN ? AND ?", args: [from, to] },
+      { sql: "SELECT date, calendar_code FROM pt_holiday WHERE is_optional = 0 AND date BETWEEN ? AND ?", args: [from, to] },
       {
         // Everyone employed at some point in the month.
         sql: `SELECT id, employee_number, hire_date, termination_date FROM pa_employee

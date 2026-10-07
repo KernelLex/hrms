@@ -111,11 +111,29 @@ export async function submitExitRequest(
   return { ok: true, value: { id, requestId } };
 }
 
+/**
+ * The employee takes their own resignation back — but only while nobody has
+ * acted on it. Once an approver has said yes to a step, it is no longer
+ * theirs alone to undo: the people who decided it, and whoever is next in
+ * the chain, have already acted on it, so HR revokes it instead
+ * (`revokeApprovedExit`). The exit row is kept either way, so a withdrawal
+ * and what was asked for stay on the record.
+ */
 export async function withdrawExitRequest(actor: Actor, logActor: LogActor, exitId: number): Promise<Result<true>> {
   const exit = await one("SELECT * FROM pa_exit WHERE id = ?", [exitId]);
   if (!exit) return { error: "That exit no longer exists.", code: "not_found" };
   if (exit.employee_id !== actor.employeeId) return { error: "That is not your exit." };
   if (String(exit.status) !== "Pending") return { error: "Only an exit still waiting on a decision can be withdrawn." };
+
+  const approved = await one(
+    `SELECT a.id FROM wf_action a
+     JOIN wf_request r ON r.id = a.request_id
+     WHERE r.subject_type = 'pa_exit' AND r.subject_id = ? AND a.decision = 'Approved' LIMIT 1`,
+    [String(exitId)],
+  );
+  if (approved) {
+    return { error: "Your resignation has already been approved at one step, so you cannot withdraw it yourself. Ask HR to cancel it." };
+  }
 
   const tx = await rawClient().transaction("write");
   try {
@@ -129,6 +147,60 @@ export async function withdrawExitRequest(actor: Actor, logActor: LogActor, exit
     throw err;
   } finally {
     tx.close();
+  }
+  return { ok: true, value: true };
+}
+
+/**
+ * HR cancels an exit that was already approved, before its last day comes:
+ * someone who resigned and is staying after all. Nothing has been paid or
+ * written to their record yet — the termination, clearance and settlement
+ * all wait for the last day — so taking it back is only this row's status,
+ * and the employee keeps working. Once the last day has been settled, there
+ * is a termination on the record and this is refused: that is a rehire.
+ */
+export async function revokeApprovedExit(
+  logActor: LogActor,
+  actorDisplayName: string,
+  exitId: number,
+  reason: string | null,
+): Promise<Result<true>> {
+  const exit = await one("SELECT * FROM pa_exit WHERE id = ?", [exitId]);
+  if (!exit) return { error: "That exit no longer exists.", code: "not_found" };
+  if (String(exit.status) !== "Approved") {
+    return { error: `Only an approved exit can be cancelled. This one is ${String(exit.status).toLowerCase()}.` };
+  }
+  if (exit.exited_at) return { error: "This exit has already been settled, so it cannot be cancelled. Hire them again instead." };
+
+  const employeeId = Number(exit.employee_id);
+  const at = now();
+  await rawClient().execute({
+    sql: "UPDATE pa_exit SET status = 'Withdrawn', decided_at = ?, decision_note = ? WHERE id = ? AND status = 'Approved'",
+    args: [at, reason, exitId],
+  });
+  const logged = changeStatement(logActor, {
+    entity: "pa_exit",
+    entityId: exitId,
+    subjectEmployeeId: employeeId,
+    action: "update",
+    before: { status: "Approved", approvedLastDay: exit.approved_last_day },
+    after: { status: "Withdrawn" },
+    reason: reason ?? `Cancelled by ${actorDisplayName}`,
+  });
+  if (logged) await rawClient().execute(logged);
+
+  const user = await one("SELECT id FROM sec_app_user WHERE employee_id = ?", [employeeId]);
+  if (user) {
+    await notify([
+      {
+        userId: Number(user.id),
+        kind: "exit.revoked",
+        title: "Your exit has been cancelled",
+        body: reason ? `${reason} You remain an employee, and your last working day no longer stands.` : "You remain an employee, and your last working day no longer stands.",
+        link: "/exit",
+        dedupeKey: `exit.revoked:${exitId}:${at}`,
+      },
+    ]);
   }
   return { ok: true, value: true };
 }

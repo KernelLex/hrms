@@ -84,12 +84,25 @@ export async function calendarFor(employeeId: number, asOf?: string): Promise<st
   return r.rows[0] ? String(r.rows[0].calendar_code) : DEFAULT_CALENDAR;
 }
 
-/** Public holidays in a range, on one calendar, as a set of ISO dates. */
+/**
+ * Public holidays in a range, on one calendar, as a set of ISO dates.
+ *
+ * Optional holidays are left out everywhere a holiday means "nobody works
+ * today": they are working days until an employee chooses one, and choosing
+ * it is recorded as a paid absence against them alone.
+ */
 export async function holidaysBetween(from: string, to: string, calendarCode: string): Promise<Set<string>> {
   const rows = await db
     .select({ date: ptHoliday.date })
     .from(ptHoliday)
-    .where(and(eq(ptHoliday.calendarCode, calendarCode), gte(ptHoliday.date, from), lte(ptHoliday.date, to)));
+    .where(
+      and(
+        eq(ptHoliday.calendarCode, calendarCode),
+        eq(ptHoliday.isOptional, false),
+        gte(ptHoliday.date, from),
+        lte(ptHoliday.date, to),
+      ),
+    );
   return new Set(rows.map((r) => r.date));
 }
 
@@ -98,7 +111,7 @@ export async function holidaysByCalendar(from: string, to: string): Promise<Map<
   const rows = await db
     .select({ date: ptHoliday.date, calendarCode: ptHoliday.calendarCode })
     .from(ptHoliday)
-    .where(and(gte(ptHoliday.date, from), lte(ptHoliday.date, to)));
+    .where(and(eq(ptHoliday.isOptional, false), gte(ptHoliday.date, from), lte(ptHoliday.date, to)));
   const out = new Map<string, Set<string>>();
   for (const r of rows) {
     if (!out.has(r.calendarCode)) out.set(r.calendarCode, new Set());

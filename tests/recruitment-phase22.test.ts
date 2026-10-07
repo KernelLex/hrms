@@ -60,6 +60,9 @@ async function selectedApplication(budgetMaxPaise?: number): Promise<{ id: numbe
       positionCode: await vacantPosition(),
       title: "Field engineer",
       description: "Services and maintains our equipment at client sites across the region.",
+      skills: "Diagnostics",
+      experienceMinYears: 2,
+      hiringManagerEmployeeId: interviewer.employeeId,
       openings: 1,
       postedDate: day(0),
       status: "Open",
@@ -104,8 +107,8 @@ describe("scorecards", () => {
       args: [jobCode],
     });
 
-    const r = await saveRequisition({}, form({ positionCode: vacant, title: "Field engineer", description: "Repairs equipment on site for regional clients.", openings: 1, postedDate: day(0), status: "Open" }));
     const interviewer = await createPerson({ roles: ["EMPLOYEE"] });
+    const r = await saveRequisition({}, form({ positionCode: vacant, title: "Field engineer", description: "Repairs equipment on site for regional clients.", skills: "Diagnostics", experienceMinYears: 2, hiringManagerEmployeeId: interviewer.employeeId, openings: 1, postedDate: day(0), status: "Open" }));
     const email = `sc.${uid().toLowerCase()}@example.com`;
     await saveCandidate({}, form({ fullName: "Nikhil Shah", email, source: "Job portal" }));
     const candidate = await one("SELECT id FROM rc_candidate WHERE email = ?", [email]);
@@ -259,7 +262,7 @@ describe("referrals", () => {
 describe("referring someone", () => {
   it("lets any employee refer a candidate for an open role", async () => {
     const employee = await createPerson({ roles: ["EMPLOYEE"] });
-    const r = await saveRequisition({}, form({ positionCode: await vacantPosition(), title: "Field engineer", description: "Repairs equipment on site for regional clients.", openings: 1, postedDate: day(0), status: "Open", isPublished: "on" }));
+    const r = await saveRequisition({}, form({ positionCode: await vacantPosition(), title: "Field engineer", description: "Repairs equipment on site for regional clients.", skills: "Diagnostics", experienceMinYears: 2, hiringManagerEmployeeId: employee.employeeId, openings: 1, postedDate: day(0), status: "Open", isPublished: "on" }));
     const requisition = await one("SELECT id FROM rc_requisition WHERE code = ?", [r.code!]);
 
     actAs(employee.session);

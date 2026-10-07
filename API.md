@@ -7,6 +7,51 @@ This is the guide for developers connecting another system to the HRMS — first
 - **OpenAPI 3.1 specification:** `https://<hrms-host>/api/v1/openapi.json` — generate a client from it in any language.
 - **A working example:** `tools/mock-erp/` in the HRMS repository is a small ERP written against this guide alone. Its scenario (`scenario.ts`) runs every flow described here, and the HRMS test suite runs it on every change.
 
+## The contract, in short
+
+If you are here to build against the API and not to read it end to end, this is everything you need to start, and where the rest lives.
+
+**The contract of record is the OpenAPI 3.1 document** at `GET /api/v1/openapi.json`. It carries every endpoint with its path and query parameters, the exact JSON it accepts, the exact JSON it answers with, which fields are mandatory, every error it can return, and the scope each one needs. Generate a client from it rather than hand-writing one. `/developers` is the same document rendered, with a console that makes real calls.
+
+**In this guide:** [every endpoint in one table](#endpoints), then one entry each with its parameters, its request body field by field (type, mandatory, notes), what it answers with field by field, and an example of both in JSON. [Scopes](#scopes), [event types](#event-types) and [error codes](#error-codes) are tables of their own. All of it is generated from the code, so it cannot drift from what the API does.
+
+**Five things are true of every call**, so no endpoint repeats them:
+
+| | |
+| --- | --- |
+| **Authentication** | `Authorization: Bearer <token>`, from `POST /oauth/token` with your client id and secret. One hour. [Section 3](#3-authentication) |
+| **Money** | An object, never a number: `{ "amount": "72000.00", "currency": "INR" }`. [Section 4](#4-conventions) |
+| **Paging** | `{ "data": [...], "next_cursor": "Mw" }`; pass `cursor=` until it is null. `limit` 50 by default, 200 at most |
+| **Writing twice** | Send `Idempotency-Key: <uuid>` on a POST. A retry with the same key returns the first answer and changes nothing |
+| **Failing** | Always `application/problem+json` with a `code`, the same shape every time. [Section 9](#9-errors-retries-and-limits) |
+
+A whole exchange, end to end:
+
+```sh
+# 1. A token, good for an hour.
+curl -X POST https://<hrms-host>/api/v1/oauth/token \
+  -d grant_type=client_credentials -d client_id=cl_4f2a9c7e1b3d -d client_secret=hs_…
+# → {"access_token":"eyJhbGciOi…","token_type":"Bearer","expires_in":3600,"scope":"employees:read …"}
+
+# 2. A call with it.
+curl "https://<hrms-host>/api/v1/employees?limit=1" -H "Authorization: Bearer eyJhbGciOi…"
+# → {"data":[{"id":3,"employee_number":"EMP1003","status":"Active", …}],"next_cursor":"Mw"}
+
+# 3. A write, safe to retry.
+curl -X POST https://<hrms-host>/api/v1/absences \
+  -H "Authorization: Bearer eyJhbGciOi…" -H "Idempotency-Key: 7c9e6679-7425-40de-944b-e07fc1f90ae7" \
+  -H "Content-Type: application/json" \
+  -d '{"employee_id":3,"absence_type":"EL","start_date":"2026-11-02","end_date":"2026-11-04"}'
+
+# 4. What a refusal looks like.
+# → 422 {"type":"…#validation_failed","title":"…","status":422,"code":"validation_failed",
+#        "detail":"start_date is after end_date","request_id":"5a09ae50-…"}
+```
+
+**The first thing to agree with us** is who owns which records — [section 1](#1-how-the-two-systems-divide-the-work) — because that decides which of these endpoints you read and which you write.
+
+---
+
 ## Contents
 
 1. [How the two systems divide the work](#1-how-the-two-systems-divide-the-work)
@@ -590,6 +635,13 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `access_token` | string | yes |  |
+| `token_type` | string | yes |  |
+| `expires_in` | integer | yes |  |
+| `scope` | string | yes |  |
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIs…",
@@ -604,6 +656,10 @@ Content-Type: application/json
 <a id="get-openapi-json"></a>**This API's OpenAPI 3.1 specification.**
 
 No token needed. Answers 200.
+
+```json
+{}
+```
 
 ### Events endpoints
 
@@ -623,6 +679,19 @@ Needs `events:read`. Answers 200.
 ```http
 GET /api/v1/events?after=0&types=employee.hired
 ```
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `specversion` | string | yes |  |
+| `id` | string | yes |  |
+| `type` | string | yes |  |
+| `source` | string | yes |  |
+| `subject` | string | yes |  |
+| `time` | string | yes |  |
+| `datacontenttype` | string | yes |  |
+| `sequence` | string | yes | Increases with every event: the order to apply them in. |
+| `originclient` | string |  | The client whose change caused this, when a client did. |
+| `data` | object | yes |  |
 
 ```json
 {
@@ -653,6 +722,24 @@ GET /api/v1/events?after=0&types=employee.hired
 
 Any valid token. Answers 200.
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `type` | string | yes |  |
+| `scope` | string | yes |  |
+| `description` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "type": "<type>",
+      "scope": "<scope>",
+      "description": "<description>"
+    }
+  ]
+}
+```
+
 #### GET /deletions
 
 <a id="get-deletions"></a>**What was deleted.** Records deleted since a moment, so a copy kept by polling `updated_since` can drop them too. Page with `cursor`.
@@ -669,11 +756,58 @@ Needs `events:read`. Answers 200.
 GET /api/v1/deletions?since=2026-09-01T00:00:00Z
 ```
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `resource` | string | yes |  |
+| `id` | string | yes |  |
+| `employee_id` | integer, or null | yes |  |
+| `deleted_at` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "resource": "<resource>",
+      "id": "<id>",
+      "employee_id": 3,
+      "deleted_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /webhook-subscriptions
 
 <a id="get-webhook-subscriptions"></a>**This client's webhook subscriptions.**
 
 Needs `events:read`. Answers 200.
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `url` | string | yes |  |
+| `event_types` | array of string, or null | yes |  |
+| `include_own` | boolean | yes |  |
+| `active` | boolean | yes |  |
+| `created_at` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "url": "<url>",
+      "event_types": [
+        "<event_types>"
+      ],
+      "include_own": true,
+      "active": true,
+      "created_at": "2026-10-01T09:30:00.000Z"
+    }
+  ]
+}
+```
 
 #### POST /webhook-subscriptions
 
@@ -699,6 +833,16 @@ Content-Type: application/json
   ]
 }
 ```
+
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `url` | string | yes |  |
+| `event_types` | array of string, or null | yes |  |
+| `include_own` | boolean | yes |  |
+| `active` | boolean | yes |  |
+| `created_at` | string | yes |  |
+| `secret` | string | yes |  |
 
 ```json
 {
@@ -737,11 +881,55 @@ Any valid token. Answers 200.
 | --- | --- | --- | --- |
 | `state` | `open` \\| `resolved` \\| `discarded` |  |  |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `kind` | string | yes |  |
+| `reference` | string, or null | yes |  |
+| `reason` | string | yes |  |
+| `state` | string | yes |  |
+| `created_at` | string | yes |  |
+| `resolved_at` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "kind": "<kind>",
+      "reference": "<reference>",
+      "reason": "<reason>",
+      "state": "<state>",
+      "created_at": "2026-10-01T09:30:00.000Z",
+      "resolved_at": "2026-10-01T09:30:00.000Z"
+    }
+  ]
+}
+```
+
 #### GET /ownership
 
 <a id="get-ownership"></a>**Who owns what.** The owner of each kind of record, and of any field HR has set separately. Only the owner writes it.
 
 Any valid token. Answers 200.
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `record_type` | string | yes |  |
+| `field` | string, or null | yes |  |
+| `owner` | `hrms` \\| `erp` | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "record_type": "<record_type>",
+      "field": "<field>",
+      "owner": "hrms"
+    }
+  ]
+}
+```
 
 ### People endpoints
 
@@ -765,6 +953,22 @@ Needs `employees:read`. More fields with `pay:read` or `bank:read`. Answers 200.
 ```http
 GET /api/v1/employees?limit=1&updated_since=2026-09-01T00:00:00Z
 ```
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_number` | string | yes |  |
+| `status` | string | yes | Active, On leave or Terminated. |
+| `hire_date` | string | yes | A date, YYYY-MM-DD. |
+| `termination_date` | string, or null | yes |  |
+| `personal` | object, or null | yes |  |
+| `org_assignment` | object, or null | yes |  |
+| `working_time` | object, or null | yes |  |
+| `work_email` | string, or null | yes |  |
+| `basic_pay` | object, or null |  | Present only with the pay:read scope. |
+| `bank_account` | object, or null |  | Present only with the bank:read scope. |
+| `external_ids` | object | yes | Other systems' ids for this employee: {"erp": "EMP-0042"}. |
+| `updated_at` | string, or null | yes | When anything about this employee last changed. |
 
 ```json
 {
@@ -839,6 +1043,75 @@ Needs `employees:read`. More fields with `pay:read` or `bank:read`. Returns an `
 GET /api/v1/employees/3
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_number` | string | yes |  |
+| `status` | string | yes | Active, On leave or Terminated. |
+| `hire_date` | string | yes | A date, YYYY-MM-DD. |
+| `termination_date` | string, or null | yes |  |
+| `personal` | object, or null | yes |  |
+| `org_assignment` | object, or null | yes |  |
+| `working_time` | object, or null | yes |  |
+| `work_email` | string, or null | yes |  |
+| `basic_pay` | object, or null |  | Present only with the pay:read scope. |
+| `bank_account` | object, or null |  | Present only with the bank:read scope. |
+| `external_ids` | object | yes | Other systems' ids for this employee: {"erp": "EMP-0042"}. |
+| `updated_at` | string, or null | yes | When anything about this employee last changed. |
+
+```json
+{
+  "id": 3,
+  "employee_number": "<employee_number>",
+  "status": "<status>",
+  "hire_date": "2026-10-01",
+  "termination_date": "2026-10-01",
+  "personal": {
+    "first_name": "<first_name>",
+    "last_name": "<last_name>",
+    "date_of_birth": "2026-10-01",
+    "gender": "<gender>"
+  },
+  "org_assignment": {
+    "company": "<company>",
+    "personnel_area": "<personnel_area>",
+    "department": {
+      "code": "<code>",
+      "name": "<name>"
+    },
+    "position": {
+      "code": "<code>",
+      "title": "<title>"
+    },
+    "cost_centre": "<cost_centre>",
+    "valid_from": "<valid_from>",
+    "valid_to": "<valid_to>"
+  },
+  "working_time": {
+    "work_schedule": "<work_schedule>",
+    "weekly_hours": 1
+  },
+  "work_email": "meera.pillai@example.com",
+  "basic_pay": {
+    "amount": {
+      "amount": "58000.00",
+      "currency": "INR"
+    },
+    "pay_scale_group": "<pay_scale_group>",
+    "valid_from": "<valid_from>",
+    "valid_to": "<valid_to>"
+  },
+  "bank_account": {
+    "bank_name": "<bank_name>",
+    "account_number": "<account_number>",
+    "ifsc": "<ifsc>",
+    "holder_name": "<holder_name>"
+  },
+  "external_ids": {},
+  "updated_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### GET /employees/{id}/history
 
 <a id="get-employees-id-history"></a>**An employee's dated history.** Every dated slice of one kind of record, newest first — what was true when. `basic_pay`, `ctc` and `statutory_details` need pay:read, `bank_account` needs bank:read. `valid_to` null means open-ended.
@@ -855,6 +1128,26 @@ Needs `employees:read`. More fields with `pay:read` or `bank:read`. Answers 200.
 
 ```http
 GET /api/v1/employees/3/history?record=org_assignment
+```
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `valid_from` | string | yes | A date, YYYY-MM-DD. |
+| `valid_to` | string, or null | yes |  |
+| `values` | object | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "valid_from": "<valid_from>",
+      "valid_to": "<valid_to>",
+      "values": {}
+    }
+  ]
+}
 ```
 
 #### POST /employees
@@ -905,6 +1198,75 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_number` | string | yes |  |
+| `status` | string | yes | Active, On leave or Terminated. |
+| `hire_date` | string | yes | A date, YYYY-MM-DD. |
+| `termination_date` | string, or null | yes |  |
+| `personal` | object, or null | yes |  |
+| `org_assignment` | object, or null | yes |  |
+| `working_time` | object, or null | yes |  |
+| `work_email` | string, or null | yes |  |
+| `basic_pay` | object, or null |  | Present only with the pay:read scope. |
+| `bank_account` | object, or null |  | Present only with the bank:read scope. |
+| `external_ids` | object | yes | Other systems' ids for this employee: {"erp": "EMP-0042"}. |
+| `updated_at` | string, or null | yes | When anything about this employee last changed. |
+
+```json
+{
+  "id": 3,
+  "employee_number": "<employee_number>",
+  "status": "<status>",
+  "hire_date": "2026-10-01",
+  "termination_date": "2026-10-01",
+  "personal": {
+    "first_name": "<first_name>",
+    "last_name": "<last_name>",
+    "date_of_birth": "2026-10-01",
+    "gender": "<gender>"
+  },
+  "org_assignment": {
+    "company": "<company>",
+    "personnel_area": "<personnel_area>",
+    "department": {
+      "code": "<code>",
+      "name": "<name>"
+    },
+    "position": {
+      "code": "<code>",
+      "title": "<title>"
+    },
+    "cost_centre": "<cost_centre>",
+    "valid_from": "<valid_from>",
+    "valid_to": "<valid_to>"
+  },
+  "working_time": {
+    "work_schedule": "<work_schedule>",
+    "weekly_hours": 1
+  },
+  "work_email": "meera.pillai@example.com",
+  "basic_pay": {
+    "amount": {
+      "amount": "58000.00",
+      "currency": "INR"
+    },
+    "pay_scale_group": "<pay_scale_group>",
+    "valid_from": "<valid_from>",
+    "valid_to": "<valid_to>"
+  },
+  "bank_account": {
+    "bank_name": "<bank_name>",
+    "account_number": "<account_number>",
+    "ifsc": "<ifsc>",
+    "holder_name": "<holder_name>"
+  },
+  "external_ids": {},
+  "updated_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### PATCH /employees/{id}
 
 <a id="patch-employees-id"></a>**Change fields the ERP owns.** Changes an employee's fields from `valid_from`, through the same dated records the screens write. Only fields whose owner is the ERP may be sent (see Ownership); anything else is refused with `owned_by_hrms`. Send the ETag you read in If-Match: a stale write is refused with 412.
@@ -933,6 +1295,75 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_number` | string | yes |  |
+| `status` | string | yes | Active, On leave or Terminated. |
+| `hire_date` | string | yes | A date, YYYY-MM-DD. |
+| `termination_date` | string, or null | yes |  |
+| `personal` | object, or null | yes |  |
+| `org_assignment` | object, or null | yes |  |
+| `working_time` | object, or null | yes |  |
+| `work_email` | string, or null | yes |  |
+| `basic_pay` | object, or null |  | Present only with the pay:read scope. |
+| `bank_account` | object, or null |  | Present only with the bank:read scope. |
+| `external_ids` | object | yes | Other systems' ids for this employee: {"erp": "EMP-0042"}. |
+| `updated_at` | string, or null | yes | When anything about this employee last changed. |
+
+```json
+{
+  "id": 3,
+  "employee_number": "<employee_number>",
+  "status": "<status>",
+  "hire_date": "2026-10-01",
+  "termination_date": "2026-10-01",
+  "personal": {
+    "first_name": "<first_name>",
+    "last_name": "<last_name>",
+    "date_of_birth": "2026-10-01",
+    "gender": "<gender>"
+  },
+  "org_assignment": {
+    "company": "<company>",
+    "personnel_area": "<personnel_area>",
+    "department": {
+      "code": "<code>",
+      "name": "<name>"
+    },
+    "position": {
+      "code": "<code>",
+      "title": "<title>"
+    },
+    "cost_centre": "<cost_centre>",
+    "valid_from": "<valid_from>",
+    "valid_to": "<valid_to>"
+  },
+  "working_time": {
+    "work_schedule": "<work_schedule>",
+    "weekly_hours": 1
+  },
+  "work_email": "meera.pillai@example.com",
+  "basic_pay": {
+    "amount": {
+      "amount": "58000.00",
+      "currency": "INR"
+    },
+    "pay_scale_group": "<pay_scale_group>",
+    "valid_from": "<valid_from>",
+    "valid_to": "<valid_to>"
+  },
+  "bank_account": {
+    "bank_name": "<bank_name>",
+    "account_number": "<account_number>",
+    "ifsc": "<ifsc>",
+    "holder_name": "<holder_name>"
+  },
+  "external_ids": {},
+  "updated_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### PUT /employees/{id}/external-ids
 
 <a id="put-employees-id-external-ids"></a>**Record your id for an employee.** Stores your system's id for this employee, so you can find them by it (`GET /employees?external_id=`) and see it on every response. Each of your ids belongs to one employee. Send null to remove it.
@@ -953,6 +1384,16 @@ Content-Type: application/json
 
 {
   "external_id": "EMP-0042"
+}
+```
+
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `external_ids` | object | yes |  |
+
+```json
+{
+  "external_ids": {}
 }
 ```
 
@@ -979,6 +1420,10 @@ Content-Type: application/json
 }
 ```
 
+```json
+{}
+```
+
 #### GET /tasks
 
 <a id="get-tasks"></a>**List onboarding tasks.** Tasks from onboarding checklists, oldest due first. Filter with `employee_id` and `status`.
@@ -993,6 +1438,33 @@ Needs `employees:read`. Answers 200.
 | `employee_id` | integer |  |  |
 | `status` | `Pending` \\| `Done` |  |  |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `task` | string | yes |  |
+| `owner_type` | string | yes |  |
+| `due_date` | string | yes | A date, YYYY-MM-DD. |
+| `status` | `Pending` \\| `Done` | yes |  |
+| `done_at` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "task": "<task>",
+      "owner_type": "<owner_type>",
+      "due_date": "2026-10-01",
+      "status": "Pending",
+      "done_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### POST /tasks/{id}/complete
 
 <a id="post-tasks-id-complete"></a>**Mark an onboarding task done.** Marks one task done, as its assignee would. Once every task in the checklist is done, it finishes and `onboarding.completed` fires. Safe to call again on a task already done.
@@ -1002,6 +1474,28 @@ Needs `employees:write`. Send an `Idempotency-Key`. Answers 200.
 | Path parameter | Meaning |
 | --- | --- |
 | `id` | The task's id. |
+
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `task` | string | yes |  |
+| `owner_type` | string | yes |  |
+| `due_date` | string | yes | A date, YYYY-MM-DD. |
+| `status` | `Pending` \\| `Done` | yes |  |
+| `done_at` | string, or null | yes |  |
+
+```json
+{
+  "id": 3,
+  "employee_id": 3,
+  "task": "<task>",
+  "owner_type": "<owner_type>",
+  "due_date": "2026-10-01",
+  "status": "Pending",
+  "done_at": "2026-10-01T09:30:00.000Z"
+}
+```
 
 #### GET /letters
 
@@ -1016,6 +1510,31 @@ Needs `employees:read`. Answers 200.
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `employee_id` | integer |  |  |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `kind` | string | yes |  |
+| `issue_date` | string | yes | A date, YYYY-MM-DD. |
+| `issued_by` | string | yes |  |
+| `issued_at` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "kind": "<kind>",
+      "issue_date": "2026-10-01",
+      "issued_by": "<issued_by>",
+      "issued_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /letters/{id}/pdf
 
 <a id="get-letters-id-pdf"></a>**A letter as a PDF.** One letter as the PDF issued, re-rendered from the text it was issued with — never from the template, which may have moved on since.
@@ -1025,6 +1544,8 @@ Needs `employees:read`. Answers 200.
 | Path parameter | Meaning |
 | --- | --- |
 | `id` | The letter's id. |
+
+Answers with `application/pdf` — the file itself, not JSON.
 
 #### POST /employees/{id}/change-requests
 
@@ -1064,6 +1585,38 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `section` | `personal` \\| `address` \\| `contact` \\| `bank` | yes |  |
+| `subtype` | string, or null | yes | The address type or contact kind, where the section has several. |
+| `proposed` | object | yes | The values asked for. An account number shows only its last four digits without bank:read. |
+| `effective_date` | string | yes | A date, YYYY-MM-DD. |
+| `note` | string, or null | yes |  |
+| `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` | yes |  |
+| `channel` | `self` \\| `api` | yes |  |
+| `requested_at` | string | yes |  |
+| `decided_at` | string, or null | yes |  |
+| `decision_note` | string, or null | yes |  |
+
+```json
+{
+  "id": 3,
+  "employee_id": 3,
+  "section": "personal",
+  "subtype": "<subtype>",
+  "proposed": {},
+  "effective_date": "2026-10-01",
+  "note": "<note>",
+  "status": "Pending",
+  "channel": "self",
+  "requested_at": "2026-10-01T09:30:00.000Z",
+  "decided_at": "2026-10-01T09:30:00.000Z",
+  "decision_note": "<decision_note>"
+}
+```
+
 #### GET /change-requests
 
 <a id="get-change-requests"></a>**List correction requests.** Correction requests, oldest first, whoever filed them. Filter with `status` and `employee_id`.
@@ -1077,6 +1630,43 @@ Needs `employees:read`. More fields with `bank:read`. Answers 200.
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` |  |  |
 | `employee_id` | integer |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `section` | `personal` \\| `address` \\| `contact` \\| `bank` | yes |  |
+| `subtype` | string, or null | yes | The address type or contact kind, where the section has several. |
+| `proposed` | object | yes | The values asked for. An account number shows only its last four digits without bank:read. |
+| `effective_date` | string | yes | A date, YYYY-MM-DD. |
+| `note` | string, or null | yes |  |
+| `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` | yes |  |
+| `channel` | `self` \\| `api` | yes |  |
+| `requested_at` | string | yes |  |
+| `decided_at` | string, or null | yes |  |
+| `decision_note` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "section": "personal",
+      "subtype": "<subtype>",
+      "proposed": {},
+      "effective_date": "2026-10-01",
+      "note": "<note>",
+      "status": "Pending",
+      "channel": "self",
+      "requested_at": "2026-10-01T09:30:00.000Z",
+      "decided_at": "2026-10-01T09:30:00.000Z",
+      "decision_note": "<decision_note>"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### GET /exits
 
@@ -1092,6 +1682,43 @@ Needs `employees:read`. Answers 200.
 | `employee_id` | integer |  |  |
 | `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Withdrawn` \\| `Settled` |  |  |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `exit_type` | `Resignation` \\| `Termination` \\| `Retirement` | yes |  |
+| `reason` | string, or null | yes |  |
+| `requested_last_day` | string | yes | A date, YYYY-MM-DD. |
+| `notice_days` | integer | yes |  |
+| `approved_last_day` | string, or null | yes |  |
+| `notice_waived` | boolean | yes |  |
+| `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Withdrawn` \\| `Settled` | yes |  |
+| `requested_at` | string | yes |  |
+| `decided_at` | string, or null | yes |  |
+| `exited_at` | string, or null | yes | Set once the termination has run and sign-in is disabled — the moment employee.exited fires. |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "exit_type": "Resignation",
+      "reason": "<reason>",
+      "requested_last_day": "<requested_last_day>",
+      "notice_days": 1,
+      "approved_last_day": "<approved_last_day>",
+      "notice_waived": true,
+      "status": "Pending",
+      "requested_at": "2026-10-01T09:30:00.000Z",
+      "decided_at": "2026-10-01T09:30:00.000Z",
+      "exited_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 ### Organisation endpoints
 
 #### GET /companies
@@ -1106,6 +1733,29 @@ Needs `org:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `city` | string, or null | yes |  |
+| `country` | string, or null | yes |  |
+| `is_active` | boolean | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "city": "<city>",
+      "country": "<country>",
+      "is_active": true
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /personnel-areas
 
 <a id="get-personnel-areas"></a>**List personnel areas.** Locations within a company.
@@ -1117,6 +1767,29 @@ Needs `org:read`. Answers 200.
 | `limit` | integer |  | Up to 200; 50 by default. |
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `company` | string | yes |  |
+| `name` | string | yes |  |
+| `location` | string, or null | yes |  |
+| `is_active` | boolean | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "company": "<company>",
+      "name": "<name>",
+      "location": "<location>",
+      "is_active": true
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### GET /departments
 
@@ -1130,6 +1803,37 @@ Needs `org:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `parent` | string, or null | yes |  |
+| `company` | string, or null | yes |  |
+| `personnel_area` | string, or null | yes |  |
+| `valid_from` | string | yes | A date, YYYY-MM-DD. |
+| `valid_to` | string, or null | yes |  |
+| `is_active` | boolean | yes |  |
+| `external_ids` | object | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "parent": "<parent>",
+      "company": "<company>",
+      "personnel_area": "<personnel_area>",
+      "valid_from": "<valid_from>",
+      "valid_to": "<valid_to>",
+      "is_active": true,
+      "external_ids": {}
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /jobs
 
 <a id="get-jobs"></a>**List jobs.**
@@ -1141,6 +1845,27 @@ Needs `org:read`. Answers 200.
 | `limit` | integer |  | Up to 200; 50 by default. |
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `title` | string | yes |  |
+| `job_group` | string, or null | yes |  |
+| `is_active` | boolean | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "title": "<title>",
+      "job_group": "<job_group>",
+      "is_active": true
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### GET /positions
 
@@ -1154,6 +1879,43 @@ Needs `org:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `title` | string | yes |  |
+| `department` | string | yes |  |
+| `job` | string | yes |  |
+| `reports_to` | string, or null | yes |  |
+| `is_manager` | boolean | yes |  |
+| `is_vacant` | boolean | yes |  |
+| `holder_employee_id` | integer, or null | yes |  |
+| `valid_from` | string | yes | A date, YYYY-MM-DD. |
+| `valid_to` | string, or null | yes |  |
+| `is_active` | boolean | yes |  |
+| `external_ids` | object | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "title": "<title>",
+      "department": "<department>",
+      "job": "<job>",
+      "reports_to": "<reports_to>",
+      "is_manager": true,
+      "is_vacant": true,
+      "holder_employee_id": 3,
+      "valid_from": "<valid_from>",
+      "valid_to": "<valid_to>",
+      "is_active": true,
+      "external_ids": {}
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /cost-centres
 
 <a id="get-cost-centres"></a>**List cost centres.** Cost centres as the ERP last sent them.
@@ -1166,6 +1928,29 @@ Needs `org:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `updated_since` | timestamp |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `company` | string, or null | yes |  |
+| `is_active` | boolean | yes |  |
+| `updated_at` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "company": "<company>",
+      "is_active": true,
+      "updated_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### PUT /cost-centres/{code}
 
@@ -1194,11 +1979,85 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `company` | string, or null | yes |  |
+| `is_active` | boolean | yes |  |
+| `updated_at` | string | yes |  |
+
+```json
+{
+  "code": "<code>",
+  "name": "<name>",
+  "company": "<company>",
+  "is_active": true,
+  "updated_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### GET /org-chart
 
 <a id="get-org-chart"></a>**The org structure as a tree.** Departments nested under their parent, each with the positions that sit in it. A position names what it reports to, so the reporting line — which can cross departments — is reconstructable from the flat list even though the tree nests by department. For a company the client is not scoped to, nothing is returned.
 
 Needs `org:read`. Answers 200.
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `company` | string | yes |  |
+| `positions` | array of OrgChartPosition | yes |  |
+| `children` | array of OrgChartUnit | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "company": "<company>",
+      "positions": [
+        {
+          "code": "<code>",
+          "title": "<title>",
+          "reports_to": "<reports_to>",
+          "is_manager": true,
+          "is_vacant": true,
+          "holder_employee_id": 3
+        }
+      ],
+      "children": [
+        {
+          "code": "<code>",
+          "name": "<name>",
+          "company": "<company>",
+          "positions": [
+            {
+              "code": null,
+              "title": null,
+              "reports_to": null,
+              "is_manager": null,
+              "is_vacant": null,
+              "holder_employee_id": null
+            }
+          ],
+          "children": [
+            {
+              "code": null,
+              "name": null,
+              "company": null,
+              "positions": null,
+              "children": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
 
 #### POST /headcount-requests
 
@@ -1232,6 +2091,41 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `org_unit_code` | string | yes |  |
+| `job_code` | string | yes |  |
+| `title` | string | yes |  |
+| `grade` | string, or null | yes |  |
+| `budget` | Money | yes |  |
+| `reason` | string, or null | yes |  |
+| `requested_by_name` | string | yes |  |
+| `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` | yes |  |
+| `position_code` | string, or null | yes |  |
+| `requested_at` | string | yes |  |
+| `decided_at` | string, or null | yes |  |
+
+```json
+{
+  "id": 3,
+  "org_unit_code": "<org_unit_code>",
+  "job_code": "<job_code>",
+  "title": "<title>",
+  "grade": "<grade>",
+  "budget": {
+    "amount": "58000.00",
+    "currency": "INR"
+  },
+  "reason": "<reason>",
+  "requested_by_name": "<requested_by_name>",
+  "status": "Pending",
+  "position_code": "<position_code>",
+  "requested_at": "2026-10-01T09:30:00.000Z",
+  "decided_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### GET /headcount-requests
 
 <a id="get-headcount-requests"></a>**List headcount requests.** Oldest first. Filter with `status`.
@@ -1244,6 +2138,46 @@ Needs `org:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `org_unit_code` | string | yes |  |
+| `job_code` | string | yes |  |
+| `title` | string | yes |  |
+| `grade` | string, or null | yes |  |
+| `budget` | Money | yes |  |
+| `reason` | string, or null | yes |  |
+| `requested_by_name` | string | yes |  |
+| `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` | yes |  |
+| `position_code` | string, or null | yes |  |
+| `requested_at` | string | yes |  |
+| `decided_at` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "org_unit_code": "<org_unit_code>",
+      "job_code": "<job_code>",
+      "title": "<title>",
+      "grade": "<grade>",
+      "budget": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "reason": "<reason>",
+      "requested_by_name": "<requested_by_name>",
+      "status": "Pending",
+      "position_code": "<position_code>",
+      "requested_at": "2026-10-01T09:30:00.000Z",
+      "decided_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### POST /imports
 
@@ -1278,6 +2212,40 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `kind` | `org_structure` \\| `employees` \\| `opening_balances` | yes |  |
+| `file_name` | string, or null | yes |  |
+| `status` | `Validating` \\| `Validated` \\| `Importing` \\| `Completed` \\| `Failed` | yes |  |
+| `total_rows` | integer | yes |  |
+| `ok_rows` | integer | yes |  |
+| `error_rows` | integer | yes |  |
+| `skipped_rows` | integer | yes |  |
+| `written_rows` | integer | yes |  |
+| `uploaded_by` | string | yes |  |
+| `uploaded_at` | string | yes |  |
+| `confirmed_at` | string, or null | yes |  |
+| `finished_at` | string, or null | yes |  |
+
+```json
+{
+  "id": 3,
+  "kind": "org_structure",
+  "file_name": "<file_name>",
+  "status": "Validating",
+  "total_rows": 1,
+  "ok_rows": 1,
+  "error_rows": 1,
+  "skipped_rows": 1,
+  "written_rows": 1,
+  "uploaded_by": "<uploaded_by>",
+  "uploaded_at": "2026-10-01T09:30:00.000Z",
+  "confirmed_at": "2026-10-01T09:30:00.000Z",
+  "finished_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### GET /imports/{id}
 
 <a id="get-imports-id"></a>**Read an import's status.** The counts so far: checked, written, already on record, and could not be read.
@@ -1287,6 +2255,40 @@ Needs `org:read`. Answers 200.
 | Path parameter | Meaning |
 | --- | --- |
 | `id` | The import's id. |
+
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `kind` | `org_structure` \\| `employees` \\| `opening_balances` | yes |  |
+| `file_name` | string, or null | yes |  |
+| `status` | `Validating` \\| `Validated` \\| `Importing` \\| `Completed` \\| `Failed` | yes |  |
+| `total_rows` | integer | yes |  |
+| `ok_rows` | integer | yes |  |
+| `error_rows` | integer | yes |  |
+| `skipped_rows` | integer | yes |  |
+| `written_rows` | integer | yes |  |
+| `uploaded_by` | string | yes |  |
+| `uploaded_at` | string | yes |  |
+| `confirmed_at` | string, or null | yes |  |
+| `finished_at` | string, or null | yes |  |
+
+```json
+{
+  "id": 3,
+  "kind": "org_structure",
+  "file_name": "<file_name>",
+  "status": "Validating",
+  "total_rows": 1,
+  "ok_rows": 1,
+  "error_rows": 1,
+  "skipped_rows": 1,
+  "written_rows": 1,
+  "uploaded_by": "<uploaded_by>",
+  "uploaded_at": "2026-10-01T09:30:00.000Z",
+  "confirmed_at": "2026-10-01T09:30:00.000Z",
+  "finished_at": "2026-10-01T09:30:00.000Z"
+}
+```
 
 #### GET /imports/{id}/rows
 
@@ -1305,6 +2307,30 @@ Any valid token. Answers 200.
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `outcome` | `ok` \\| `written` \\| `skipped` \\| `error` |  |  |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `row_number` | integer | yes |  |
+| `key` | string, or null | yes |  |
+| `outcome` | `ok` \\| `written` \\| `skipped` \\| `error` | yes |  |
+| `messages` | array of string | yes |  |
+| `data` | object | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "row_number": 1,
+      "key": "<key>",
+      "outcome": "ok",
+      "messages": [
+        "<messages>"
+      ],
+      "data": {}
+    }
+  ]
+}
+```
+
 #### POST /imports/{id}/confirm
 
 <a id="post-imports-id-confirm"></a>**Write the rows that passed.** Commits every row still marked `ok`, in the background — a batch at a time, so a large file does not depend on one request. Poll `GET /imports/{id}` for progress; a completed import arrives as `import.completed`.
@@ -1314,6 +2340,40 @@ Any valid token. Send an `Idempotency-Key`. Answers 200.
 | Path parameter | Meaning |
 | --- | --- |
 | `id` | The import's id. |
+
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `kind` | `org_structure` \\| `employees` \\| `opening_balances` | yes |  |
+| `file_name` | string, or null | yes |  |
+| `status` | `Validating` \\| `Validated` \\| `Importing` \\| `Completed` \\| `Failed` | yes |  |
+| `total_rows` | integer | yes |  |
+| `ok_rows` | integer | yes |  |
+| `error_rows` | integer | yes |  |
+| `skipped_rows` | integer | yes |  |
+| `written_rows` | integer | yes |  |
+| `uploaded_by` | string | yes |  |
+| `uploaded_at` | string | yes |  |
+| `confirmed_at` | string, or null | yes |  |
+| `finished_at` | string, or null | yes |  |
+
+```json
+{
+  "id": 3,
+  "kind": "org_structure",
+  "file_name": "<file_name>",
+  "status": "Validating",
+  "total_rows": 1,
+  "ok_rows": 1,
+  "error_rows": 1,
+  "skipped_rows": 1,
+  "written_rows": 1,
+  "uploaded_by": "<uploaded_by>",
+  "uploaded_at": "2026-10-01T09:30:00.000Z",
+  "confirmed_at": "2026-10-01T09:30:00.000Z",
+  "finished_at": "2026-10-01T09:30:00.000Z"
+}
+```
 
 ### Payroll journal endpoints
 
@@ -1328,6 +2388,29 @@ Needs `gl:read`. Answers 200.
 | `limit` | integer |  | Up to 200; 50 by default. |
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `kind` | `expense` \\| `liability` \\| `asset` | yes |  |
+| `is_active` | boolean | yes |  |
+| `updated_at` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "kind": "expense",
+      "is_active": true,
+      "updated_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### PUT /gl-accounts/{code}
 
@@ -1355,6 +2438,24 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `kind` | `expense` \\| `liability` \\| `asset` | yes |  |
+| `is_active` | boolean | yes |  |
+| `updated_at` | string | yes |  |
+
+```json
+{
+  "code": "<code>",
+  "name": "<name>",
+  "kind": "expense",
+  "is_active": true,
+  "updated_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### GET /gl-postings
 
 <a id="get-gl-postings"></a>**List payroll journals.** Each run's journal, balanced, by account and cost centre, with its acknowledgement state. Poll with `ack_state=pending` to find journals still to book, or listen for `gl.posting.created`.
@@ -1367,6 +2468,60 @@ Needs `gl:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `ack_state` | `pending` \\| `acknowledged` \\| `rejected` |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `run_id` | integer | yes |  |
+| `posting_date` | string | yes | A date, YYYY-MM-DD. |
+| `posted_at` | string | yes |  |
+| `total_debit` | Money | yes |  |
+| `total_credit` | Money | yes |  |
+| `lines` | array of object | yes |  |
+| `acknowledgement` | Acknowledgement | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "run_id": 3,
+      "posting_date": "2026-10-01",
+      "posted_at": "2026-10-01T09:30:00.000Z",
+      "total_debit": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "total_credit": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "lines": [
+        {
+          "gl_account": "<gl_account>",
+          "description": "<description>",
+          "cost_centre": "<cost_centre>",
+          "debit": {
+            "amount": "58000.00",
+            "currency": "INR"
+          },
+          "credit": {
+            "amount": "58000.00",
+            "currency": "INR"
+          }
+        }
+      ],
+      "acknowledgement": {
+        "state": "pending",
+        "reference": "<reference>",
+        "reason": "<reason>",
+        "updated_at": "2026-10-01T09:30:00.000Z"
+      }
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### POST /gl-postings/{id}/acknowledgement
 
@@ -1405,6 +2560,22 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `state` | `pending` \\| `acknowledged` \\| `rejected` | yes |  |
+| `reference` | string, or null | yes |  |
+| `reason` | string, or null | yes |  |
+| `updated_at` | string, or null | yes |  |
+
+```json
+{
+  "state": "pending",
+  "reference": "<reference>",
+  "reason": "<reason>",
+  "updated_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 ### Time endpoints
 
 #### GET /holidays
@@ -1421,6 +2592,27 @@ Needs `time:read`. Answers 200.
 | `year` | integer |  |  |
 | `calendar` | string |  |  |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `date` | string | yes | A date, YYYY-MM-DD. |
+| `name` | string | yes |  |
+| `calendar` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "date": "<date>",
+      "name": "<name>",
+      "calendar": "<calendar>"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /absences
 
 <a id="get-absences"></a>**List absences.** Recorded absences — approved leave and absences HR or the ERP entered. With `updated_since`, only those recorded since.
@@ -1436,6 +2628,41 @@ Needs `time:read`. Answers 200.
 | `from` | string |  | Absences ending on or after this date. |
 | `to` | string |  | Absences starting on or before this date. |
 | `updated_since` | timestamp |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `absence_type` | string | yes |  |
+| `start_date` | string | yes | A date, YYYY-MM-DD. |
+| `end_date` | string | yes | A date, YYYY-MM-DD. |
+| `working_days` | number | yes |  |
+| `calendar_days` | number | yes |  |
+| `half_day` | boolean | yes |  |
+| `remarks` | string, or null | yes |  |
+| `from_leave_request_id` | integer, or null | yes |  |
+| `created_at` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "absence_type": "<absence_type>",
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-01",
+      "working_days": 1,
+      "calendar_days": 1,
+      "half_day": true,
+      "remarks": "<remarks>",
+      "from_leave_request_id": 3,
+      "created_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### POST /absences
 
@@ -1464,6 +2691,36 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `absence_type` | string | yes |  |
+| `start_date` | string | yes | A date, YYYY-MM-DD. |
+| `end_date` | string | yes | A date, YYYY-MM-DD. |
+| `working_days` | number | yes |  |
+| `calendar_days` | number | yes |  |
+| `half_day` | boolean | yes |  |
+| `remarks` | string, or null | yes |  |
+| `from_leave_request_id` | integer, or null | yes |  |
+| `created_at` | string | yes |  |
+
+```json
+{
+  "id": 3,
+  "employee_id": 3,
+  "absence_type": "<absence_type>",
+  "start_date": "2026-10-01",
+  "end_date": "2026-10-01",
+  "working_days": 1,
+  "calendar_days": 1,
+  "half_day": true,
+  "remarks": "<remarks>",
+  "from_leave_request_id": 3,
+  "created_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### GET /leave-requests
 
 <a id="get-leave-requests"></a>**List leave requests.**
@@ -1477,6 +2734,41 @@ Needs `time:read`. Answers 200.
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `status` | `Pending` \\| `Approved` \\| `Rejected` \\| `Cancelled` |  |  |
 | `employee_id` | integer |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `absence_type` | string | yes |  |
+| `from_date` | string | yes | A date, YYYY-MM-DD. |
+| `to_date` | string | yes | A date, YYYY-MM-DD. |
+| `working_days` | number | yes |  |
+| `half_day` | boolean | yes |  |
+| `reason` | string, or null | yes |  |
+| `status` | string | yes | Pending, Approved, Rejected or Cancelled. |
+| `submitted_at` | string | yes |  |
+| `decided_at` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "absence_type": "<absence_type>",
+      "from_date": "2026-10-01",
+      "to_date": "2026-10-01",
+      "working_days": 1,
+      "half_day": true,
+      "reason": "<reason>",
+      "status": "<status>",
+      "submitted_at": "2026-10-01T09:30:00.000Z",
+      "decided_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### GET /leave-balances
 
@@ -1492,6 +2784,32 @@ Needs `time:read`. Answers 200.
 
 ```http
 GET /api/v1/leave-balances?year=2026&employee_id=3
+```
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `employee_id` | integer | yes |  |
+| `quota_type` | string | yes |  |
+| `year` | integer | yes |  |
+| `entitled_days` | number | yes |  |
+| `used_days` | number | yes |  |
+| `remaining_days` | number | yes |  |
+| `forecast_days` | number |  | Present only with `as_of`: the balance projected to that date. |
+
+```json
+{
+  "data": [
+    {
+      "employee_id": 3,
+      "quota_type": "<quota_type>",
+      "year": 1,
+      "entitled_days": 1,
+      "used_days": 1,
+      "remaining_days": 1,
+      "forecast_days": 1
+    }
+  ]
+}
 ```
 
 #### GET /leave-ledger
@@ -1513,6 +2831,35 @@ Needs `time:read`. Answers 200.
 GET /api/v1/leave-ledger?employee_id=3&year=2026
 ```
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `quota_type` | string | yes |  |
+| `year` | integer | yes |  |
+| `entry_type` | `Accrual` \\| `Use` \\| `Restore` \\| `CarryForward` \\| `Lapse` \\| `Encashment` \\| `Adjustment` | yes |  |
+| `days` | number | yes | Signed: positive credits, negative debits. |
+| `note` | string, or null | yes |  |
+| `created_at` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "quota_type": "<quota_type>",
+      "year": 1,
+      "entry_type": "Accrual",
+      "days": 1,
+      "note": "<note>",
+      "created_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /leave-policies
 
 <a id="get-leave-policies"></a>**List leave policies.**
@@ -1525,6 +2872,45 @@ Needs `time:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `quota_type` | string | yes |  |
+| `applies_to_grade` | string, or null | yes |  |
+| `applies_to_area` | string, or null | yes |  |
+| `entitlement_days_per_year` | number | yes |  |
+| `accrual_frequency` | `Monthly` \\| `Yearly` | yes |  |
+| `pro_rata_for_joiners` | boolean | yes |  |
+| `carry_forward_cap_days` | number | yes |  |
+| `lapse_on` | string | yes | MM-DD. |
+| `encashable_days_per_year` | number | yes |  |
+| `sandwich_rule` | boolean | yes |  |
+| `is_active` | boolean | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "quota_type": "<quota_type>",
+      "applies_to_grade": "<applies_to_grade>",
+      "applies_to_area": "<applies_to_area>",
+      "entitlement_days_per_year": 1,
+      "accrual_frequency": "Monthly",
+      "pro_rata_for_joiners": true,
+      "carry_forward_cap_days": 1,
+      "lapse_on": "<lapse_on>",
+      "encashable_days_per_year": 1,
+      "sandwich_rule": true,
+      "is_active": true
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /holiday-calendars
 
 <a id="get-holiday-calendars"></a>**List holiday calendars.** The named holiday lists personnel areas sit on — see /holidays?calendar= for one calendar's own dates.
@@ -1536,6 +2922,25 @@ Needs `time:read`. Answers 200.
 | `limit` | integer |  | Up to 200; 50 by default. |
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `is_active` | boolean | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "is_active": true
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### POST /leave-requests
 
@@ -1565,6 +2970,36 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `absence_type` | string | yes |  |
+| `from_date` | string | yes | A date, YYYY-MM-DD. |
+| `to_date` | string | yes | A date, YYYY-MM-DD. |
+| `working_days` | number | yes |  |
+| `half_day` | boolean | yes |  |
+| `reason` | string, or null | yes |  |
+| `status` | string | yes | Pending, Approved, Rejected or Cancelled. |
+| `submitted_at` | string | yes |  |
+| `decided_at` | string, or null | yes |  |
+
+```json
+{
+  "id": 3,
+  "employee_id": 3,
+  "absence_type": "<absence_type>",
+  "from_date": "2026-10-01",
+  "to_date": "2026-10-01",
+  "working_days": 1,
+  "half_day": true,
+  "reason": "<reason>",
+  "status": "<status>",
+  "submitted_at": "2026-10-01T09:30:00.000Z",
+  "decided_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### GET /rosters
 
 <a id="get-rosters"></a>**List roster assignments.** One row per employee per rostered date. A null shift is a day off the roster names explicitly.
@@ -1584,6 +3019,27 @@ Needs `time:read`. Answers 200.
 GET /api/v1/rosters?employee_id=3&from=2026-10-01&to=2026-10-31
 ```
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `date` | string | yes | A date, YYYY-MM-DD. |
+| `shift` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "date": "<date>",
+      "shift": "<shift>"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /attendance-days
 
 <a id="get-attendance-days"></a>**List finalised attendance days.** What a day's punches, against the roster, added up to — written once the daily job (or 'run now') finalises it.
@@ -1601,6 +3057,39 @@ Needs `time:read`. Answers 200.
 
 ```http
 GET /api/v1/attendance-days?employee_id=3&from=2026-10-01&to=2026-10-31
+```
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `date` | string | yes | A date, YYYY-MM-DD. |
+| `shift` | string, or null | yes |  |
+| `first_in` | string, or null | yes |  |
+| `last_out` | string, or null | yes |  |
+| `worked_minutes` | integer | yes |  |
+| `late_minutes` | integer | yes |  |
+| `overtime_minutes` | integer | yes |  |
+| `status` | `Present` \\| `Late` \\| `HalfDay` \\| `Absent` | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "date": "<date>",
+      "shift": "<shift>",
+      "first_in": "<first_in>",
+      "last_out": "<last_out>",
+      "worked_minutes": 1,
+      "late_minutes": 1,
+      "overtime_minutes": 1,
+      "status": "Present"
+    }
+  ],
+  "next_cursor": "1042"
+}
 ```
 
 #### POST /punches
@@ -1625,6 +3114,18 @@ Content-Type: application/json
       "direction": "In"
     }
   ]
+}
+```
+
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `written` | integer | yes |  |
+| `skipped` | integer | yes |  |
+
+```json
+{
+  "written": 1,
+  "skipped": 1
 }
 ```
 
@@ -1654,6 +3155,16 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+
+```json
+{
+  "id": 3
+}
+```
+
 ### Payroll endpoints
 
 #### GET /payroll/periods
@@ -1669,6 +3180,33 @@ Needs `payroll:read`. Answers 200.
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `status` | `Open` \\| `Locked` \\| `Posted` |  |  |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `personnel_area` | string | yes |  |
+| `year` | integer | yes |  |
+| `month` | integer | yes |  |
+| `pay_date` | string, or null | yes |  |
+| `status` | string | yes |  |
+| `posted_at` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "personnel_area": "<personnel_area>",
+      "year": 1,
+      "month": 1,
+      "pay_date": "2026-10-01",
+      "status": "<status>",
+      "posted_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /payroll/runs
 
 <a id="get-payroll-runs"></a>**List payroll runs.**
@@ -1681,6 +3219,47 @@ Needs `payroll:read`. More fields with `pay:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `period_id` | integer |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `period_id` | integer | yes |  |
+| `run_type` | string | yes | Regular or Off-cycle. |
+| `status` | string | yes |  |
+| `reason` | string, or null | yes |  |
+| `pay_date` | string, or null | yes |  |
+| `employee_count` | integer | yes |  |
+| `error_count` | integer | yes |  |
+| `gross_total` | Money |  | With pay:read. |
+| `net_total` | Money |  | With pay:read. |
+| `completed_at` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "period_id": 3,
+      "run_type": "<run_type>",
+      "status": "<status>",
+      "reason": "<reason>",
+      "pay_date": "2026-10-01",
+      "employee_count": 1,
+      "error_count": 1,
+      "gross_total": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "net_total": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "completed_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### GET /payroll/runs/{id}/results
 
@@ -1698,6 +3277,76 @@ Needs `payroll:read` and `pay:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `run_id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `status` | string | yes |  |
+| `gross` | Money | yes |  |
+| `net` | Money | yes |  |
+| `lines` | array of object | yes |  |
+| `published_at` | string, or null | yes | When the employee could first see it; null until its month is posted. |
+| `year_to_date` | object | yes | The financial year so far, up to and including this payslip, summed from the stored lines. |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "run_id": 3,
+      "employee_id": 3,
+      "status": "<status>",
+      "gross": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "net": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "lines": [
+        {
+          "wage_type": "<wage_type>",
+          "name": "<name>",
+          "kind": "<kind>",
+          "amount": {
+            "amount": "58000.00",
+            "currency": "INR"
+          }
+        }
+      ],
+      "published_at": "2026-10-01T09:30:00.000Z",
+      "year_to_date": {
+        "financial_year": "<financial_year>",
+        "gross": {
+          "amount": "58000.00",
+          "currency": "INR"
+        },
+        "deductions": {
+          "amount": "58000.00",
+          "currency": "INR"
+        },
+        "net": {
+          "amount": "58000.00",
+          "currency": "INR"
+        },
+        "lines": [
+          {
+            "wage_type": "<wage_type>",
+            "amount": {
+              "amount": null,
+              "currency": null
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /payroll/results/{id}/payslip
 
 <a id="get-payroll-results-id-payslip"></a>**A payslip as a PDF.** One person's payslip as the PDF they would download, with the year to date — for the ERP's own portal to show. Not password-protected: show it only to that person. Needs pay:read.
@@ -1707,6 +3356,8 @@ Needs `payroll:read` and `pay:read`. Answers 200.
 | Path parameter | Meaning |
 | --- | --- |
 | `id` | The payroll result's id, from the run's results. |
+
+Answers with `application/pdf` — the file itself, not JSON.
 
 ### Payments endpoints
 
@@ -1722,6 +3373,57 @@ Needs `payroll:read`. More fields with `pay:read` or `bank:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `state` | `pending` \\| `complete` |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `run_id` | integer | yes |  |
+| `payment_date` | string | yes | A date, YYYY-MM-DD. |
+| `format` | string | yes |  |
+| `line_count` | integer | yes |  |
+| `total` | Money |  | With pay:read. |
+| `paid` | integer | yes |  |
+| `failed` | integer | yes |  |
+| `pending` | integer | yes |  |
+| `lines` | array of object | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "run_id": 3,
+      "payment_date": "2026-10-01",
+      "format": "<format>",
+      "line_count": 1,
+      "total": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "paid": 1,
+      "failed": 1,
+      "pending": 1,
+      "lines": [
+        {
+          "employee_id": 3,
+          "employee_name": "<employee_name>",
+          "bank_name": "<bank_name>",
+          "account_number": "<account_number>",
+          "ifsc": "<ifsc>",
+          "amount": {
+            "amount": "58000.00",
+            "currency": "INR"
+          },
+          "payment_status": "pending",
+          "bank_reference": "<bank_reference>",
+          "failure_reason": "<failure_reason>"
+        }
+      ]
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### POST /payment-batches/{id}/confirmations
 
@@ -1753,6 +3455,28 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `outcomes` | array of object | yes |  |
+| `paid` | integer | yes |  |
+| `failed` | integer | yes |  |
+| `pending` | integer | yes |  |
+
+```json
+{
+  "outcomes": [
+    {
+      "employee_id": 3,
+      "outcome": "applied",
+      "issue_id": 3
+    }
+  ],
+  "paid": 1,
+  "failed": 1,
+  "pending": 1
+}
+```
+
 #### GET /remittances
 
 <a id="get-remittances"></a>**List statutory remittances.** Provident fund, ESI, TDS, professional tax and the labour welfare fund owed to each authority from each run, with their due dates.
@@ -1765,6 +3489,38 @@ Needs `payroll:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `status` | `Due` \\| `Remitted` |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `run_id` | integer | yes |  |
+| `authority` | string | yes |  |
+| `amount` | Money | yes |  |
+| `due_date` | string | yes | A date, YYYY-MM-DD. |
+| `status` | string | yes | Due or Remitted. |
+| `remitted_at` | string, or null | yes |  |
+| `reference` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "run_id": 3,
+      "authority": "<authority>",
+      "amount": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "due_date": "2026-10-01",
+      "status": "<status>",
+      "remitted_at": "2026-10-01T09:30:00.000Z",
+      "reference": "<reference>"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### POST /remittances/{id}/payment
 
@@ -1791,6 +3547,33 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `run_id` | integer | yes |  |
+| `authority` | string | yes |  |
+| `amount` | Money | yes |  |
+| `due_date` | string | yes | A date, YYYY-MM-DD. |
+| `status` | string | yes | Due or Remitted. |
+| `remitted_at` | string, or null | yes |  |
+| `reference` | string, or null | yes |  |
+
+```json
+{
+  "id": 3,
+  "run_id": 3,
+  "authority": "<authority>",
+  "amount": {
+    "amount": "58000.00",
+    "currency": "INR"
+  },
+  "due_date": "2026-10-01",
+  "status": "<status>",
+  "remitted_at": "2026-10-01T09:30:00.000Z",
+  "reference": "<reference>"
+}
+```
+
 #### GET /one-off-payments
 
 <a id="get-one-off-payments"></a>**List one-off payments.**
@@ -1803,6 +3586,36 @@ Needs `payroll:read` and `pay:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `employee_id` | integer |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `wage_type` | string | yes |  |
+| `amount` | Money | yes |  |
+| `payment_date` | string | yes | A date, YYYY-MM-DD. |
+| `paid_by_run_id` | integer, or null | yes |  |
+| `created_at` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "wage_type": "<wage_type>",
+      "amount": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "payment_date": "2026-10-01",
+      "paid_by_run_id": 3,
+      "created_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### POST /one-off-payments
 
@@ -1832,6 +3645,31 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `wage_type` | string | yes |  |
+| `amount` | Money | yes |  |
+| `payment_date` | string | yes | A date, YYYY-MM-DD. |
+| `paid_by_run_id` | integer, or null | yes |  |
+| `created_at` | string | yes |  |
+
+```json
+{
+  "id": 3,
+  "employee_id": 3,
+  "wage_type": "<wage_type>",
+  "amount": {
+    "amount": "58000.00",
+    "currency": "INR"
+  },
+  "payment_date": "2026-10-01",
+  "paid_by_run_id": 3,
+  "created_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### GET /recurring-payments
 
 <a id="get-recurring-payments"></a>**List recurring payments.**
@@ -1844,6 +3682,36 @@ Needs `payroll:read` and `pay:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `employee_id` | integer |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `wage_type` | string | yes |  |
+| `amount` | Money | yes |  |
+| `start_date` | string | yes | A date, YYYY-MM-DD. |
+| `end_date` | string, or null | yes |  |
+| `created_at` | string | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "wage_type": "<wage_type>",
+      "amount": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-01",
+      "created_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### POST /recurring-payments
 
@@ -1875,11 +3743,66 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `wage_type` | string | yes |  |
+| `amount` | Money | yes |  |
+| `start_date` | string | yes | A date, YYYY-MM-DD. |
+| `end_date` | string, or null | yes |  |
+| `created_at` | string | yes |  |
+
+```json
+{
+  "id": 3,
+  "employee_id": 3,
+  "wage_type": "<wage_type>",
+  "amount": {
+    "amount": "58000.00",
+    "currency": "INR"
+  },
+  "start_date": "2026-10-01",
+  "end_date": "2026-10-01",
+  "created_at": "2026-10-01T09:30:00.000Z"
+}
+```
+
 #### GET /salary-structures
 
 <a id="get-salary-structures"></a>**List salary structures.** How an annual CTC splits into basic, allowances and employer contributions each month — read an employee's own with /employees/{id}/history?record=ctc.
 
 Needs `payroll:read`. Answers 200.
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `code` | string | yes |  |
+| `name` | string | yes |  |
+| `is_active` | boolean | yes |  |
+| `components` | array of object | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "is_active": true,
+      "components": [
+        {
+          "wage_type": "<wage_type>",
+          "component_type": "<component_type>",
+          "percent": 1,
+          "fixed_amount": {
+            "amount": null,
+            "currency": null
+          }
+        }
+      ]
+    }
+  ]
+}
+```
 
 #### GET /loans
 
@@ -1894,6 +3817,77 @@ Needs `payroll:read` and `pay:read`. Answers 200.
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `employee_id` | integer |  |  |
 | `status` | `Pending` \\| `Active` \\| `Closed` \\| `Rejected` |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `loan_type` | string | yes |  |
+| `principal` | Money | yes |  |
+| `annual_rate_percent` | number | yes |  |
+| `tenure_months` | integer | yes |  |
+| `emi` | Money | yes |  |
+| `start_date` | string | yes | A date, YYYY-MM-DD. |
+| `status` | `Pending` \\| `Active` \\| `Closed` \\| `Rejected` | yes |  |
+| `reason` | string, or null | yes |  |
+| `requested_at` | string | yes |  |
+| `decided_at` | string, or null | yes |  |
+| `schedule` | array of LoanScheduleLine | yes | Generated once, the moment the loan is approved. Empty for a loan still pending or rejected. |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "loan_type": "<loan_type>",
+      "principal": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "annual_rate_percent": 1,
+      "tenure_months": 1,
+      "emi": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "start_date": "2026-10-01",
+      "status": "Pending",
+      "reason": "<reason>",
+      "requested_at": "2026-10-01T09:30:00.000Z",
+      "decided_at": "2026-10-01T09:30:00.000Z",
+      "schedule": [
+        {
+          "installment_no": 1,
+          "due_date": "2026-10-01",
+          "opening_balance": {
+            "amount": "58000.00",
+            "currency": "INR"
+          },
+          "principal": {
+            "amount": "58000.00",
+            "currency": "INR"
+          },
+          "interest": {
+            "amount": "58000.00",
+            "currency": "INR"
+          },
+          "closing_balance": {
+            "amount": "58000.00",
+            "currency": "INR"
+          },
+          "perquisite_value": {
+            "amount": "58000.00",
+            "currency": "INR"
+          },
+          "paid": true
+        }
+      ]
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 #### POST /claims
 
@@ -1929,6 +3923,44 @@ Content-Type: application/json
 }
 ```
 
+| Response field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `category` | string | yes |  |
+| `claim_date` | string | yes | A date, YYYY-MM-DD. |
+| `total_amount` | Money | yes |  |
+| `status` | string | yes | Always Approved: a claim sent here skips the HRMS's own approval, since the ERP's process already decided it. |
+| `wage_type` | string | yes | CLAIM or REIMB, by the category's own taxability — what it is queued to be paid on. |
+| `decided_at` | string, or null | yes |  |
+| `lines` | array of ClaimLine | yes |  |
+
+```json
+{
+  "id": 3,
+  "employee_id": 3,
+  "category": "<category>",
+  "claim_date": "2026-10-01",
+  "total_amount": {
+    "amount": "58000.00",
+    "currency": "INR"
+  },
+  "status": "<status>",
+  "wage_type": "<wage_type>",
+  "decided_at": "2026-10-01T09:30:00.000Z",
+  "lines": [
+    {
+      "date": "<date>",
+      "description": "<description>",
+      "amount": {
+        "amount": "58000.00",
+        "currency": "INR"
+      }
+    }
+  ]
+}
+```
+
 #### GET /settlements
 
 <a id="get-settlements"></a>**List settlements.** Each full and final settlement, with every component and its basis. Needs pay:read for the amounts.
@@ -1941,6 +3973,44 @@ Needs `payroll:read` and `pay:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `employee_id` | integer |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `exit_id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `status` | `Draft` \\| `Paid` | yes |  |
+| `run_id` | integer, or null | yes |  |
+| `computed_at` | string | yes |  |
+| `paid_at` | string, or null | yes |  |
+| `lines` | array of SettlementLine | yes | Salary to the last day, leave encashment, notice pay, gratuity, loan recovery and any pending claim — whatever applied. A negative amount recovers rather than pays. |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "exit_id": 3,
+      "employee_id": 3,
+      "status": "Draft",
+      "run_id": 3,
+      "computed_at": "2026-10-01T09:30:00.000Z",
+      "paid_at": "2026-10-01T09:30:00.000Z",
+      "lines": [
+        {
+          "component": "<component>",
+          "basis": "<basis>",
+          "amount": {
+            "amount": "58000.00",
+            "currency": "INR"
+          }
+        }
+      ]
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 ### Tax endpoints
 
@@ -1956,6 +4026,43 @@ Needs `tax:read`. More fields with `pay:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `financial_year` | string |  | Such as 2026-27. |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `financial_year` | string | yes |  |
+| `quarter` | integer | yes |  |
+| `gross_paid` | Money |  | With pay:read. |
+| `tds_deducted` | Money | yes |  |
+| `challan_bsr` | string, or null | yes |  |
+| `deposit_date` | string, or null | yes |  |
+| `receipt_24q` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "employee_id": 3,
+      "financial_year": "<financial_year>",
+      "quarter": 1,
+      "gross_paid": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "tds_deducted": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "challan_bsr": "<challan_bsr>",
+      "deposit_date": "2026-10-01",
+      "receipt_24q": "<receipt_24q>"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 ### Recruitment endpoints
 
@@ -1973,6 +4080,75 @@ Needs `recruitment:read`. More fields with `pay:read`. Answers 200.
 | `status` | `Open` \\| `On hold` \\| `Closed` |  |  |
 | `published` | `true` \\| `false` |  | Only those on, or off, the careers page. |
 
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `code` | string | yes |  |
+| `title` | string | yes | The role as candidates see it. |
+| `position` | string | yes |  |
+| `department` | string | yes |  |
+| `company` | string, or null | yes |  |
+| `job` | string | yes |  |
+| `description` | string, or null | yes |  |
+| `qualifications` | string, or null | yes | One per line. |
+| `skills` | string, or null | yes | One per line. |
+| `experience_years` | object | yes |  |
+| `employment_type` | `Full-time` \\| `Part-time` \\| `Contract` \\| `Internship` | yes |  |
+| `work_mode` | `On site` \\| `Hybrid` \\| `Remote` | yes |  |
+| `location` | string, or null | yes |  |
+| `budget` | object |  | The monthly salary budgeted. With pay:read. |
+| `hiring_manager_employee_id` | integer, or null | yes |  |
+| `openings` | integer | yes |  |
+| `priority` | string | yes |  |
+| `posted_date` | string, or null | yes |  |
+| `target_close_date` | string, or null | yes |  |
+| `status` | `Open` \\| `On hold` \\| `Closed` | yes |  |
+| `is_published` | boolean | yes | On the public careers page. |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "code": "<code>",
+      "title": "<title>",
+      "position": "<position>",
+      "department": "<department>",
+      "company": "<company>",
+      "job": "<job>",
+      "description": "<description>",
+      "qualifications": "<qualifications>",
+      "skills": "<skills>",
+      "experience_years": {
+        "min": 1,
+        "max": 1
+      },
+      "employment_type": "Full-time",
+      "work_mode": "On site",
+      "location": "<location>",
+      "budget": {
+        "min": {
+          "amount": "58000.00",
+          "currency": "INR"
+        },
+        "max": {
+          "amount": "58000.00",
+          "currency": "INR"
+        }
+      },
+      "hiring_manager_employee_id": 3,
+      "openings": 1,
+      "priority": "<priority>",
+      "posted_date": "2026-10-01",
+      "target_close_date": "2026-10-01",
+      "status": "Open",
+      "is_published": true
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
+
 #### GET /applications
 
 <a id="get-applications"></a>**List applications.** Where each candidate stands against each requisition, with their interview rounds. Filter with `requisition_id` and `stage`. Candidates' personal details and interview notes stay in the HRMS; a hire arrives as the `candidate.hired` event and the new employee.
@@ -1986,6 +4162,59 @@ Needs `recruitment:read`. More fields with `pay:read`. Answers 200.
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `requisition_id` | integer |  |  |
 | `stage` | `Applied` \\| `Interviewing` \\| `Selected` \\| `Offered` \\| `Hired` |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `requisition_id` | integer | yes |  |
+| `candidate_id` | integer | yes |  |
+| `stage` | `Applied` \\| `Interviewing` \\| `Selected` \\| `Offered` \\| `Hired` | yes | Applied, then Interviewing, Selected (approved), Offered and Hired. A rejected application keeps the stage it reached. |
+| `outcome` | `open` \\| `rejected` \\| `hired` | yes |  |
+| `channel` | `Careers page` \\| `Added by HR` | yes |  |
+| `applied_date` | string | yes | A date, YYYY-MM-DD. |
+| `rejected_at` | string, or null | yes |  |
+| `selected_at` | string, or null | yes |  |
+| `offered_at` | string, or null | yes |  |
+| `offered_salary` | Money, or null |  | Monthly. With pay:read. |
+| `employee_id` | integer, or null | yes | Once hired. |
+| `interviews` | array of InterviewRound | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "requisition_id": 3,
+      "candidate_id": 3,
+      "stage": "Applied",
+      "outcome": "open",
+      "channel": "Careers page",
+      "applied_date": "2026-10-01",
+      "rejected_at": "2026-10-01T09:30:00.000Z",
+      "selected_at": "2026-10-01T09:30:00.000Z",
+      "offered_at": "2026-10-01T09:30:00.000Z",
+      "offered_salary": {
+        "amount": "58000.00",
+        "currency": "INR"
+      },
+      "employee_id": 3,
+      "interviews": [
+        {
+          "id": 3,
+          "round": "<round>",
+          "interviewer_employee_id": 3,
+          "scheduled_date": "2026-10-01",
+          "scheduled_time": "<scheduled_time>",
+          "status": "Scheduled",
+          "rating": 1,
+          "recommendation": "Advance"
+        }
+      ]
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 ### Performance endpoints
 
@@ -2001,5 +4230,30 @@ Needs `performance:read`. Answers 200.
 | `cursor` | string |  | The `next_cursor` from the previous page. |
 | `fields` | string |  | Comma-separated top-level fields to return, such as `id,employee_number,personal`. |
 | `cycle_id` | integer |  |  |
+
+| Field, per item | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `cycle_id` | integer | yes |  |
+| `employee_id` | integer | yes |  |
+| `status` | string | yes |  |
+| `final_rating` | integer, or null | yes | The calibrated rating, once calibration is finalised. |
+| `finalised_at` | string, or null | yes |  |
+
+```json
+{
+  "data": [
+    {
+      "id": 3,
+      "cycle_id": 3,
+      "employee_id": 3,
+      "status": "<status>",
+      "final_rating": 1,
+      "finalised_at": "2026-10-01T09:30:00.000Z"
+    }
+  ],
+  "next_cursor": "1042"
+}
+```
 
 <!-- endpoint-reference:end -->

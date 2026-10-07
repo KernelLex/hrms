@@ -131,6 +131,16 @@ async function managersOf(employeeIds: number[], executor: Executor): Promise<{ 
   return r.rows.map((m) => ({ userId: Number(m.user_id), employeeId: Number(m.employee_id) }));
 }
 
+/**
+ * Whether one employee reports to another today — the same reporting line
+ * every "reporting_manager" step resolves through, so a manager acting on
+ * their own team is judged by exactly the rule that routes approvals to them.
+ */
+export async function managesEmployee(managerEmployeeId: number, employeeId: number): Promise<boolean> {
+  const managers = await managersOf([employeeId], rawClient());
+  return managers.some((m) => m.employeeId === managerEmployeeId);
+}
+
 async function usersWithRole(role: string, executor: Executor): Promise<number[]> {
   const r = await executor.execute({
     sql: `SELECT u.id FROM sec_user_role ur JOIN sec_app_user u ON u.id = ur.user_id AND u.is_active = 1
@@ -174,6 +184,40 @@ export async function resolveApprovers(
     users = (await usersWithRole("HR_ADMIN", executor)).filter(allowed);
   }
   return users;
+}
+
+/**
+ * Whether this person could ever be asked to approve something, which is
+ * what makes handing their approvals over while they are away meaningful.
+ * True when requests can reach them: they have people reporting to them, a
+ * flow step names their role or names them, or they can override a process's
+ * decisions outright. Someone who approves nothing is not offered the
+ * hand-over, since there would be nothing to hand.
+ */
+export async function isApprover(userId: number, employeeId: number | null): Promise<boolean> {
+  const d = todayInIndia();
+  const r = await rawClient().execute({
+    sql: `SELECT
+            EXISTS (SELECT 1
+                      FROM pa_it0001_org_assignment mine
+                      JOIN om_position pos ON pos.code = mine.position_code
+                      JOIN pa_it0001_org_assignment theirs ON theirs.position_code = pos.reports_to_code
+                     WHERE mine.valid_from <= ?3 AND mine.valid_to >= ?3
+                       AND theirs.valid_from <= ?3 AND theirs.valid_to >= ?3
+                       AND theirs.employee_id = ?2) AS has_reports,
+            EXISTS (SELECT 1 FROM wf_step s
+                      JOIN wf_flow f ON f.id = s.flow_id AND f.is_active = 1
+                     WHERE (s.approver_type = 'person' AND s.approver_user_id = ?1)
+                        OR (s.approver_type = 'role' AND s.approver_role IN
+                              (SELECT role_code FROM sec_user_role WHERE user_id = ?1))) AS named,
+            EXISTS (SELECT 1 FROM sec_user_role ur
+                      JOIN sec_role_permission rp ON rp.role_code = ur.role_code
+                     WHERE ur.user_id = ?1 AND rp.permission_code IN ('leave.decide_any', 'access.manage')) AS overrides,
+            EXISTS (SELECT 1 FROM wf_assignee a WHERE a.user_id = ?1) AS asked_before`,
+    args: [userId, employeeId ?? 0, d],
+  });
+  const row = r.rows[0];
+  return Boolean(Number(row.has_reports) || Number(row.named) || Number(row.overrides) || Number(row.asked_before));
 }
 
 /* ------------------------------------------------------------- delegation */

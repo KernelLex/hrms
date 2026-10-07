@@ -19,7 +19,7 @@ import {
   Status,
 } from "@/components/ui";
 import { DocumentList } from "@/components/documents";
-import { delegationsOf } from "@/lib/workflow/engine";
+import { delegationsOf, isApprover } from "@/lib/workflow/engine";
 import { listUsers } from "@/lib/repositories/access";
 import { AwayCard } from "./away";
 import { CancelRequestButton, ChangeRequestButton, type CurrentRecord } from "./change-request";
@@ -51,9 +51,16 @@ function yearsOfService(hireDate: string, today: string): string {
   return years === 1 ? "1 year" : `${years} years`;
 }
 
-/** "While I am away": this person's hand-overs, both ways, and who they could hand to. */
-async function awayCard(userId: number, today: string) {
-  const [delegations, people] = await Promise.all([delegationsOf(userId), listUsers()]);
+/**
+ * "While I am away": this person's hand-overs, both ways, and who they could
+ * hand to. Only for people who approve something — nobody reports to a
+ * senior engineer, so there is nothing for them to hand over, and offering
+ * it only invites the question of why it is there.
+ */
+async function awayCard(userId: number, employeeId: number | null, today: string) {
+  const [approver, delegations] = await Promise.all([isApprover(userId, employeeId), delegationsOf(userId)]);
+  if (!approver && delegations.length === 0) return null;
+  const people = await listUsers();
   return (
     <AwayCard
       today={today}
@@ -71,7 +78,7 @@ async function awayCard(userId: number, today: string) {
 export default async function MyProfilePage() {
   const session = await requirePage(["self.profile"]);
   const today = todayInIndia();
-  const away = await awayCard(session.userId, today);
+  const away = await awayCard(session.userId, session.employeeId, today);
 
   if (!session.employeeId) {
     return (
@@ -111,7 +118,14 @@ export default async function MyProfilePage() {
     ),
     contacts: Object.fromEntries(profile.contacts.map((c) => [c.type, c.value])),
     bank: profile.bank
-      ? { bank_name: profile.bank.bankName, ifsc: profile.bank.ifsc ?? "", holder_name: profile.bank.holderName ?? "" }
+      ? {
+          bank_name: profile.bank.bankName,
+          ifsc: profile.bank.ifsc ?? "",
+          holder_name: profile.bank.holderName ?? "",
+          // Masked, to say which account is being replaced. The full number
+          // is never read back to the screen, so a new one is typed in full.
+          account_masked: profile.bank.accountEnding,
+        }
       : null,
   };
 
@@ -217,9 +231,15 @@ export default async function MyProfilePage() {
                         {isSection(q.section) ? describeChange(q.section, q.subtype) : q.section}
                       </div>
                       <div className="mt-0.5 text-xs text-muted">
-                        From {formatDate(q.effectiveDate)}, asked {formatDate(q.requestedAt.slice(0, 10))}
+                        From {formatDate(q.effectiveDate)}, asked {formatDate(q.requestedAt.slice(0, 10))} by{" "}
+                        {q.channel === "api" ? `${q.requestedByName} (a connected system)` : q.requestedByName}
                         {q.decisionNote ? `. ${q.decisionNote}` : ""}
                       </div>
+                      {q.status === "Pending" ? (
+                        <div className="mt-0.5 text-xs text-muted">
+                          {q.waitingOn ? `Waiting on ${q.waitingOn}` : "Waiting on HR"}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <Status tone={REQUEST_TONE[q.status] ?? "neutral"}>

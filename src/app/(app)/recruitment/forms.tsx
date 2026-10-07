@@ -99,6 +99,13 @@ export function RequisitionForm({
     return r;
   }, {} as ActionState);
 
+  // React resets an uncontrolled field to its `defaultValue` once the action
+  // returns, so a refused form reads its defaults back from what was typed
+  // rather than from what was first loaded. Nothing is retyped.
+  const back = state.values;
+  const d = (field: Exclude<keyof RequisitionValues, "code" | "isPublished">) => back?.[field] ?? values[field];
+  const publishedDefault = back ? back.isPublished === "on" : values.isPublished;
+
   // Choosing a position suggests its title and place, until they are typed.
   const choosePosition = (code: string) => {
     const p = positions.find((x) => x.code === code);
@@ -120,7 +127,7 @@ export function RequisitionForm({
                 id="positionCode"
                 name="positionCode"
                 required
-                defaultValue={values.positionCode}
+                defaultValue={d("positionCode")}
                 onChange={(e) => choosePosition(e.target.value)}
               >
                 <option value="">{positions.length ? "Choose a vacant position" : "No vacant positions"}</option>
@@ -135,14 +142,14 @@ export function RequisitionForm({
               <Input id="title" name="title" required maxLength={120} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Senior Java developer" />
             </Field>
             <Field label="Employment type" htmlFor="employmentType" required>
-              <Select id="employmentType" name="employmentType" defaultValue={values.employmentType}>
+              <Select id="employmentType" name="employmentType" defaultValue={d("employmentType")}>
                 {EMPLOYMENT_TYPES.map((t) => (
                   <option key={t}>{t}</option>
                 ))}
               </Select>
             </Field>
             <Field label="Where they work" htmlFor="workMode" required>
-              <Select id="workMode" name="workMode" defaultValue={values.workMode}>
+              <Select id="workMode" name="workMode" defaultValue={d("workMode")}>
                 {WORK_MODES.map((m) => (
                   <option key={m}>{m}</option>
                 ))}
@@ -162,25 +169,25 @@ export function RequisitionForm({
         <div className="px-6 pb-6">
           <FormGrid>
             <FormFull>
-              <Field label="About the role" htmlFor="description" hint="What the job is, what the person will do, and who they will work with. Blank lines start new paragraphs.">
-                <Textarea id="description" name="description" rows={7} maxLength={8000} defaultValue={values.description} placeholder="You will build and run the services behind our plant systems…" />
+              <Field label="About the role" htmlFor="description" required hint="What the job is, what the person will do, and who they will work with. A few sentences at least. Blank lines start new paragraphs.">
+                <Textarea id="description" name="description" rows={7} required minLength={40} maxLength={8000} defaultValue={d("description")} placeholder="You will build and run the services behind our plant systems…" />
               </Field>
             </FormFull>
             <FormFull>
               <Field label="Qualifications" htmlFor="qualifications" hint="Education and certifications. One per line.">
-                <Textarea id="qualifications" name="qualifications" rows={4} maxLength={4000} defaultValue={values.qualifications} placeholder={"B.E. or B.Tech in computer science, or equivalent"} />
+                <Textarea id="qualifications" name="qualifications" rows={4} maxLength={4000} defaultValue={d("qualifications")} placeholder={"B.E. or B.Tech in computer science, or equivalent"} />
               </Field>
             </FormFull>
             <FormFull>
-              <Field label="Skills" htmlFor="skills" hint="One per line.">
-                <Textarea id="skills" name="skills" rows={3} maxLength={2000} defaultValue={values.skills} placeholder={"Java 17 and Spring Boot\nSQL"} />
+              <Field label="Skills" htmlFor="skills" required hint="One per line.">
+                <Textarea id="skills" name="skills" rows={3} required maxLength={2000} defaultValue={d("skills")} placeholder={"Java 17 and Spring Boot\nSQL"} />
               </Field>
             </FormFull>
-            <Field label="Experience from" htmlFor="experienceMinYears" hint="Years.">
-              <Input id="experienceMinYears" name="experienceMinYears" inputMode="numeric" defaultValue={values.experienceMinYears} placeholder="3" />
+            <Field label="Experience from" htmlFor="experienceMinYears" required hint="Years. Enter 0 for a role open to freshers.">
+              <Input id="experienceMinYears" name="experienceMinYears" inputMode="numeric" required defaultValue={d("experienceMinYears")} placeholder="3" />
             </Field>
             <Field label="Experience up to" htmlFor="experienceMaxYears" hint="Years. Leave blank for no upper limit.">
-              <Input id="experienceMaxYears" name="experienceMaxYears" inputMode="numeric" defaultValue={values.experienceMaxYears} placeholder="6" />
+              <Input id="experienceMaxYears" name="experienceMaxYears" inputMode="numeric" defaultValue={d("experienceMaxYears")} placeholder="6" />
             </Field>
           </FormGrid>
         </div>
@@ -191,18 +198,18 @@ export function RequisitionForm({
         <div className="px-6 pb-6">
           <FormGrid>
             <Field label="Openings" htmlFor="openings" required>
-              <Input id="openings" name="openings" inputMode="numeric" required defaultValue={values.openings} />
+              <Input id="openings" name="openings" inputMode="numeric" required defaultValue={d("openings")} />
             </Field>
             <Field label="Priority" htmlFor="priority" required>
-              <Select id="priority" name="priority" defaultValue={values.priority}>
+              <Select id="priority" name="priority" defaultValue={d("priority")}>
                 {["High", "Medium", "Low"].map((p) => (
                   <option key={p}>{p}</option>
                 ))}
               </Select>
             </Field>
-            <Field label="Hiring manager" htmlFor="hiringManagerEmployeeId">
-              <Select id="hiringManagerEmployeeId" name="hiringManagerEmployeeId" defaultValue={values.hiringManagerEmployeeId}>
-                <option value="">Not named</option>
+            <Field label="Hiring manager" htmlFor="hiringManagerEmployeeId" required hint="Who owns this role and takes its decisions.">
+              <Select id="hiringManagerEmployeeId" name="hiringManagerEmployeeId" required defaultValue={d("hiringManagerEmployeeId")}>
+                <option value="">Choose the hiring manager</option>
                 {employees.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.label}
@@ -211,29 +218,29 @@ export function RequisitionForm({
               </Select>
             </Field>
             <Field label="Status" htmlFor="status" required>
-              <Select id="status" name="status" defaultValue={values.status}>
+              <Select id="status" name="status" defaultValue={d("status")}>
                 {["Open", "On hold", "Closed"].map((s) => (
                   <option key={s}>{s}</option>
                 ))}
               </Select>
             </Field>
             <Field label="Monthly budget from" htmlFor="budgetMin" hint="In rupees.">
-              <Input id="budgetMin" name="budgetMin" inputMode="decimal" defaultValue={values.budgetMin} placeholder="60000" />
+              <Input id="budgetMin" name="budgetMin" inputMode="decimal" defaultValue={d("budgetMin")} placeholder="60000" />
             </Field>
             <Field label="Monthly budget up to" htmlFor="budgetMax" hint="In rupees.">
-              <Input id="budgetMax" name="budgetMax" inputMode="decimal" defaultValue={values.budgetMax} placeholder="85000" />
+              <Input id="budgetMax" name="budgetMax" inputMode="decimal" defaultValue={d("budgetMax")} placeholder="85000" />
             </Field>
             <Field label="Posted" htmlFor="postedDate" required>
-              <DateInput id="postedDate" name="postedDate" required defaultValue={values.postedDate} />
+              <DateInput id="postedDate" name="postedDate" required defaultValue={d("postedDate")} />
             </Field>
             <Field label="Close by" htmlFor="targetCloseDate">
-              <DateInput id="targetCloseDate" name="targetCloseDate" defaultValue={values.targetCloseDate} />
+              <DateInput id="targetCloseDate" name="targetCloseDate" defaultValue={d("targetCloseDate")} />
             </Field>
             <FormFull>
               <Checkbox
                 id="isPublished"
                 name="isPublished"
-                defaultChecked={values.isPublished}
+                defaultChecked={publishedDefault}
                 label="Publish on the careers page, so candidates can apply for it themselves"
               />
             </FormFull>

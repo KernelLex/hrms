@@ -120,7 +120,16 @@ function Fields({ choice, current, id }: { choice: Choice; current: CurrentRecor
       <Field label="IFSC" htmlFor={f("ifsc")} required hint="On your cheque book, 11 characters.">
         <Input id={f("ifsc")} name="ifsc" required maxLength={11} defaultValue={b.ifsc} placeholder="HDFC0001234" className="uppercase" />
       </Field>
-      <Field label="Account number" htmlFor={f("account")} required>
+      <Field
+        label="New account number"
+        htmlFor={f("account")}
+        required
+        hint={
+          b.account_masked
+            ? `Your salary goes to ${b.account_masked} today. Type the new number in full: we never show an account number back to the screen.`
+            : "Type the number in full. We never show an account number back to the screen."
+        }
+      >
         <Input id={f("account")} name="account_number" required inputMode="numeric" maxLength={18} autoComplete="off" />
       </Field>
       <Field label="Name on the account" htmlFor={f("holder")} required>

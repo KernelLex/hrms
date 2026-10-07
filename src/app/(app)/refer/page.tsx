@@ -1,6 +1,6 @@
 import { requirePage } from "@/lib/access";
 import { publishedRoles, referralsByEmployee } from "@/lib/repositories/recruitment";
-import { REFERRAL_LABEL } from "@/lib/recruitment-values";
+import { DEFAULT_REFERRAL_BONUS_PAISE, DEFAULT_REFERRAL_QUALIFYING_DAYS, REFERRAL_LABEL } from "@/lib/recruitment-values";
 import { formatDate } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import { Card, CardHeader, EmptyState, PageHeader, Status, Table, Th, Td, Tr } from "@/components/ui";
@@ -18,7 +18,10 @@ export default async function ReferPage() {
       <PageHeader title="Refer someone" subtitle="Know someone right for one of our open roles? Refer them, and earn a bonus once they are hired and still with us after the qualifying period." />
 
       <Card>
-        <CardHeader title="Referral details" />
+        <CardHeader
+          title="Referral details"
+          description={`The bonus is ${formatINR(DEFAULT_REFERRAL_BONUS_PAISE)}, paid through payroll once your referral has been with us for ${DEFAULT_REFERRAL_QUALIFYING_DAYS} days. It is for someone new to us: if they have already applied to us themselves, the referral cannot be claimed.`}
+        />
         <div className="px-6 pb-6">
           <ReferForm roles={roles.map((r) => ({ id: r.id, label: r.title }))} />
         </div>

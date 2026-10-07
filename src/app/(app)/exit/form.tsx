@@ -4,10 +4,8 @@ import { useActionState } from "react";
 import { Loader2 } from "lucide-react";
 import { submitExit, type ActionState } from "@/app/actions/exits";
 import { Button, Card, CardHeader } from "@/components/ui";
-import { Field, Input, Select, DateInput, Textarea, FormGrid, FormError } from "@/components/inputs";
+import { Field, Input, DateInput, Textarea, FormGrid, FormError } from "@/components/inputs";
 import { useToast } from "@/components/toast";
-
-const EXIT_TYPES = ["Resignation", "Retirement"];
 
 export function RequestExitForm() {
   const toast = useToast();
@@ -22,18 +20,12 @@ export function RequestExitForm() {
 
   return (
     <Card>
-      <CardHeader title="Resign" description="Goes to your reporting manager, then HR, to decide. Clearance and your settlement follow once your last day arrives." />
+      <CardHeader
+        title="Resign"
+        description="Goes to your reporting manager, then HR, to decide. Clearance and your settlement follow once your last day arrives. Retirement follows the company's own policy, and HR records it for you."
+      />
       <form action={action} className="px-6 pb-5">
         <FormGrid columns={3}>
-          <Field label="Type" htmlFor="exitType" required>
-            <Select id="exitType" name="exitType" required defaultValue="Resignation">
-              {EXIT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </Select>
-          </Field>
           <Field label="Last working day" htmlFor="requestedLastDay" required>
             <DateInput id="requestedLastDay" name="requestedLastDay" required />
           </Field>

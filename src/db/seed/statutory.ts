@@ -117,6 +117,9 @@ export async function seedStatutory(db: Db): Promise<string[]> {
         uan: "100123456789",
         esiNumber: null,
         professionalTaxState: "KARNATAKA",
+        // 5% on top of the statutory 12%, so a payslip shows what voluntary
+        // provident fund looks like next to the compulsory line.
+        vpfBasisPoints: 500,
         validFrom: "2020-01-01",
         validTo: OPEN,
         seq: 1,
@@ -127,6 +130,7 @@ export async function seedStatutory(db: Db): Promise<string[]> {
   }
 
   notes.push("  PF, ESI, professional tax (Karnataka, Maharashtra) and labour welfare fund rates");
+  notes.push("  Arjun on 5% voluntary PF, on top of the statutory 12%");
   notes.push("  income-tax constants as data, for every financial year the tax slabs cover");
   notes.push(`  1 salary structure (basic 40% of CTC, special allowance balancing)${ctcNote}`);
   return notes;

@@ -27,6 +27,54 @@ type JsonSchema = {
 const toJson = (schema: z.ZodType) =>
   z.toJSONSchema(schema, { io: "input", unrepresentable: "any", target: "draft-2020-12" }) as JsonSchema & { $defs?: Record<string, JsonSchema> };
 
+/** The same, for what an endpoint answers rather than what it accepts. */
+const toJsonOut = (schema: z.ZodType) =>
+  z.toJSONSchema(schema, { io: "output", unrepresentable: "any", target: "draft-2020-12" }) as JsonSchema & { $defs?: Record<string, JsonSchema> };
+
+const deref = (s: JsonSchema, defs: Record<string, JsonSchema>): JsonSchema =>
+  s.$ref ? (defs[s.$ref.split("/").pop()!] ?? s) : s;
+
+/**
+ * A representative value for one field, from its own schema: an enum's first
+ * value, a date for a date, and so on.
+ *
+ * Built from the schema rather than captured from a live call, for two
+ * reasons: it is the same every time, so regenerating the reference never
+ * churns the file; and it cannot describe a field the code does not actually
+ * answer with, because the shape is the code's own.
+ */
+function sampleOf(schema: JsonSchema, defs: Record<string, JsonSchema>, name = "", depth = 0): unknown {
+  const s = deref(schema, defs);
+  if (depth > 6) return null;
+  if (s.default !== undefined) return s.default;
+  if (s.enum && s.enum.length > 0) return s.enum[0];
+  if (s.anyOf) {
+    const first = s.anyOf.find((p) => p.type !== "null");
+    return first ? sampleOf(first, defs, name, depth + 1) : null;
+  }
+  const type = Array.isArray(s.type) ? s.type.find((t) => t !== "null") : s.type;
+  if (type === "array") return s.items ? [sampleOf(s.items, defs, name, depth + 1)] : [];
+  if (type === "object" || s.properties) {
+    const out: Record<string, unknown> = {};
+    for (const [key, prop] of Object.entries(s.properties ?? {})) out[key] = sampleOf(prop, defs, key, depth + 1);
+    return out;
+  }
+  if (type === "boolean") return true;
+  if (type === "integer" || type === "number") return /_paise$/.test(name) ? 5_800_000 : /(^|_)(id|pk)$/.test(name) ? 3 : 1;
+  if (type === "string") {
+    if (s.format === "date") return "2026-10-01";
+    if (s.format === "date-time") return "2026-10-01T09:30:00.000Z";
+    if (/_date$|^date_/.test(name)) return "2026-10-01";
+    if (/_at$/.test(name)) return "2026-10-01T09:30:00.000Z";
+    if (/email/.test(name)) return "meera.pillai@example.com";
+    if (/amount|_paise$/.test(name)) return "58000.00";
+    if (/currency/.test(name)) return "INR";
+    if (/^next_after$|cursor/.test(name)) return "1042";
+    return name ? `<${name}>` : "<string>";
+  }
+  return null;
+}
+
 /** A short type name: string, integer, Money, "a" | "b", array of X. */
 function typeOf(s: JsonSchema, defs: Record<string, JsonSchema> = {}): string {
   if (s.$ref) return s.$ref.split("/").pop()!;
@@ -119,8 +167,21 @@ export function endpointReference(endpoints: Endpoint[], c: Catalogues): string 
         if (e.example?.body !== undefined) out.push("Content-Type: application/json", "", JSON.stringify(e.example.body, null, 2));
         out.push("```", "");
       }
-      if (e.example?.response !== undefined) {
-        out.push("```json", JSON.stringify(e.example.response, null, 2), "```", "");
+      // What comes back: the fields, then an example. Hand-written where the
+      // endpoint defines one, otherwise built from its own response schema,
+      // so every endpoint answers "what will I get?" and none can drift.
+      if (e.produces) {
+        out.push(`Answers with \`${e.produces}\` — the file itself, not JSON.`, "");
+      } else if (e.status !== 204) {
+        const response = toJsonOut(e.response);
+        const defs = response.$defs ?? {};
+        const resolved = deref(response, defs);
+        const unwrapped = resolved.properties?.data ? deref(resolved.properties.data, defs) : null;
+        const item = unwrapped?.type === "array" && unwrapped.items ? deref(unwrapped.items, defs) : unwrapped;
+        if (item?.properties) out.push(...fieldTable(item, resolved.properties?.data && unwrapped?.type === "array" ? "Field, per item" : "Response field"));
+        else if (resolved.properties) out.push(...fieldTable(resolved, "Response field"));
+        const sample = e.example?.response !== undefined ? e.example.response : sampleOf(response, defs);
+        out.push("```json", JSON.stringify(sample, null, 2), "```", "");
       }
     }
   }

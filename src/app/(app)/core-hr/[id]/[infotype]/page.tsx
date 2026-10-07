@@ -225,6 +225,7 @@ export default async function InfotypePage(props: {
         { key: "uan", label: "UAN" },
         { key: "esi", label: "ESI number" },
         { key: "state", label: "Professional tax state" },
+        { key: "vpf", label: "Voluntary PF", numeric: true },
       ];
       rows = history.map((h) => ({
         id: String(h.id),
@@ -235,11 +236,13 @@ export default async function InfotypePage(props: {
           uan: h.uan ?? dash,
           esi: h.esi_number ?? dash,
           state: h.professional_tax_state ?? dash,
+          vpf: Number(h.vpf_basis_points ?? 0) > 0 ? `${Number(h.vpf_basis_points) / 100}%` : dash,
         },
         values: {
           uan: String(h.uan ?? ""),
           esiNumber: String(h.esi_number ?? ""),
           professionalTaxState: String(h.professional_tax_state ?? ""),
+          vpfPercent: String(Number(h.vpf_basis_points ?? 0) / 100),
         },
       }));
     }

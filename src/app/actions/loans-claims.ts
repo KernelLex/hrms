@@ -107,6 +107,11 @@ export async function submitClaim(_prev: ActionState, form: FormData): Promise<A
     files.push(file instanceof File && file.size > 0 ? file : null);
   }
   if (lines.length === 0) return fail("Add at least one line.");
+  // A claim is a request to be paid against a bill, so the bill comes with
+  // it. Without one there is nothing for the approver to check, and nothing
+  // to keep for an audit afterwards.
+  const missing = files.findIndex((f) => f === null);
+  if (missing !== -1) return fail(`Attach the bill for line ${missing + 1}: every line needs its own.`);
 
   const r = await submitClaimRequest(
     { userId: session.userId, username: session.username, displayName: session.displayName, employeeId: session.employeeId },

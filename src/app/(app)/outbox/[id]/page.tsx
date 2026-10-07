@@ -73,7 +73,8 @@ export default async function OutboxMessagePage(props: { params: Promise<{ id: s
               />
               <ul className="px-6 pb-4">
                 {message.attachments.map((a, i) => {
-                  const needs = a.type === "payslip" ? "payroll.view" : "reports.view";
+                  const needs =
+                    a.type === "payslip" ? "payroll.view" : a.type === "report" ? "reports.view" : "recruitment.manage";
                   const allowed = can(session, needs);
                   return (
                     <li key={i} className="border-b border-soft py-2.5 text-[13px] last:border-0">
@@ -89,8 +90,16 @@ export default async function OutboxMessagePage(props: { params: Promise<{ id: s
                         </span>
                       )}
                       <div className="mt-0.5 text-xs text-muted">
-                        {a.type === "payslip" ? (a.protected ? "Password-protected PDF" : "PDF") : "CSV"}
-                        {allowed ? "" : `; opening it needs the right to see ${a.type === "payslip" ? "payroll" : "reports"}`}
+                        {a.type === "payslip"
+                          ? a.protected
+                            ? "Password-protected PDF"
+                            : "PDF"
+                          : a.type === "report"
+                            ? "CSV"
+                            : "Calendar invitation"}
+                        {allowed
+                          ? ""
+                          : `; opening it needs the right to see ${a.type === "payslip" ? "payroll" : a.type === "report" ? "reports" : "recruitment"}`}
                       </div>
                     </li>
                   );

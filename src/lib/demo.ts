@@ -1,9 +1,10 @@
 import { readEnv } from "@/lib/env";
 
 /**
- * The seeded demo accounts: one per built-in role, and a recruiter to show a
- * role HR created. The sign-in page lists them
- * and signs straight in on a click; see demoSignInAction.
+ * The seeded demo accounts: one per built-in role, and two roles HR created
+ * — a recruiter who sees no pay, and finance, who sees pay and tax but has
+ * no say over who works here. The sign-in page lists them and signs straight
+ * in on a click; see demoSignInAction.
  */
 export const DEMO_ACCOUNTS = [
   {
@@ -29,6 +30,12 @@ export const DEMO_ACCOUNTS = [
     name: "Neha Iyer",
     role: "Recruiter",
     sees: "Requisitions, candidates and interviews, and no pay",
+  },
+  {
+    username: "deepa.rao",
+    name: "Deepa Rao",
+    role: "Finance",
+    sees: "Payroll, statutory rates, tax and reports — and no employee records",
   },
 ] as const;
 

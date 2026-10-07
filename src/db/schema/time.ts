@@ -153,6 +153,12 @@ export const ptLeaveRequest = sqliteTable(
 export const ptHolidayCalendar = sqliteTable("pt_holiday_calendar", {
   code: text("code").primaryKey(),
   name: text("name").notNull(),
+  /**
+   * How many of this calendar's optional holidays one person may take in a
+   * year. Zero — the default — means none, so marking a holiday optional
+   * does nothing until HR says how many people get.
+   */
+  optionalAllowance: integer("optional_allowance").notNull().default(0),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
 });
 
@@ -166,9 +172,22 @@ export const ptHoliday = sqliteTable(
       .notNull()
       .references(() => ptHolidayCalendar.code)
       .default("NATIONAL"),
+    /**
+     * A festival the company closes for only if the employee chooses it.
+     * An optional holiday is a working day for everyone until someone takes
+     * it, and taking it is recorded as a paid absence of its own type — so
+     * payroll, time evaluation and the team calendar need no special case.
+     */
+    isOptional: integer("is_optional", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [uniqueIndex("ux_holiday_date_calendar").on(t.date, t.calendarCode)],
 );
+
+/** The absence type an optional holiday someone has taken is recorded as. */
+export const OPTIONAL_HOLIDAY_ABSENCE_CODE = "OPTH";
+
+/** The device a punch made in the app itself is recorded against. */
+export const WEB_DEVICE_CODE = "WEB";
 
 /* ------------------------------------------------------- leave policies */
 

@@ -4,7 +4,14 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/access";
 import { actorOf, recordChanges } from "@/lib/change-log";
 import { rawClient } from "@/lib/db";
-import { submitExitRequest, withdrawExitRequest, recordExitInterview, settleExit, DEFAULT_NOTICE_DAYS } from "@/lib/services/exits";
+import {
+  submitExitRequest,
+  withdrawExitRequest,
+  revokeApprovedExit,
+  recordExitInterview,
+  settleExit,
+  DEFAULT_NOTICE_DAYS,
+} from "@/lib/services/exits";
 import { kickJobs } from "@/lib/jobs/runner";
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -24,11 +31,14 @@ function revalidate() {
 
 export async function submitExit(_prev: ActionState, form: FormData): Promise<ActionState> {
   const session = await requirePermission("self.exit");
+  // Resigning is the only exit someone declares for themselves. A
+  // termination is the company's decision and a retirement follows the
+  // retirement policy, so neither is offered here — HR records those.
   const r = await submitExitRequest(
     { userId: session.userId, username: session.username, displayName: session.displayName, employeeId: session.employeeId },
     actorOf(session),
     {
-      exitType: (str(form.get("exitType")) || "Resignation") as "Resignation" | "Termination" | "Retirement",
+      exitType: "Resignation",
       requestedLastDay: str(form.get("requestedLastDay")),
       reason: opt(form.get("reason")),
       noticeDays: form.has("noticeDays") ? num(form.get("noticeDays")) : DEFAULT_NOTICE_DAYS,
@@ -50,6 +60,20 @@ export async function withdrawExit(_prev: ActionState, form: FormData): Promise<
   );
   if (!r.ok) return fail(r.error);
   revalidate();
+  return OK;
+}
+
+/**
+ * HR cancels an approved exit before its last day, so the employee stays.
+ * Needs the right to change employee records, the same as any other
+ * correction to someone's employment.
+ */
+export async function revokeExit(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("employee.edit");
+  const r = await revokeApprovedExit(actorOf(session), session.displayName, num(form.get("id")), opt(form.get("reason")));
+  if (!r.ok) return fail(r.error);
+  revalidate();
+  revalidatePath("/approvals");
   return OK;
 }
 

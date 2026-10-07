@@ -50,6 +50,12 @@ export type Requisition = {
   isPublished: boolean;
   /** Live applications by stage, and rejected ones. */
   counts: Record<PipelineStage | "Rejected", number>;
+  /**
+   * Every opening is already offered or hired, so the role takes no new
+   * applications. A declined offer frees its opening again, because it counts
+   * as rejected rather than offered.
+   */
+  filled: boolean;
 };
 
 const NAME_OF = (employeeColumn: string) => `(
@@ -106,6 +112,7 @@ function requisitionOf(r: Row): Requisition {
       Hired: Number(r.n_hired),
       Rejected: Number(r.n_rejected),
     },
+    filled: Number(r.n_offered) + Number(r.n_hired) >= Number(r.openings),
   };
 }
 
@@ -118,16 +125,52 @@ export async function getRequisition(code: string): Promise<Requisition | null> 
   return r ? requisitionOf(r) : null;
 }
 
-/** Roles on the careers page: open and published. */
+/** Roles on the careers page: open, published, and not already filled. */
 export async function publishedRoles(): Promise<Requisition[]> {
-  return (await rows(`${REQUISITION_SELECT} WHERE r.status = 'Open' AND r.is_published = 1 ORDER BY r.posted_date DESC, r.id DESC`, [today()])).map(
-    requisitionOf,
-  );
+  return (await rows(`${REQUISITION_SELECT} WHERE r.status = 'Open' AND r.is_published = 1 ORDER BY r.posted_date DESC, r.id DESC`, [today()]))
+    .map(requisitionOf)
+    .filter((r) => !r.filled);
 }
 
 export async function publishedRole(code: string): Promise<Requisition | null> {
   const r = await getRequisition(code);
-  return r && r.status === "Open" && r.isPublished ? r : null;
+  return r && r.status === "Open" && r.isPublished && !r.filled ? r : null;
+}
+
+/* ------------------------------------------------------ scorecard criteria */
+
+export type ScorecardTemplateRow = {
+  id: number;
+  jobCode: string;
+  jobTitle: string;
+  criterion: string;
+  weight: number;
+  sortOrder: number;
+  isActive: boolean;
+  /** Already rated on a round, so it is made inactive rather than removed. */
+  scored: number;
+};
+
+/** What interviewers rate, per job — the list HR keeps itself. */
+export async function listScorecardCriteria(): Promise<ScorecardTemplateRow[]> {
+  return (
+    await rows(
+      `SELECT t.*, j.title AS job_title,
+              (SELECT COUNT(*) FROM rc_scorecard sc WHERE sc.criterion = t.criterion) AS scored
+       FROM rc_scorecard_template t
+       JOIN om_job j ON j.code = t.job_code
+       ORDER BY j.title, t.sort_order, t.criterion`,
+    )
+  ).map((r) => ({
+    id: Number(r.id),
+    jobCode: String(r.job_code),
+    jobTitle: String(r.job_title),
+    criterion: String(r.criterion),
+    weight: Number(r.weight),
+    sortOrder: Number(r.sort_order),
+    isActive: Number(r.is_active) === 1,
+    scored: Number(r.scored),
+  }));
 }
 
 /* ---------------------------------------------------------- applications */

@@ -123,6 +123,14 @@ export const paStatutoryDetails = sqliteTable(
     professionalTaxState: text("professional_tax_state"),
     /** Held from phase 21, for Form 16 and the 24Q return. */
     pan: text("pan"),
+    /**
+     * Voluntary provident fund: an extra employee contribution, on top of
+     * the statutory 12%, as a percentage of the same PF wages in basis
+     * points (1,000 = 10%). Dated like every other fact here, because an
+     * employee changes what they put in from a date. The employer's share
+     * never follows it — only the employee contributes more.
+     */
+    vpfBasisPoints: integer("vpf_basis_points").notNull().default(0),
     validFrom: text("valid_from").notNull(),
     validTo: text("valid_to").notNull(),
     seq: integer("seq").notNull().default(1),

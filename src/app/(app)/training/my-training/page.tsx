@@ -1,9 +1,10 @@
 import { requirePage } from "@/lib/access";
 import { listSessions, listNominations, listCertifications } from "@/lib/repositories/training";
-import { formatDate } from "@/lib/dates";
-import { Card, CardHeader, PageHeader, Table, Th, Tr, Td, Status, EmptyState, Notice } from "@/components/ui";
+import { listDirectReports, fullName } from "@/lib/repositories/employees";
+import { formatDate, todayInIndia } from "@/lib/dates";
+import { Card, CardHeader, PageHeader, Table, Th, Tr, Td, Status, EmptyState, Notice, TwoLine } from "@/components/ui";
 import { TrainingTabs } from "../tabs";
-import { NominateForm, CertificationForm, DeleteCertificationButton } from "./form";
+import { NominateForm, NominateSomeoneForm, CertificationForm, DeleteCertificationButton } from "./form";
 
 const TONE: Record<string, "waiting" | "done" | "neutral"> = { Requested: "waiting", Approved: "done", Rejected: "neutral" };
 
@@ -20,9 +21,17 @@ export default async function MyTrainingPage() {
   }
   const employeeId = session.employeeId;
 
-  const [sessions, nominations, certifications] = await Promise.all([listSessions(), listNominations({ employeeId }), listCertifications(employeeId)]);
+  const today = todayInIndia();
+  const [sessions, nominations, certifications, team, teamNominations] = await Promise.all([
+    listSessions(),
+    listNominations({ employeeId }),
+    listCertifications(employeeId),
+    listDirectReports(employeeId, today),
+    listNominations({ managerEmployeeId: employeeId }),
+  ]);
   const nominatedSessionIds = new Set(nominations.map((n) => n.sessionId));
-  const upcoming = sessions.filter((s) => s.startDate >= new Date().toISOString().slice(0, 10) && !nominatedSessionIds.has(s.id));
+  const upcoming = sessions.filter((s) => s.startDate >= today && !nominatedSessionIds.has(s.id));
+  const openSessions = sessions.filter((s) => s.startDate >= today);
 
   return (
     <>
@@ -92,6 +101,63 @@ export default async function MyTrainingPage() {
           )}
         </Card>
       </div>
+
+      {team.length > 0 ? (
+        <div className="mt-6">
+          <Card>
+            <CardHeader
+              title="My team's training"
+              description="Put someone forward for a session, and follow it through to whether they attended. HR approves it against the department's budget."
+            />
+            <div className="px-6 pb-5">
+              <NominateSomeoneForm
+                sessions={openSessions.map((s) => ({
+                  id: s.id,
+                  label: `${s.courseTitle} — ${formatDate(s.startDate)}`,
+                  full: s.approved >= s.capacity,
+                }))}
+                team={team.map((p) => ({ id: Number(p.id), name: fullName(p) }))}
+              />
+            </div>
+            {teamNominations.length > 0 ? (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Who</Th>
+                    <Th>Course</Th>
+                    <Th>Starts</Th>
+                    <Th>Status</Th>
+                    <Th>Completed</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamNominations.map((n) => (
+                    <Tr key={n.id}>
+                      <Td>
+                        <TwoLine value={n.employeeName} sub={n.status === "Approved" ? "Seat confirmed" : n.status} />
+                      </Td>
+                      <Td>{n.courseTitle}</Td>
+                      <Td>
+                        <span className="tabular text-secondary">{formatDate(n.startDate)}</span>
+                      </Td>
+                      <Td>
+                        <Status tone={TONE[n.status] ?? "neutral"}>{n.status}</Status>
+                      </Td>
+                      <Td>
+                        {n.attended === null ? (
+                          <span className="text-decor">&mdash;</span>
+                        ) : (
+                          <Status tone={n.attended ? "done" : "problem"}>{n.attended ? "Attended" : "Did not attend"}</Status>
+                        )}
+                      </Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            ) : null}
+          </Card>
+        </div>
+      ) : null}
 
       <div className="mt-6">
         <Card>

@@ -44,7 +44,9 @@ export default async function ExitsPage() {
               {exits.rows.map((x) => (
                 <Tr key={Number(x.id)}>
                   <Td>
-                    <TwoLine value={String(x.name)} sub={String(x.exit_type)} />
+                    {/* The reason stays readable after a withdrawal, which is
+                        why the row is kept rather than deleted. */}
+                    <TwoLine value={String(x.name)} sub={x.reason ? `${String(x.exit_type)} — ${String(x.reason)}` : String(x.exit_type)} />
                   </Td>
                   <Td>
                     <span className="tabular text-secondary">

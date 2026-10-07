@@ -59,7 +59,7 @@ const ROUTES = [
   "/recruitment", "/recruitment/requisitions", "/recruitment/candidates",
   "/recruitment/pipeline", "/recruitment/interviews", "/recruitment/hire", "/recruitment/analytics",
   "/recruitment/requisitions/new", "/recruitment/requisitions/REQ0001", "/recruitment/requisitions/REQ0001/edit",
-  "/recruitment/my-interviews", "/refer",
+  "/recruitment/my-interviews", "/recruitment/scorecards", "/refer",
   "/performance", "/performance/cycles", "/performance/goals", "/performance/ratings",
   "/performance/calibration", "/performance/increments", "/performance/mine",
   "/performance/feedback", "/performance/pip",

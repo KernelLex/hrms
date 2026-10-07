@@ -4,6 +4,7 @@ import { rawClient } from "@/lib/db";
 import { today } from "@/db/schema/_shared";
 import { queueEmailStatement, renderEmail } from "@/lib/email";
 import { requeueStatement } from "@/lib/jobs/queue";
+import type { Permission } from "@/lib/permissions";
 
 /**
  * Notifications: what the system tells a person, in their inbox and — if
@@ -112,6 +113,18 @@ export const NOTIFICATION_KINDS = {
   "nomination.decided": {
     label: "Decisions on my training",
     description: "When a nomination for training you asked for is approved or rejected.",
+  },
+  "nomination.assigned": {
+    label: "Training assigned to me",
+    description: "When your manager or HR nominates you for a course.",
+  },
+  "exit.notice_shortfall": {
+    label: "Exits short of their notice period",
+    description: "When an approved exit leaves before its notice period is served, so the shortfall has to be recovered. Sent to whoever runs payroll.",
+  },
+  "exit.revoked": {
+    label: "Exits taken back",
+    description: "When an approved exit is cancelled before its last day and the employee stays.",
   },
 } as const;
 
@@ -229,6 +242,21 @@ export async function usersForEmployees(employeeIds: number[]): Promise<Map<numb
     args: employeeIds,
   });
   return new Map(r.rows.map((u) => [Number(u.employee_id), Number(u.id)]));
+}
+
+/**
+ * Everyone holding a permission, through any role that grants it — who to
+ * tell when something needs whoever does that job, without naming a role.
+ */
+export async function usersWithPermission(permission: Permission): Promise<number[]> {
+  const r = await rawClient().execute({
+    sql: `SELECT DISTINCT u.id FROM sec_app_user u
+          JOIN sec_user_role ur ON ur.user_id = u.id
+          JOIN sec_role_permission rp ON rp.role_code = ur.role_code
+          WHERE rp.permission_code = ? AND u.is_active = 1`,
+    args: [permission],
+  });
+  return r.rows.map((u) => Number(u.id));
 }
 
 /** Everyone who can act as HR. */

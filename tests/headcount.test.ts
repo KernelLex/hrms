@@ -86,7 +86,16 @@ describe("asking for a new position", () => {
     // The done-when: recruitment can open a requisition against it.
     const opened = await saveRequisition(
       {},
-      form({ positionCode, title: "QA engineer", openings: 1, postedDate: day(0) }),
+      form({
+        positionCode,
+        title: "QA engineer",
+        description: "Tests what we build, writes the cases, and keeps the regression suite honest.",
+        skills: "Test automation",
+        experienceMinYears: 2,
+        hiringManagerEmployeeId: manager.employeeId,
+        openings: 1,
+        postedDate: day(0),
+      }),
     );
     expect(opened.error).toBeUndefined();
     const requisition = await one("SELECT position_code FROM rc_requisition WHERE code = ?", [opened.code!]);

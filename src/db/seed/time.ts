@@ -49,9 +49,11 @@ export async function seedTime(db: Db): Promise<string[]> {
   await db
     .insert(s.ptHolidayCalendar)
     .values([
-      { code: "NATIONAL", name: "National", isActive: true },
-      { code: "KARNATAKA", name: "Karnataka", isActive: true },
-      { code: "MAHARASHTRA", name: "Maharashtra", isActive: true },
+      // Two optional holidays each, so the choice is real: a festival the
+      // company leaves to the employee is a working day until they take it.
+      { code: "NATIONAL", name: "National", optionalAllowance: 2, isActive: true },
+      { code: "KARNATAKA", name: "Karnataka", optionalAllowance: 2, isActive: true },
+      { code: "MAHARASHTRA", name: "Maharashtra", optionalAllowance: 2, isActive: true },
     ])
     .onConflictDoNothing();
 
@@ -64,6 +66,13 @@ export async function seedTime(db: Db): Promise<string[]> {
     { date: `${year}-10-02`, name: "Gandhi Jayanti" },
     { date: `${year}-12-25`, name: "Christmas Day" },
   ];
+  // Festivals the company leaves to each person: three on every calendar,
+  // of which anyone may take two.
+  const OPTIONAL_HOLIDAYS = [
+    { date: `${year}-03-25`, name: "Holi" },
+    { date: `${year}-04-14`, name: "Tamil New Year" },
+    { date: `${year}-09-05`, name: "Onam" },
+  ];
   await db
     .insert(s.ptHoliday)
     .values([
@@ -72,6 +81,9 @@ export async function seedTime(db: Db): Promise<string[]> {
       ...NATIONAL_HOLIDAYS.map((h) => ({ ...h, calendarCode: "MAHARASHTRA" })),
       { date: `${year}-11-01`, name: "Kannada Rajyotsava", calendarCode: "KARNATAKA" },
       { date: `${year}-05-01`, name: "Maharashtra Day", calendarCode: "MAHARASHTRA" },
+      ...OPTIONAL_HOLIDAYS.flatMap((h) =>
+        ["NATIONAL", "KARNATAKA", "MAHARASHTRA"].map((calendarCode) => ({ ...h, calendarCode, isOptional: true })),
+      ),
     ])
     .onConflictDoNothing();
 
@@ -193,7 +205,7 @@ export async function seedTime(db: Db): Promise<string[]> {
   }
 
   notes.push("  3 quota types, 7 absence types, 3 attendance types");
-  notes.push("  3 holiday calendars (National, Karnataka, Maharashtra), 14 holidays; the head office and the factory each on their own");
+  notes.push("  3 holiday calendars (National, Karnataka, Maharashtra), 14 holidays and 3 optional ones each (take any 2); the head office and the factory each on their own");
   notes.push("  3 leave policies (annual, sick, casual), each seeded as its own ledger entry");
   notes.push(`  entitlement for ${employees.length} employees in ${year}`);
   notes.push("  1 pending leave request awaiting a manager");

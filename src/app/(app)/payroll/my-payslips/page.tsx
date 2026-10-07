@@ -93,8 +93,10 @@ export default async function MyPayslipsPage() {
         <Card>
           {visible.length === 0 ? (
             <EmptyState icon={<FileText />} title="No payslips yet">
-              Your payslip appears here once payroll has run and the period is
-              posted.
+              Payslips are built from a month that has been run and posted: HR
+              opens the period on Payroll, runs it, and posts it. Every payslip
+              for that month then appears here, itemised and downloadable as a
+              PDF, and is emailed to each person.
             </EmptyState>
           ) : (
             <Table>

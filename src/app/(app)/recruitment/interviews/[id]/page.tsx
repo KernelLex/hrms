@@ -31,7 +31,7 @@ export default async function InterviewPage(props: { params: Promise<{ id: strin
   return (
     <>
       <PageHeader
-        back={manages ? { href: `/recruitment/applications/${i.applicationId}`, label: "Application" } : { href: "/recruitment/my-interviews", label: "My interviews" }}
+        back={manages ? { href: `/recruitment/applications/${i.applicationId}`, label: "Application" } : { href: "/recruitment/my-interviews", label: "Interviews to take" }}
         title={`${i.round} with ${i.candidateName}`}
         badge={<Status tone={INTERVIEW_TONE[i.status] ?? "neutral"}>{INTERVIEW_LABEL[i.status] ?? i.status}</Status>}
         subtitle={`For ${i.roleTitle}. ${formatDate(i.scheduledDate)}${i.scheduledTime ? ` at ${formatTime(i.scheduledTime)}` : ""}, ${i.durationMinutes} minutes, ${i.mode.toLowerCase()}.`}

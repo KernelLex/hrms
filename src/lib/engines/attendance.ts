@@ -138,7 +138,14 @@ export async function setRosterDay(
 
 /* ----------------------------------------------------------------- punches */
 
-export type PunchInput = { employeeId: number; deviceCode: string; at: string; direction: "In" | "Out"; source: "Device" | "Csv" | "Regularised" };
+export type PunchInput = {
+  employeeId: number;
+  deviceCode: string;
+  at: string;
+  direction: "In" | "Out";
+  /** Where it came from: a clock, a CSV, the app itself, or an approved correction. */
+  source: "Device" | "Csv" | "Web" | "Regularised";
+};
 
 /**
  * Writes punches, skipping any already on record for that device, time and

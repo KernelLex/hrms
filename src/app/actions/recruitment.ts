@@ -51,10 +51,23 @@ import {
   offerSentStatements,
   offerToken,
   performConversion,
+  requisitionClosedReason,
   stageStatements,
 } from "@/lib/recruitment";
 
-export type ActionState = { error?: string; ok?: boolean; employeeId?: number; code?: string; id?: number };
+export type ActionState = {
+  error?: string;
+  ok?: boolean;
+  employeeId?: number;
+  code?: string;
+  id?: number;
+  /**
+   * What was typed, echoed back when a long form is refused. React resets an
+   * uncontrolled field to its `defaultValue` once the action returns, so the
+   * form feeds these back as its defaults and nothing has to be retyped.
+   */
+  values?: Record<string, string>;
+};
 
 const OK: ActionState = { ok: true };
 const fail = (error: string): ActionState => ({ error });
@@ -87,17 +100,24 @@ const RequisitionInput = z
   .object({
     positionCode: z.string().min(1, "Choose a position."),
     title: z.string().min(1, "Give the role a title candidates will recognise.").max(120),
-    description: z.string().max(8000).nullable(),
+    description: z
+      .string()
+      .min(40, "Describe the role in a few sentences, so a candidate knows what the job actually is.")
+      .max(8000),
     qualifications: z.string().max(4000).nullable(),
-    skills: z.string().max(2000).nullable(),
-    experienceMinYears: z.number().int("Experience is in whole years.").min(0).max(50).nullable(),
+    skills: z.string().min(1, "List the skills the role needs, one per line.").max(2000),
+    experienceMinYears: z
+      .number("Enter the least experience the role needs, in years.")
+      .int("Experience is in whole years.")
+      .min(0)
+      .max(50),
     experienceMaxYears: z.number().int("Experience is in whole years.").min(0).max(50).nullable(),
     employmentType: z.enum(EMPLOYMENT_TYPES),
     workMode: z.enum(WORK_MODES),
     location: z.string().max(200).nullable(),
     budgetMinPaise: z.number().int().positive("A budget is above zero.").nullable(),
     budgetMaxPaise: z.number().int().positive("A budget is above zero.").nullable(),
-    hiringManagerEmployeeId: z.number().int().positive().nullable(),
+    hiringManagerEmployeeId: z.number("Name the hiring manager who owns this role.").int().positive(),
     openings: z.number().int("Enter at least one opening.").min(1, "Enter at least one opening.").max(500),
     priority: z.enum(["High", "Medium", "Low"]),
     postedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a posted date."),
@@ -105,7 +125,7 @@ const RequisitionInput = z
     status: z.enum(["Open", "On hold", "Closed"]),
     isPublished: z.boolean(),
   })
-  .refine((v) => v.experienceMinYears === null || v.experienceMaxYears === null || v.experienceMinYears <= v.experienceMaxYears, {
+  .refine((v) => v.experienceMaxYears === null || v.experienceMinYears <= v.experienceMaxYears, {
     message: "The least experience cannot be more than the most.",
   })
   .refine((v) => v.budgetMinPaise === null || v.budgetMaxPaise === null || v.budgetMinPaise <= v.budgetMaxPaise, {
@@ -114,12 +134,31 @@ const RequisitionInput = z
   .refine((v) => !v.targetCloseDate || v.targetCloseDate >= v.postedDate, {
     message: "The target close date is before the posted date.",
   })
-  .refine((v) => !v.isPublished || (v.description && v.description.length >= 40), {
-    message: "A published role needs a description candidates can read: a few sentences at least.",
-  })
   .refine((v) => !v.isPublished || v.status === "Open", {
     message: "Only an open requisition can be on the careers page.",
   });
+
+/** Every text field on the requisition form, for echoing a refused form back. */
+const REQUISITION_FIELDS = [
+  "positionCode",
+  "title",
+  "description",
+  "qualifications",
+  "skills",
+  "experienceMinYears",
+  "experienceMaxYears",
+  "employmentType",
+  "workMode",
+  "location",
+  "budgetMin",
+  "budgetMax",
+  "hiringManagerEmployeeId",
+  "openings",
+  "priority",
+  "postedDate",
+  "targetCloseDate",
+  "status",
+] as const;
 
 const rupeesToPaise = (v: FormDataEntryValue | null) => {
   const s = str(v).replace(/,/g, "");
@@ -138,12 +177,19 @@ export async function saveRequisition(
   const actor = actorOf(await requirePermission("recruitment.manage"));
   const original = opt(form.get("originalCode"));
 
+  // Every refusal below carries the form back, so a long form that fails one
+  // check does not lose the rest of what was typed.
+  const typed: Record<string, string> = {};
+  for (const field of REQUISITION_FIELDS) typed[field] = str(form.get(field));
+  typed.isPublished = form.get("isPublished") === "on" || form.get("isPublished") === "true" ? "on" : "";
+  const keep = (error: string): ActionState => ({ error, values: typed });
+
   const parsed = RequisitionInput.safeParse({
     positionCode: str(form.get("positionCode")),
     title: str(form.get("title")),
-    description: opt(form.get("description")),
+    description: str(form.get("description")),
     qualifications: opt(form.get("qualifications")),
-    skills: opt(form.get("skills")),
+    skills: str(form.get("skills")),
     experienceMinYears: optInt(form.get("experienceMinYears")),
     experienceMaxYears: optInt(form.get("experienceMaxYears")),
     employmentType: str(form.get("employmentType")) || "Full-time",
@@ -159,26 +205,26 @@ export async function saveRequisition(
     status: str(form.get("status")) || "Open",
     isPublished: form.get("isPublished") === "on" || form.get("isPublished") === "true",
   });
-  if (!parsed.success) return fail(firstIssue(parsed.error));
+  if (!parsed.success) return keep(firstIssue(parsed.error));
   const v = parsed.data;
 
   const position = await db.query.omPosition.findFirst({
     where: eq(omPosition.code, v.positionCode),
   });
-  if (!position) return fail("That position no longer exists.");
+  if (!position) return keep("That position no longer exists.");
 
   const existing = original
     ? await db.query.rcRequisition.findFirst({ where: eq(rcRequisition.code, original) })
     : null;
-  if (original && !existing) return fail("That requisition no longer exists.");
+  if (original && !existing) return keep("That requisition no longer exists.");
 
   // A new requisition, or a move to another position, needs a vacant one.
   if ((!existing || existing.positionCode !== v.positionCode) && !position.isVacant) {
-    return fail(`${position.code} is filled. Open the requisition against a vacant position.`);
+    return keep(`${position.code} is filled. Open the requisition against a vacant position.`);
   }
   if (existing && existing.positionCode !== v.positionCode) {
     const applied = await db.select({ id: rcApplication.id }).from(rcApplication).where(eq(rcApplication.requisitionId, existing.id));
-    if (applied.length > 0) return fail("People have applied to this requisition, so its position can no longer change.");
+    if (applied.length > 0) return keep("People have applied to this requisition, so its position can no longer change.");
   }
 
   const values = {
@@ -467,9 +513,8 @@ export async function createApplication(
   const requisitionId = num(form.get("requisitionId"));
   if (!candidateId || !requisitionId) return fail("Choose a candidate and a requisition.");
 
-  const requisition = await db.query.rcRequisition.findFirst({ where: eq(rcRequisition.id, requisitionId) });
-  if (!requisition) return fail("That requisition no longer exists.");
-  if (requisition.status !== "Open") return fail(`${requisition.code} is ${requisition.status.toLowerCase()}, so it takes no applications.`);
+  const closed = await requisitionClosedReason(requisitionId);
+  if (closed) return fail(closed);
 
   const created = await applicationStatements(actor, { candidateId, requisitionId, channel: "Added by HR", today: todayInIndia() });
   if (!created) return fail("That candidate has already applied to this requisition.");
@@ -836,6 +881,80 @@ export async function deleteInterview(
   return OK;
 }
 
+/* ----------------------------------------------------- scorecard criteria */
+
+/**
+ * What interviewers rate a candidate on, per job: the criteria HR chooses
+ * rather than a list fixed in the software. A round for a job with criteria
+ * cannot be saved until every active one is rated.
+ */
+export async function saveScorecardCriterion(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const actor = actorOf(await requirePermission("recruitment.manage"));
+  const id = optInt(form.get("id"));
+  const jobCode = str(form.get("jobCode"));
+  const criterion = str(form.get("criterion"));
+  const weight = num(form.get("weight")) || 1;
+  const sortOrder = Number(str(form.get("sortOrder")) || "0");
+  if (!jobCode) return fail("Choose the job these criteria belong to.");
+  if (!criterion) return fail("Name what interviewers rate, such as Problem solving.");
+  if (criterion.length > 80) return fail("Keep a criterion under 80 characters.");
+  if (!Number.isInteger(weight) || weight < 1 || weight > 10) return fail("A weight is a whole number from 1 to 10.");
+
+  const clash = await db.query.rcScorecardTemplate.findFirst({
+    where: and(eq(rcScorecardTemplate.jobCode, jobCode), eq(rcScorecardTemplate.criterion, criterion)),
+  });
+  if (clash && clash.id !== id) return fail(`"${criterion}" is already on this job's scorecard.`);
+
+  const values = { jobCode, criterion, weight, sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0, isActive: form.get("isActive") !== "0" };
+  if (id) {
+    const existing = await db.query.rcScorecardTemplate.findFirst({ where: eq(rcScorecardTemplate.id, id) });
+    if (!existing) return fail("That criterion no longer exists.");
+    await audited(
+      actor,
+      { entity: "rc_scorecard_template", entityId: id },
+      () => db.query.rcScorecardTemplate.findFirst({ where: eq(rcScorecardTemplate.id, id) }),
+      () => db.update(rcScorecardTemplate).set(values).where(eq(rcScorecardTemplate.id, id)),
+    );
+  } else {
+    await recordCreated(actor, "rc_scorecard_template", await db.insert(rcScorecardTemplate).values(values).returning());
+  }
+
+  revalidateRecruitment();
+  return OK;
+}
+
+/**
+ * Removes a criterion. Ratings already recorded against it stay on the
+ * rounds that have them — what an interviewer scored is not rewritten by a
+ * later change to the scorecard — so a criterion in use is made inactive
+ * instead of deleted.
+ */
+export async function deleteScorecardCriterion(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const actor = actorOf(await requirePermission("recruitment.manage"));
+  const id = num(form.get("id"));
+  const existing = await db.query.rcScorecardTemplate.findFirst({ where: eq(rcScorecardTemplate.id, id) });
+  if (!existing) return fail("That criterion no longer exists.");
+
+  const scored = await db.select({ id: rcScorecard.id }).from(rcScorecard).where(eq(rcScorecard.criterion, existing.criterion)).limit(1);
+  if (scored.length > 0) {
+    return fail(`"${existing.criterion}" has already been scored on an interview. Make it inactive instead, so what was scored stays readable.`);
+  }
+
+  await recordDeleted(
+    actor,
+    "rc_scorecard_template",
+    await db.delete(rcScorecardTemplate).where(eq(rcScorecardTemplate.id, id)).returning(),
+  );
+  revalidateRecruitment();
+  return OK;
+}
+
 /* --------------------------------------------------- RC-05 hire conversion */
 
 /** An offered candidate becomes an employee, through the screen HR uses directly. */
@@ -861,6 +980,8 @@ const ReferralInput = z.object({
   fullName: z.string().min(1, "Enter their name.").max(120),
   email: z.email("Enter a valid email address."),
   phone: z.string().max(40).nullable(),
+  currentEmployer: z.string().max(120).nullable(),
+  experienceYears: z.number().int("Experience is in whole years.").min(0).max(60).nullable(),
   requisitionId: z.number().int().positive().nullable(),
 });
 
@@ -874,12 +995,30 @@ export async function referCandidate(_prev: ActionState, form: FormData): Promis
     fullName: str(form.get("fullName")),
     email: str(form.get("email")).toLowerCase(),
     phone: opt(form.get("phone")),
+    currentEmployer: opt(form.get("currentEmployer")),
+    experienceYears: optInt(form.get("experienceYears")),
     requisitionId: optInt(form.get("requisitionId")),
   });
   if (!parsed.success) return fail(firstIssue(parsed.error));
   const v = parsed.data;
 
+  const resume = form.get("resume");
+  const resumeFile = resume instanceof File && resume.size > 0 ? resume : null;
+
   const dup = await duplicateCandidate(v.email, v.phone);
+  // A bonus is for someone new to us. Someone already referred, or already a
+  // candidate who applied another way, is refused here rather than left to
+  // find out later that the referral earned nothing. Referred first, because
+  // it is the more exact reason of the two.
+  if (dup) {
+    const referredAlready = await db.query.rcReferral.findFirst({ where: eq(rcReferral.candidateId, dup.id) });
+    if (referredAlready) return fail(`${dup.fullName} has already been referred.`);
+    const applied = await db.select({ id: rcApplication.id }).from(rcApplication).where(eq(rcApplication.candidateId, dup.id));
+    if (applied.length > 0) {
+      return fail(`${dup.fullName} has already applied to us, so they cannot be referred for a bonus.`);
+    }
+  }
+
   let candidateId: number;
   if (dup) {
     candidateId = dup.id;
@@ -888,7 +1027,16 @@ export async function referCandidate(_prev: ActionState, form: FormData): Promis
     const next = last ? Number(last.code.replace(/\D/g, "")) + 1 : 1;
     const [candidate] = await db
       .insert(rcCandidate)
-      .values({ code: `CAND${String(next).padStart(4, "0")}`, fullName: v.fullName, email: v.email, phone: v.phone, source: "Referral", createdAt: now() })
+      .values({
+        code: `CAND${String(next).padStart(4, "0")}`,
+        fullName: v.fullName,
+        email: v.email,
+        phone: v.phone,
+        currentEmployer: v.currentEmployer,
+        experienceYears: v.experienceYears,
+        source: "Referral",
+        createdAt: now(),
+      })
       .returning();
     await recordCreated(actor, "rc_candidate", [candidate]);
     candidateId = candidate.id;
@@ -897,9 +1045,25 @@ export async function referCandidate(_prev: ActionState, form: FormData): Promis
   const existingReferral = await db.query.rcReferral.findFirst({ where: eq(rcReferral.candidateId, candidateId) });
   if (existingReferral) return fail(`${dup ? dup.fullName : v.fullName} has already been referred.`);
 
+  if (resumeFile) {
+    try {
+      const stored = await storeDocument({
+        ownerType: "candidate",
+        ownerId: candidateId,
+        kind: "Resume",
+        file: resumeFile,
+        uploadedBy: session.username,
+      });
+      await recordCreated(actor, "app_document", [documentSummary(stored)]);
+    } catch (err) {
+      if (err instanceof UploadError) return fail(err.message);
+      throw err;
+    }
+  }
+
   if (v.requisitionId) {
-    const requisition = await db.query.rcRequisition.findFirst({ where: eq(rcRequisition.id, v.requisitionId) });
-    if (!requisition || requisition.status !== "Open") return fail("That role is no longer open.");
+    const closed = await requisitionClosedReason(v.requisitionId);
+    if (closed) return fail(closed);
     await applicationStatements(actor, { candidateId, requisitionId: v.requisitionId, channel: "Added by HR", coverNote: `Referred by ${session.displayName}`, today: todayInIndia() });
   }
 

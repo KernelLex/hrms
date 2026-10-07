@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import { nominate, saveCertification, deleteCertification, type ActionState } from "@/app/actions/training";
 import { Button } from "@/components/ui";
-import { Field, Input, DateInput, FormError, FormGrid } from "@/components/inputs";
+import { Field, Input, DateInput, FormError, FormGrid, Select } from "@/components/inputs";
 import { useToast } from "@/components/toast";
 
 export function NominateForm({ sessionId, full }: { sessionId: number; full: boolean }) {
@@ -27,6 +27,64 @@ export function NominateForm({ sessionId, full }: { sessionId: number; full: boo
         {full ? "Full" : "Nominate me"}
       </Button>
       {state.error ? <FormError>{state.error}</FormError> : null}
+    </form>
+  );
+}
+
+/**
+ * A manager putting one of their own team forward for a session. The action
+ * decides whether they may: their own reports, or anyone with
+ * `training.manage`.
+ */
+export function NominateSomeoneForm({
+  sessions,
+  team,
+}: {
+  sessions: { id: number; label: string; full: boolean }[];
+  team: { id: number; name: string }[];
+}) {
+  const toast = useToast();
+  const [state, action, pending] = useActionState(
+    async (prev: ActionState, form: FormData): Promise<ActionState> => {
+      const result = await nominate(prev, form);
+      if (result.ok) toast("Nominated, and they have been told");
+      return result;
+    },
+    {},
+  );
+
+  return (
+    <form action={action} className="flex flex-col gap-4">
+      <FormGrid>
+        <Field label="Who" htmlFor="nominee" required>
+          <Select id="nominee" name="employeeId" required defaultValue="">
+            <option value="">Choose someone in your team</option>
+            {team.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Session" htmlFor="nomineeSession" required>
+          <Select id="nomineeSession" name="sessionId" required defaultValue="">
+            <option value="">Choose a session</option>
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id} disabled={s.full}>
+                {s.label}
+                {s.full ? " (full)" : ""}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </FormGrid>
+      {state.error ? <FormError>{state.error}</FormError> : null}
+      <div>
+        <Button type="submit" variant="secondary" disabled={pending}>
+          {pending ? <Loader2 className="animate-spin" /> : null}
+          Nominate them
+        </Button>
+      </div>
     </form>
   );
 }

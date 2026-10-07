@@ -79,7 +79,9 @@ const NAME_OF = (employeeColumn: string) => `(
   SELECT TRIM(COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '')) FROM pa_it0002_personal_data p
   WHERE p.employee_id = ${employeeColumn} AND p.valid_from <= ?1 AND p.valid_to >= ?1 ORDER BY p.valid_from DESC LIMIT 1)`;
 
-export async function listNominations(filter: { sessionId?: number; employeeId?: number } = {}): Promise<NominationRow[]> {
+export async function listNominations(
+  filter: { sessionId?: number; employeeId?: number; managerEmployeeId?: number } = {},
+): Promise<NominationRow[]> {
   const where: string[] = [];
   const args: InValue[] = [today()];
   if (filter.sessionId) {
@@ -89,6 +91,17 @@ export async function listNominations(filter: { sessionId?: number; employeeId?:
   if (filter.employeeId) {
     where.push("n.employee_id = ?");
     args.push(filter.employeeId);
+  }
+  if (filter.managerEmployeeId) {
+    // The people who report to this manager today, by the same reporting
+    // line approvals are routed through.
+    where.push(`n.employee_id IN (
+      SELECT mine.employee_id FROM pa_it0001_org_assignment mine
+      JOIN om_position pos ON pos.code = mine.position_code
+      JOIN pa_it0001_org_assignment theirs ON theirs.position_code = pos.reports_to_code
+      WHERE mine.valid_from <= ?1 AND mine.valid_to >= ?1
+        AND theirs.valid_from <= ?1 AND theirs.valid_to >= ?1 AND theirs.employee_id = ?)`);
+    args.push(filter.managerEmployeeId);
   }
   const found = await rows(
     `SELECT n.*, s.start_date, c.title AS course_title, ${NAME_OF("n.employee_id")} AS name

@@ -16,8 +16,8 @@ export async function createBareEmployee(prefix = "ZZ"): Promise<number> {
 }
 
 /** A FormData from a plain object, the way a Server Function receives it. */
-export function form(values: Record<string, string | number>): FormData {
+export function form(values: Record<string, string | number | File>): FormData {
   const f = new FormData();
-  for (const [k, v] of Object.entries(values)) f.set(k, String(v));
+  for (const [k, v] of Object.entries(values)) f.set(k, v instanceof File ? v : String(v));
   return f;
 }

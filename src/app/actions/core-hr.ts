@@ -229,11 +229,16 @@ const SLICED_FORMS = {
       uan: z.string().nullable(),
       esiNumber: z.string().nullable(),
       professionalTaxState: z.string().nullable(),
+      vpfPercent: z
+        .number("Enter a voluntary PF percentage, or 0 for none.")
+        .min(0, "A voluntary PF percentage cannot be negative.")
+        .max(88, "Voluntary PF plus the statutory 12% cannot take more than all of basic pay."),
     }),
     columns: (v: Record<string, unknown>) => ({
       uan: v.uan as string | null,
       esi_number: v.esiNumber as string | null,
       professional_tax_state: v.professionalTaxState ? (v.professionalTaxState as string).toUpperCase() : null,
+      vpf_basis_points: Math.round((v.vpfPercent as number) * 100),
     }),
   },
 } as const;
@@ -286,6 +291,7 @@ function readSliced(code: SlicedInfotype, form: FormData) {
         uan: opt(form.get("uan")),
         esiNumber: opt(form.get("esiNumber")),
         professionalTaxState: opt(form.get("professionalTaxState")),
+        vpfPercent: Number(str(form.get("vpfPercent")) || "0"),
       };
   }
 }

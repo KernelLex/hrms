@@ -12,6 +12,7 @@ const COLUMNS: Column[] = [
   { key: "name", label: "Holiday" },
   { key: "calendar", label: "Calendar" },
   { key: "weekday", label: "Falls on" },
+  { key: "kind", label: "Kind" },
 ];
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -36,6 +37,7 @@ export default async function HolidaysPage() {
       required: true,
       options: calendars.map((c) => ({ value: c.code, label: c.name })),
     },
+    { kind: "checkbox", name: "isOptional", label: "Optional — people choose this one for themselves" },
   ];
 
   return (
@@ -43,7 +45,7 @@ export default async function HolidaysPage() {
       <TimeTabs />
       <MasterScreen
         title="Holidays"
-        subtitle="Non-working days, one full list per calendar. Leave requests skip these, so a holiday inside a leave range costs nobody a day of entitlement."
+        subtitle="Non-working days, one full list per calendar. Leave requests skip these, so a holiday inside a leave range costs nobody a day of entitlement. An optional holiday is a working day until an employee chooses it on My leave."
         entity="holiday"
         columns={COLUMNS}
         idField="id"
@@ -67,8 +69,9 @@ export default async function HolidaysPage() {
                   {day === 0 || day === 6 ? " (already non-working)" : ""}
                 </span>
               ),
+              kind: r.isOptional ? "Optional" : "Everyone",
             },
-            values: { date: r.date, name: r.name, calendarCode: r.calendarCode },
+            values: { date: r.date, name: r.name, calendarCode: r.calendarCode, isOptional: r.isOptional ? "1" : "0" },
           };
         })}
       />

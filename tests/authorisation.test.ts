@@ -102,6 +102,7 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     runDailyAttendanceAction: ["time.manage"],
     submitRegularisation: ["self.attendance", "time.manage"],
     cancelRegularisation: "signed-in",
+    punchNow: ["self.attendance"],
   },
   auth: { signInAction: "public", demoSignInAction: "public", signOutAction: "public" },
   // The careers page: anyone, signed in or not, may apply.
@@ -121,6 +122,7 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   exits: {
     submitExit: ["self.exit"],
     withdrawExit: ["self.exit"],
+    revokeExit: ["employee.edit"],
     submitExitInterview: ["self.exit"],
     waiveNoticeAction: ["employee.edit"],
     settleExitAction: ["payroll.run"],
@@ -256,6 +258,8 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     deleteInterview: ["recruitment.manage"],
     convertToEmployee: ["recruitment.hire"],
     referCandidate: ["self.profile"],
+    saveScorecardCriterion: ["recruitment.manage"],
+    deleteScorecardCriterion: ["recruitment.manage"],
   },
   reports: {
     saveReportSchedule: ["reports.view"],
@@ -297,6 +301,7 @@ const MATRIX: Record<string, Record<string, Rule>> = {
     deleteHolidayCalendar: ["time.manage"],
     saveLeavePolicy: ["time.manage"],
     deleteLeavePolicy: ["time.manage"],
+    setOptionalHoliday: ["self.leave"],
   },
   training: {
     saveCourse: ["training.manage"],

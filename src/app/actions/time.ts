@@ -15,6 +15,7 @@ import {
   ptLeavePolicy,
   ptWorkScheduleRule,
   ACCRUAL_FREQUENCIES,
+  OPTIONAL_HOLIDAY_ABSENCE_CODE,
   now,
 } from "@/db/schema";
 import {
@@ -504,19 +505,23 @@ export async function saveHoliday(
   if (!name) return fail("Enter a holiday name.");
   if (!calendarCode) return fail("Choose a calendar.");
 
+  // An optional holiday is one the company closes for only if the employee
+  // chooses it, so it stays a working day for everyone else.
+  const isOptional = form.get("isOptional") === "on" || form.get("isOptional") === "1" || form.get("isOptional") === "true";
+
   if (original) {
     await audited(
       actorOf(session),
       { entity: "pt_holiday", entityId: Number(original) },
       () => db.query.ptHoliday.findFirst({ where: eq(ptHoliday.id, Number(original)) }),
-      () => db.update(ptHoliday).set({ date, name, calendarCode }).where(eq(ptHoliday.id, Number(original))),
+      () => db.update(ptHoliday).set({ date, name, calendarCode, isOptional }).where(eq(ptHoliday.id, Number(original))),
     );
   } else {
     const existing = await db.query.ptHoliday.findFirst({
       where: and(eq(ptHoliday.date, date), eq(ptHoliday.calendarCode, calendarCode)),
     });
     if (existing) return fail(`That calendar already has a holiday on ${date}.`);
-    const [created] = await db.insert(ptHoliday).values({ date, name, calendarCode }).returning();
+    const [created] = await db.insert(ptHoliday).values({ date, name, calendarCode, isOptional }).returning();
     await recordCreate(actorOf(session), "pt_holiday", created.id, created);
   }
 
@@ -537,6 +542,77 @@ export async function deleteHoliday(
   return OK;
 }
 
+/* ------------------------------------------------------- optional holidays */
+
+/**
+ * An employee taking one of their calendar's optional holidays, or giving it
+ * back. Taking it is recorded as a paid absence of its own type, so payroll,
+ * time evaluation and the team calendar treat it exactly as they treat any
+ * other paid day off — there is no second kind of holiday to reason about.
+ *
+ * How many someone may take is their calendar's own allowance, counted per
+ * year, and a day already gone cannot be claimed afterwards.
+ */
+export async function setOptionalHoliday(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("self.leave");
+  const employeeId = session.employeeId;
+  if (!employeeId) return fail("Your sign-in is not linked to an employee record.");
+  const holidayId = num(form.get("holidayId"));
+  const take = str(form.get("take")) !== "0";
+
+  const holiday = await db.query.ptHoliday.findFirst({ where: eq(ptHoliday.id, holidayId) });
+  if (!holiday || !holiday.isOptional) return fail("That is not an optional holiday.");
+
+  const calendarCode = await calendarFor(employeeId, holiday.date);
+  if (calendarCode !== holiday.calendarCode) return fail("That holiday is not on your calendar.");
+
+  const existing = await rawClient().execute({
+    sql: `SELECT id FROM pt_it2001_absence
+          WHERE employee_id = ? AND absence_type_code = ? AND start_date = ?`,
+    args: [employeeId, OPTIONAL_HOLIDAY_ABSENCE_CODE, holiday.date],
+  });
+
+  if (!take) {
+    const row = existing.rows[0];
+    if (!row) return fail("You have not taken that day.");
+    if (holiday.date < todayInIndia()) return fail("That day has passed, so it can no longer be given back.");
+    const absence = await db.query.ptAbsence.findFirst({ where: eq(ptAbsence.id, Number(row.id)) });
+    await db.delete(ptAbsence).where(eq(ptAbsence.id, Number(row.id)));
+    if (absence) await recordDelete(actorOf(session), "pt_it2001_absence", Number(row.id), absence, employeeId);
+    revalidateTime();
+    return OK;
+  }
+
+  if (existing.rows.length > 0) return fail("You have already taken that day.");
+  if (holiday.date < todayInIndia()) return fail("That day has passed. An optional holiday is chosen before it falls.");
+
+  const calendar = await db.query.ptHolidayCalendar.findFirst({ where: eq(ptHolidayCalendar.code, calendarCode) });
+  const allowance = calendar?.optionalAllowance ?? 0;
+  if (allowance <= 0) return fail("Your calendar has no optional holidays to take.");
+
+  const year = holiday.date.slice(0, 4);
+  const taken = await rawClient().execute({
+    sql: `SELECT COUNT(*) AS n FROM pt_it2001_absence
+          WHERE employee_id = ? AND absence_type_code = ? AND substr(start_date, 1, 4) = ?`,
+    args: [employeeId, OPTIONAL_HOLIDAY_ABSENCE_CODE, year],
+  });
+  if (Number(taken.rows[0].n) >= allowance) {
+    return fail(`You have already taken your ${allowance} optional holiday${allowance === 1 ? "" : "s"} for ${year}.`);
+  }
+
+  const saved = await recordAbsence(actorOf(session), {
+    employeeId,
+    absenceTypeCode: OPTIONAL_HOLIDAY_ABSENCE_CODE,
+    startDate: holiday.date,
+    endDate: holiday.date,
+    remarks: holiday.name,
+    createdBy: session.username,
+  });
+  if (!saved.ok) return fail(saved.error);
+  revalidateTime();
+  return OK;
+}
+
 /* ------------------------------------------------------ holiday calendars */
 
 export async function saveHolidayCalendar(
@@ -549,9 +625,19 @@ export async function saveHolidayCalendar(
     .object({
       code: z.string().trim().min(1, "Enter a code.").max(20).regex(/^[A-Za-z0-9_-]+$/, "A code may use only letters, numbers, hyphens and underscores."),
       name: z.string().trim().min(1, "Enter a name."),
+      optionalAllowance: z
+        .number("Enter how many optional holidays someone may take, or 0 for none.")
+        .int("That is a whole number of days.")
+        .min(0)
+        .max(50),
       isActive: z.boolean(),
     })
-    .safeParse({ code: str(form.get("code")).toUpperCase(), name: str(form.get("name")), isActive: bool(form.get("isActive")) });
+    .safeParse({
+      code: str(form.get("code")).toUpperCase(),
+      name: str(form.get("name")),
+      optionalAllowance: Number(str(form.get("optionalAllowance")) || "0"),
+      isActive: bool(form.get("isActive")),
+    });
   if (!parsed.success) return fail(firstIssue(parsed.error));
   const v = parsed.data;
 

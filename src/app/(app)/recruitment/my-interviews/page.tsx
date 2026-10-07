@@ -14,8 +14,8 @@ export default async function MyInterviewsPage() {
   return (
     <>
       <PageHeader
-        title="My interviews"
-        subtitle="Rounds you have been asked to take. Open one to read about the candidate and the role, and to record your notes afterwards."
+        title="Interviews to take"
+        subtitle="Candidates you have been asked to interview. Open a round to read about the candidate and the role, download the calendar invite, and record your notes afterwards."
       />
       <div className="flex flex-col gap-6">
         <Card>

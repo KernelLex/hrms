@@ -93,7 +93,8 @@ ${url ? `<tr><td style="padding:20px 24px 24px"><a href="${escape(url)}" style="
 /** A file to attach, described rather than stored: rendered when sent or opened. */
 export type AttachmentSpec =
   | { type: "payslip"; resultId: number; fileName: string; protected: boolean }
-  | { type: "report"; reportName: string; scheduleId: number; fileName: string };
+  | { type: "report"; reportName: string; scheduleId: number; fileName: string }
+  | { type: "interview"; interviewId: number; fileName: string };
 
 export function queueEmailStatement(
   dedupeKey: string,

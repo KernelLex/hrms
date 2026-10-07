@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, rawClient } from "@/lib/db";
 import { requireAccess, requireAnyPermission, requirePermission } from "@/lib/access";
-import { ptShift, ptRosterPattern, ptDevice, now } from "@/db/schema";
+import { ptShift, ptRosterPattern, ptDevice, WEB_DEVICE_CODE, now } from "@/db/schema";
 import { generateRoster, setRosterDay, recordPunches, runDailyAttendance, type PunchInput } from "@/lib/engines/attendance";
 import { actorOf, audited, recordChanges, recordCreate, recordDelete } from "@/lib/change-log";
 import { cancelStatements, planRequest, writeRequest } from "@/lib/workflow/engine";
@@ -328,6 +328,41 @@ export async function runDailyAttendanceAction(_prev: ActionState, form: FormDat
   const result = await runDailyAttendance(rawClient(), { date, actor: actorOf(session) });
   revalidateAttendance();
   return result.finalised > 0 ? OK : fail("Nobody was rostered a shift that day.");
+}
+
+/* --------------------------------------------------------- self-service punch */
+
+/**
+ * Employee self-service: clock in or out from the app, for anyone not
+ * covered by a punch clock. It writes exactly the same `pt_punch` row a
+ * device would, so the day is worked out by the same engine and needs no
+ * special case — the only difference is the device it is recorded against
+ * and the source, which says where it came from.
+ *
+ * The time is always now, never typed: a time someone chooses themselves is
+ * a correction, and corrections go to their manager (`submitRegularisation`).
+ */
+export async function punchNow(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("self.attendance");
+  const employeeId = session.employeeId;
+  if (!employeeId) return fail("Your sign-in is not linked to an employee record.");
+
+  const direction = str(form.get("direction"));
+  if (direction !== "In" && direction !== "Out") return fail("Choose whether you are clocking in or out.");
+
+  const device = await db.query.ptDevice.findFirst({ where: eq(ptDevice.code, WEB_DEVICE_CODE) });
+  if (!device || !device.isActive) {
+    return fail("Clocking in from the app is switched off. Ask HR, or send a correction for the day instead.");
+  }
+
+  const at = new Date().toISOString();
+  const result = await recordPunches(rawClient(), [{ employeeId, deviceCode: WEB_DEVICE_CODE, at, direction, source: "Web" }]);
+  if (result.written === 0) return fail("That punch is already recorded.");
+  await recordCreate(actorOf(session), "pt_punch", `web:${employeeId}:${at}`, { direction, at, source: "Web" });
+
+  await kickJobs();
+  revalidateAttendance();
+  return OK;
 }
 
 /* ---------------------------------------------------------- regularisation */

@@ -10,6 +10,7 @@ The HR module of your ERP. It holds your organisation and the people in it, and 
 | Ravi Kumar — manager | Their team's approvals, ratings and calendar, and their own records |
 | Arjun Mehta — employee | Their own profile, leave, payslips, tax and appraisal |
 | Neha Iyer — recruiter | Hiring, and no salaries anywhere |
+| Deepa Rao — finance | Payroll, statutory rates, tax and reports, and no employee records |
 
 The public careers site is at [/careers](https://hrms-amogh24.vercel.app/careers).
 
@@ -99,7 +100,9 @@ The modules below are not separate tools bolted together — the same hire, the 
 
 ### Leaving
 
-- **Resign**, with a last working day and a notice period; your manager, then HR, decide.
+- **Resign**, with a last working day and a notice period; your manager, then HR, decide. You can withdraw it yourself while nobody has decided it yet; once a step has been approved, HR cancels it instead — so a resignation cannot be quietly undone after people have acted on it.
+- **Cancel an approved exit** before the last day, if someone decides to stay: nothing has been written to their record or paid yet, so they simply remain an employee, and the resignation stays on the record with its reason.
+- **Notice short of the period** is flagged to whoever runs payroll the moment the exit is approved, so the shortfall is recovered in the settlement — or waived by HR — rather than noticed too late.
 - **The exit board**: every resignation, termination and retirement, with clearance progress and a settlement waiting to be paid.
 - **Clearance checklist** on the way out — laptop and ID card returned, access revoked, the exit interview — the same kind of checklist onboarding already uses, assigned to the right person automatically.
 - **One full and final settlement**, paid in a single run on the last day: salary to that day, unused leave encashed, a notice shortfall recovered (or waived by HR), **gratuity** after five years' service, and any outstanding loan recovered in full — with a statement showing every component and how it was worked out.
@@ -117,11 +120,13 @@ The modules below are not separate tools bolted together — the same hire, the 
 - **Leave policies by grade and location**: how much a year, earned monthly or all at once, a joiner's first year pro-rated automatically, a cap on what carries into the new year, and what lapses.
 - Balances down to half days, with a running ledger behind each one — "why do I have what I have" — and a forecast of what a balance will be on a future date.
 - **State holiday calendars**: give each location its own public holidays, and leave, payroll and time evaluation all use the right one automatically.
+- **Optional holidays**: mark the festivals you leave to each person and say how many they may take. One of these is an ordinary working day until an employee chooses it; chosen, it is a paid day off for them alone and costs them no leave.
 - Leave requests that follow the approval route you set — by default the employee's manager, with HR added for longer leave — including the sandwich rule, where a policy asks for it.
 - **Compensatory off**, earned by working a holiday or a weekend and spent like leave, and **leave encashment**, paid through the next payroll run at the going daily rate.
 - Unpaid leave flows into payroll as a deduction automatically.
 - **Shift rosters**: build a rotation once — a three-shift pattern, say — and assign it to a team for a date range; a single day is swapped by exception without touching the rest.
 - **Attendance devices**: a punch clock, or anything sending punches to the generic endpoint in front of one, turns into daily attendance automatically — first in, last out, a late mark, overtime, paid at double the hourly rate through the very next payroll run. Sending the same punches twice changes nothing the second time.
+- **Clock in and out in the app**, for anyone not covered by a punch clock: the time is recorded as you press it, and the day is worked out from it exactly as it is from a device.
 - **Ask for a correction**: a missed or wrong punch, explained and sent to a manager to approve; approved, the day is corrected exactly as if the punch had never been missed.
 - Work schedules, public holidays.
 - A monthly time evaluation that gives payroll each person's paid days and overtime.
@@ -143,6 +148,7 @@ The modules below are not separate tools bolted together — the same hire, the 
 - **Gross to net for every employee**: basic pay by days employed, allowances, recurring and one-off payments, unpaid-leave proration, provident fund, ESI, professional tax, the labour welfare fund and income tax.
 - **Salary structures and CTC**: define how an annual cost-to-company splits into basic, allowances and a balancing figure, once per structure; assigning a CTC to someone derives their monthly pay from it automatically, from the date you choose. A live preview shows the monthly breakdown for any CTC before you save it.
 - **Employer contributions** — the employer's share of PF, ESI and the labour welfare fund — show on the payslip as part of the cost of employing someone, never subtracted from what they are paid.
+- **Voluntary provident fund**: an employee can put in more than the statutory 12%, at a percentage set on their own record from the date they choose, deducted every month as its own payslip line.
 - **ESI continues correctly through a raise**: once someone is covered, a mid-year rise does not drop them out until the law's own six-month cycle ends.
 - **Joiners, leavers and mid-month raises** paid correctly by the day.
 - **Arrears** paid automatically, once, when a month already paid is corrected afterwards.
@@ -165,7 +171,7 @@ The modules below are not separate tools bolted together — the same hire, the 
 ### Money
 
 - **Loans and advances**: ask for a loan and see it approved with its whole EMI schedule generated at once; each instalment is then recovered through payroll automatically, closing the loan at zero. **Prepay** at any time to shorten what is left, at the same EMI. A concessional or interest-free loan's taxable value is worked out automatically, every month, and shown on Form 12BA.
-- **Reimbursement claims**: submit a claim with its bills, checked against your category's limit — fuel, phone, medical and LTA, out of the box, with higher limits settable by grade — before it goes for approval. Approved claims, manager then finance, are paid through the very next payroll run. An expense already approved in your ERP arrives the same way, without anyone retyping it.
+- **Reimbursement claims**: submit a claim with a bill for every line — a claim without one is refused — checked against your category's limit — fuel, phone, medical and LTA, out of the box, with higher limits settable by grade — before it goes for approval. Approved claims, manager then finance, are paid through the very next payroll run. An expense already approved in your ERP arrives the same way, without anyone retyping it.
 
 **How a loan flows:**
 1. The employee asks for a loan.
@@ -196,12 +202,14 @@ The modules below are not separate tools bolted together — the same hire, the 
 
 ### Recruitment
 
-- **Requisitions** for vacant positions that describe the role: title, description, qualifications, skills, experience, place, and a salary budget only HR sees.
+- **Requisitions** for vacant positions that have to describe the role before they open: title, a description a candidate can actually read, the skills, the experience, the hiring manager who owns it, and a salary budget only HR sees.
 - **A public careers site** where candidates apply for published roles with their resume — no account needed. Candidates get an acknowledgement, and recruiters are told. Duplicates are caught by email or phone, so the same person is one record.
+- **A role that is filled stops taking applications**: once every opening is offered or hired, it comes off the careers page and no new application is accepted — and if the offer is declined, the opening frees up again by itself.
 - **Screening**: reject a profile, or take it to interview.
-- **Interview rounds**, as many as each candidate needs, each with its own interviewer, date, time and place. Interviewers are told, record their own notes against the role's own **scorecard** where it has one, and can download a calendar invite; the candidate gets a confirmation email.
+- **Interview rounds**, as many as each candidate needs, each with its own interviewer, date, time and place. Interviewers are told, record their own notes against the role's own **scorecard** where it has one, and can download a calendar invite; the candidate gets a confirmation email with the invite attached.
+- **Scorecards you define**: choose what interviewers rate for each job, and how much each criterion counts. A round for a job that has them cannot be saved until every one is rated, so two interviewers judge the same things.
 - **Approve or reject** a candidate once the rounds are done, and **make the offer** — a CTC breakdown built into a letter, sent to a link only the candidate has. They accept or decline there, and accepting **turns them into an employee automatically**, with nothing retyped. An offer above a role's budgeted band needs a more senior sign-off.
-- **Refer someone** — any employee can refer a candidate for an open role, and earns a bonus once the hire is still with us after a qualifying period.
+- **Refer someone** — any employee can refer a candidate for an open role, with their resume and details, and earns a bonus once the hire is still with us after a qualifying period. The bonus and its conditions are stated on the form, and someone who already applied to us themselves cannot be claimed for one.
 - **Recruitment analytics**: time to hire, time in each stage, which sources turn into hires, offer acceptance, and where candidates are not taken forward.
 - One record per candidate, whichever roles they apply for, with their resume and history.
 
@@ -239,7 +247,8 @@ The modules below are not separate tools bolted together — the same hire, the 
 ### Training
 
 - A **course catalogue** with scheduled sessions, place and cost.
-- Employees **nominate themselves**, or are nominated; a nomination is refused once it would take its department over its training budget for the year.
+- Employees **nominate themselves**, and a manager nominates the people who report to them — who are told about it — while HR may nominate anyone. A nomination is refused once it would take its department over its training budget for the year.
+- **A manager follows their team's training** from nominated, through approved, to whether each person actually attended.
 - **Certifications** kept on each person's own record, with their issuer and expiry.
 - A certificate due to expire **warns its holder and their manager** ahead of time.
 - A **compliance report** flags anyone whose role needs a certificate they do not hold.
@@ -278,7 +287,7 @@ The modules below are not separate tools bolted together — the same hire, the 
 
 ### Security and control
 
-- **Roles you define**: HR builds roles from plain-language permissions and gives them to people — a recruiter who sees candidates but no pay, an auditor who reads but cannot change.
+- **Roles you define**: HR builds roles from plain-language permissions and gives them to people — a recruiter who sees candidates but no pay, a finance role that runs payroll and tax but cannot change who works here, an auditor who reads but cannot change.
 - **Ten areas of control** — organisation, people, time and leave, payroll, tax, recruitment, performance, reports, administration and self-service — so a role can be given exactly the areas a job needs, and nothing more.
 - **Limits by company or location**, so a role sees only its own people.
 - **Salaries and bank accounts are hidden** from anyone without the permission to see them.
@@ -302,6 +311,34 @@ The modules below are not separate tools bolted together — the same hire, the 
 
 ---
 
+## Questions we are asked
+
+**Where does it run, and what database does it use?** It is deployed on Vercel. The data sits in Turso — a hosted SQLite (libSQL) database — **for the prototype only**: it needs no setup, costs nothing to run and let us build quickly. **The production database will be MySQL**, migrated once the prototype phase is signed off. Nothing in the software depends on SQLite's own features, so that move is a change of driver and migration files rather than a rewrite, and the test suite proves the behaviour is unchanged. If HR data should instead live inside your ERP's own MySQL database rather than its own, tell us — that is a decision worth taking before go-live, not after.
+
+**Who can change an employee's details, and is the old value kept?** HR changes employee records; an employee asks, and HR approves. Every change is written from the date it applies and the previous value is kept, so you can ask what anyone's pay, position, address or bank account was on any past date. A bank change needs proof and two different approvers, and pay and bank details are visible only to roles given those permissions — every look at them is recorded.
+
+**How do mass updates work?** Employees → Mass update: pick the people, pick the field, give the date it applies from, and the change is written to each record through the same dated history a single edit uses. For loading many records at once — positions, employees with their history, or opening balances from your old system — use Bulk import: every row is checked before anything is written, and importing the same file twice changes nothing the second time.
+
+**How does probation work?** Hiring someone sets their probation review date. On that date they appear on HR's **Probation due** list, and HR is reminded. HR confirms them, pushes the date back, or ends the employment; whichever is chosen, the earlier decision stays on the record.
+
+**Is the tax declaration for the whole company or for each person?** Each person makes their own, under either tax regime, and sees both compared on their own figures. HR sees everyone's, opens the proof window for the year, and verifies what each person files.
+
+**Are payslips and Form 16 built?** Yes. A payslip exists for a month that has been run and posted — HR opens the period on Payroll, runs it, then posts it — and every payslip is then itemised on screen, downloadable as a PDF and emailed to each person, password-protected. Form 16 is built from what payroll actually deducted: post a month, build the quarterly register, then generate the certificate. Both parts of it reconcile with each other because they come from the same figures.
+
+**Can we configure what appears on a payslip?** Yes. Every line on a payslip is a **wage type** you can see and change: its name, whether it is an earning, a deduction or an employer contribution, how it is worked out (a fixed amount, a percentage of basic, or a formula), whether it is taxable, and where it lands in your ledger. Salary structures then say how a CTC splits across them.
+
+**Are loans deducted automatically, and who approves one?** An approved loan has its whole instalment schedule generated at once, and each instalment is recovered through payroll automatically until the loan closes at zero — nobody re-enters it monthly. A loan request goes to the employee's manager and then to finance, on the approval route you configure.
+
+**How does someone put extra into provident fund?** On the employee's **Statutory details**, set their voluntary PF percentage. It is deducted every month on top of the statutory 12%, from the date it applies, and shows as its own line on the payslip. Like everything else here it is dated, so a change takes effect from the month you choose and the old figure stays on the record.
+
+**Is performance history kept?** Yes. Every cycle, its goals, check-ins, self reviews, ratings, calibration and increments stay on the record, so an employee's appraisal history reads year by year.
+
+**Does the careers page read a candidate's details out of their resume?** No. The candidate fills in their own name, phone and details, and attaches the resume as a file. Reading the details out of the document automatically is not built.
+
+**Can an interview send a calendar invite?** Yes. Scheduling a round emails the candidate a confirmation with a calendar file attached, and the interviewer can download the same invite from the round itself.
+
+---
+
 ## Coming next
 
 - **Recruitment**: letting a candidate choose from several offered interview times, and signing the offer letter online.
@@ -309,10 +346,28 @@ The modules below are not separate tools bolted together — the same hire, the 
 
 ---
 
+## What we need from you
+
+These are the pieces we cannot decide for you. Each one is a decision or a credential, not a long build.
+
+- **Who signs in, and how.** There is no screen for creating users yet, on purpose: if your ERP is to be the single place people are created and given access, then the two systems should share one source of identity rather than keep two. Tell us whether you want **single sign-on from the ERP** — we would take its tokens and map its groups to roles here — or users created in the HRMS and kept in step through the API. That answer decides what gets built.
+- **One HRMS or one per company.** Today it runs as one organisation, with companies, locations and departments inside it. If you want a company's own address — `company1.hr.example`, `company2.hr.example` — each pointing at its own data, say so: it changes how the data is separated and how sign-in works, and is much cheaper to decide now than later.
+- **Where the MySQL database should live.** Turso is a prototype convenience; production is MySQL. We need to know whether that is a MySQL instance of our own, or HR data inside **your ERP's own MySQL database** — and, if it is yours, the host, version and who administers it.
+- **Email.** Choose a provider and give us an account and a sending domain, and every email already written starts going out.
+- **Document storage.** Cloudflare R2 enabled on your account, and documents go there instead of the database.
+- **Signing offers online.** Choose an e-signature provider (Aadhaar eSign through Leegality or Digio, for instance) and we wire the offer letter to it.
+- **Attendance devices.** Tell us which clocks are installed and how their data can be reached, and punches start arriving on their own.
+- **The statutory files, checked.** Someone with EPFO and TRACES access should run a generated ECR and 24Q file through the government's own tools with your real establishment details, and a payroll professional should review the statutory calculations against current law before the first real payroll.
+
+---
+
 ## Good to know
 
 - **Emails are prepared but not yet sent.** Every notification email is written and can be read on the Outbox screen; they go out once an email provider is connected.
-- **Statutory bonus is not calculated yet.** Provident fund (including the employer's share), ESI, professional tax, the labour welfare fund, gratuity and income tax are.
-- **The demo organisation** (Acme Manufacturing) is sample data, for trying the software.
+- **Statutory bonus is not calculated yet.** Provident fund (including the employer's share and voluntary contributions), ESI, professional tax, the labour welfare fund, gratuity and income tax are.
+- **There is no screen for creating users yet.** The demo accounts come from the sample data; see "What we need from you" above, because how people get access is a decision to take with you rather than for you.
+- **A resume is stored, not read.** The candidate types their own details; nothing is extracted from the document automatically.
+- **Retirement is recorded by HR**, not chosen by the employee: the resignation form offers only resignation.
+- **The demo organisation** (Acme Manufacturing) is sample data, for trying the software. No month has been run and posted in it yet, so payslips and Form 16 appear once you run one.
 
 A guide for connecting a system to it is in [API.md](API.md).

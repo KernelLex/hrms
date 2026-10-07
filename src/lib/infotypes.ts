@@ -197,6 +197,13 @@ export function infotypeFields(
         { kind: "text", name: "uan", label: "UAN", placeholder: "100123456789", hint: "Universal Account Number, for EPFO." },
         { kind: "text", name: "esiNumber", label: "ESI number" },
         { kind: "text", name: "professionalTaxState", label: "Professional tax state", uppercase: true, hint: "Matches a state on the professional tax rates screen." },
+        {
+          kind: "text",
+          name: "vpfPercent",
+          label: "Voluntary PF (%)",
+          placeholder: "0",
+          hint: "On top of the statutory 12% of basic pay, deducted every month from the date this applies. 0 for none.",
+        },
       ];
     case "0021":
       return [

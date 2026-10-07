@@ -12,7 +12,14 @@ import { documentSummary } from "@/lib/document-kinds";
 import { queueEmailStatement, renderEmail } from "@/lib/email";
 import { requeueStatement } from "@/lib/jobs/queue";
 import { todayInIndia } from "@/lib/dates";
-import { announceApplication, announceOfferResponse, applicationStatements, performConversion, stageStatements } from "@/lib/recruitment";
+import {
+  announceApplication,
+  announceOfferResponse,
+  applicationStatements,
+  performConversion,
+  requisitionClosedReason,
+  stageStatements,
+} from "@/lib/recruitment";
 import { kickJobs } from "@/lib/jobs/runner";
 import { toRupees } from "@/lib/money";
 
@@ -70,7 +77,7 @@ export async function applyForJob(_prev: ApplyState, form: FormData): Promise<Ap
       args: [code],
     })
   ).rows[0];
-  if (!req || String(req.status) !== "Open" || Number(req.is_published) !== 1) {
+  if (!req || Number(req.is_published) !== 1 || (await requisitionClosedReason(Number(req.id)))) {
     return { error: "This role is no longer taking applications." };
   }
 

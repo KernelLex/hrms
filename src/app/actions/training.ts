@@ -25,6 +25,7 @@ import { toPaise } from "@/lib/money";
 import { documentSummary } from "@/lib/document-kinds";
 import { storeDocument, deleteDocument, UploadError } from "@/lib/storage";
 import { notificationStatements, usersForEmployees } from "@/lib/notifications";
+import { managesEmployee } from "@/lib/workflow/engine";
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -143,7 +144,14 @@ export async function deleteSession(
 
 /* ------------------------------------------------------------ nominations */
 
-/** An employee nominates themself, or training nominates someone, for a session. */
+/**
+ * Nominating someone for a session: themself, their own team, or anyone.
+ *
+ * Who may nominate whom is decided by the data, not by the form: `self.training`
+ * covers your own name only, a manager may put forward the people who report
+ * to them, and `training.manage` covers anyone. Without that, an employee
+ * holding only `self.training` could nominate a colleague by sending their id.
+ */
 export async function nominate(
   _prev: ActionState,
   form: FormData,
@@ -153,6 +161,12 @@ export async function nominate(
   const sessionId = num(form.get("sessionId"));
   const employeeId = num(form.get("employeeId")) || session.employeeId;
   if (!sessionId || !employeeId) return fail("Choose a session.");
+
+  const forSomeoneElse = employeeId !== session.employeeId;
+  if (forSomeoneElse && !can(session, "training.manage")) {
+    const mine = session.employeeId !== null && (await managesEmployee(session.employeeId, employeeId));
+    if (!mine) return fail("You can only nominate yourself, or someone who reports to you.");
+  }
 
   const existing = await db.query.ldNomination.findFirst({ where: and(eq(ldNomination.sessionId, sessionId), eq(ldNomination.employeeId, employeeId)) });
   if (existing) return fail("Already nominated for this session.");
@@ -167,6 +181,27 @@ export async function nominate(
     .values({ sessionId, employeeId, status: "Requested", createdBy: session.displayName, createdAt: now() })
     .returning();
   await recordCreated(actor, "ld_nomination", [row]);
+
+  // Someone put forward by their manager or by HR hears about it; nominating
+  // yourself needs no telling.
+  if (forSomeoneElse) {
+    const course = await db.query.ldSession.findFirst({ where: eq(ldSession.id, sessionId) });
+    const users = await usersForEmployees([employeeId]);
+    const userId = users.get(employeeId);
+    if (userId) {
+      const notices = await notificationStatements([
+        {
+          userId,
+          kind: "nomination.assigned",
+          title: "You have been nominated for training",
+          body: course ? `Starting ${course.startDate}. It needs approving before your seat is confirmed.` : "It needs approving before your seat is confirmed.",
+          link: "/training/my-training",
+          dedupeKey: `nomination.assigned:${row.id}:${userId}`,
+        },
+      ]);
+      if (notices.length > 0) await rawClient().batch(notices, "write");
+    }
+  }
 
   revalidateTraining();
   return OK;

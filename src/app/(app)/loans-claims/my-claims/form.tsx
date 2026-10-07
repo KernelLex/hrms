@@ -72,8 +72,8 @@ export function RequestClaimForm({ categories }: { categories: Category[] }) {
                 </Field>
               </FormGrid>
               <div className="mt-3 flex items-end justify-between gap-4">
-                <Field label="Bill" htmlFor={`lf-${l.key}`} className="flex-1">
-                  <input id={`lf-${l.key}`} name={`line_file_${i}`} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="text-[13px] text-secondary" />
+                <Field label="Bill" htmlFor={`lf-${l.key}`} required className="flex-1" hint="A PDF or photo of the bill for this line.">
+                  <input id={`lf-${l.key}`} name={`line_file_${i}`} type="file" required accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="text-[13px] text-secondary" />
                 </Field>
                 {lines.length > 1 ? (
                   <Button type="button" variant="ghost" size="sm" onClick={() => remove(l.key)}>

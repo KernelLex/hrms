@@ -26,8 +26,12 @@ export default async function ExitPage() {
   }
 
   const employeeId = session.employeeId;
-  const exit = await one("SELECT * FROM pa_exit WHERE employee_id = ? ORDER BY id DESC LIMIT 1", [employeeId]);
+  const exits = await all("SELECT * FROM pa_exit WHERE employee_id = ? ORDER BY id DESC", [employeeId]);
+  const exit = exits[0];
   const open = exit && ["Pending", "Approved", "Settled"].includes(String(exit.status));
+  // What was asked for stays readable after it is withdrawn or turned down,
+  // which is the point of keeping the row rather than deleting it.
+  const earlier = exits.filter((x) => !["Pending", "Approved", "Settled"].includes(String(x.status)));
 
   const settlement = exit && String(exit.status) === "Settled" ? await one("SELECT * FROM py_settlement WHERE exit_id = ?", [Number(exit.id)]) : undefined;
   const lines = settlement ? await all("SELECT * FROM py_settlement_line WHERE settlement_id = ? ORDER BY sort_order", [Number(settlement.id)]) : [];
@@ -95,6 +99,44 @@ export default async function ExitPage() {
       {exit && String(exit.status) === "Settled" && !interview ? (
         <div className="mt-6">
           <ExitInterviewForm exitId={Number(exit.id)} />
+        </div>
+      ) : null}
+
+      {earlier.length > 0 ? (
+        <div className="mt-6">
+          <Card>
+            <CardHeader title="Earlier" description="Resignations you withdrew, or that were not accepted. Kept for the record." />
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Type</Th>
+                  <Th>Last day asked for</Th>
+                  <Th>Reason</Th>
+                  <Th>Status</Th>
+                  <Th>Closed</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {earlier.map((x) => (
+                  <Tr key={Number(x.id)}>
+                    <Td>{String(x.exit_type)}</Td>
+                    <Td>
+                      <span className="tabular text-secondary">{formatDate(String(x.requested_last_day))}</span>
+                    </Td>
+                    <Td>
+                      <span className="text-secondary">{x.reason ? String(x.reason) : "—"}</span>
+                    </Td>
+                    <Td>
+                      <Status tone={STATUS_TONE[String(x.status) as keyof typeof STATUS_TONE] ?? "neutral"}>{String(x.status)}</Status>
+                    </Td>
+                    <Td>
+                      <span className="tabular text-secondary">{x.decided_at ? formatDate(String(x.decided_at).slice(0, 10)) : "—"}</span>
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </Card>
         </div>
       ) : null}
     </>

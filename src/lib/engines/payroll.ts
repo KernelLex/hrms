@@ -221,7 +221,7 @@ type Facts = {
   }[];
   /** What an imported employee earned and paid before this system held their history. */
   openingBalance: { asOfYm: number; grossPaidPaise: number; tdsDeductedPaise: number } | null;
-  statutoryDetails: { professionalTaxState: string | null } | null;
+  statutoryDetails: { professionalTaxState: string | null; vpfBasisPoints: number } | null;
 };
 
 async function loadContext(financialYear: string): Promise<Context> {
@@ -229,7 +229,7 @@ async function loadContext(financialYear: string): Promise<Context> {
   const client = rawClient();
   const [holidays, wageTypes] = await client.batch(
     [
-      { sql: "SELECT date, calendar_code FROM pt_holiday WHERE date BETWEEN ? AND ?", args: [from, to] },
+      { sql: "SELECT date, calendar_code FROM pt_holiday WHERE is_optional = 0 AND date BETWEEN ? AND ?", args: [from, to] },
       {
         sql: `SELECT code, name, kind, amount_type, percent_basis_points, formula_key,
                      is_taxable, is_automatic, sort_order
@@ -358,7 +358,7 @@ async function loadFacts(
         args: [e, to, to],
       },
       {
-        sql: `SELECT professional_tax_state FROM pa_it0011_statutory_details
+        sql: `SELECT professional_tax_state, vpf_basis_points FROM pa_it0011_statutory_details
               WHERE employee_id = ? AND valid_from <= ? AND valid_to >= ?
               ORDER BY valid_from DESC LIMIT 1`,
         args: [e, to, to],
@@ -433,7 +433,10 @@ async function loadFacts(
         }
       : null,
     statutoryDetails: statutoryDetails.rows[0]
-      ? { professionalTaxState: statutoryDetails.rows[0].professional_tax_state === null ? null : String(statutoryDetails.rows[0].professional_tax_state) }
+      ? {
+          professionalTaxState: statutoryDetails.rows[0].professional_tax_state === null ? null : String(statutoryDetails.rows[0].professional_tax_state),
+          vpfBasisPoints: Number(statutoryDetails.rows[0].vpf_basis_points ?? 0),
+        }
       : null,
   };
 }
@@ -592,6 +595,27 @@ function providentFund(basicPaise: number, ctx: Context): PayrollLine | null {
     kind: "Deduction",
     amountPaise: employee,
     sortOrder: pfType.sortOrder,
+  };
+}
+
+/**
+ * Voluntary provident fund: what an employee chooses to put in on top of the
+ * statutory 12%, as a percentage of the same basic pay. Deliberately not
+ * capped at the PF wage ceiling — the ceiling limits what is compulsory, not
+ * what someone may add — and the employer's share never follows it.
+ */
+function voluntaryProvidentFund(basicPaise: number, basisPoints: number, ctx: Context): PayrollLine | null {
+  if (!(basisPoints > 0)) return null;
+  const vpfType = [...ctx.wageTypes.values()].find((w) => w.formulaKey === "VPF");
+  if (!vpfType) return null;
+  const amountPaise = Math.round((basicPaise * basisPoints) / 10_000);
+  if (amountPaise <= 0) return null;
+  return {
+    wageTypeCode: vpfType.code,
+    wageTypeName: vpfType.name,
+    kind: "Deduction",
+    amountPaise,
+    sortOrder: vpfType.sortOrder,
   };
 }
 
@@ -1041,6 +1065,8 @@ function calculateFromFacts(opts: {
   if (runType === "Regular" && "lines" in regular) {
     const pf = providentFund(regular.basicPaise, ctx);
     if (pf && pf.amountPaise > 0) lines.push(pf);
+    const vpf = voluntaryProvidentFund(regular.basicPaise, f.statutoryDetails?.vpfBasisPoints ?? 0, ctx);
+    if (vpf) lines.push(vpf);
     lines.push(...employerPfLines(regular.basicPaise, ctx));
 
     const esiCode = [...ctx.wageTypes.values()].find((w) => w.formulaKey === "ESI")?.code ?? "ESI";

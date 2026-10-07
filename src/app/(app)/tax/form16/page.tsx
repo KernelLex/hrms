@@ -70,8 +70,8 @@ export default async function Form16Page() {
           {rows.length === 0 ? (
             <EmptyState icon={<FileBadge />} title="No certificates yet">
               {isHr
-                ? "Build the deduction register, then generate a certificate for an employee."
-                : "Your certificate appears here once HR has issued it."}
+                ? "Form 16 is built from what payroll actually deducted: post at least one month, build the quarterly deduction register on the Register tab, then generate a certificate here. Both parts are produced from the same figures, so they always reconcile."
+                : "Your certificate appears here once HR has issued it, after the year's tax has been deducted and the register filed."}
             </EmptyState>
           ) : (
             <Table>

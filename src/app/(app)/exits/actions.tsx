@@ -2,12 +2,20 @@
 
 import { useActionState } from "react";
 import { Loader2 } from "lucide-react";
-import { settleExitAction, waiveNoticeAction, type ActionState } from "@/app/actions/exits";
+import { revokeExit, settleExitAction, waiveNoticeAction, type ActionState } from "@/app/actions/exits";
 import { Button } from "@/components/ui";
 import { useToast } from "@/components/toast";
 
 export function ExitAdminActions({ id, name, status, noticeWaived }: { id: number; name: string; status: string; noticeWaived: boolean }) {
   const toast = useToast();
+  const [revokeState, revokeAction, revokePending] = useActionState(
+    async (prev: ActionState, form: FormData): Promise<ActionState> => {
+      const result = await revokeExit(prev, form);
+      if (result.ok) toast(`${name} is staying — the exit is cancelled`);
+      return result;
+    },
+    {},
+  );
   const [settleState, settleAction, settlePending] = useActionState(
     async (prev: ActionState, form: FormData): Promise<ActionState> => {
       const result = await settleExitAction(prev, form);
@@ -38,6 +46,16 @@ export function ExitAdminActions({ id, name, status, noticeWaived }: { id: numbe
             {noticeWaived ? "Recover notice" : "Waive notice"}
           </Button>
         </form>
+        {/* Before the last day, an exit can still be taken back: nothing has
+            been written to the record or paid yet. */}
+        <form action={revokeAction} className="inline">
+          <input type="hidden" name="id" value={id} />
+          <input type="hidden" name="reason" value="Cancelled before the last day; the employee is staying." />
+          <Button type="submit" size="sm" variant="ghost" disabled={revokePending}>
+            {revokePending ? <Loader2 className="animate-spin" /> : null}
+            Cancel exit
+          </Button>
+        </form>
         <form action={settleAction} className="inline">
           <input type="hidden" name="id" value={id} />
           <Button type="submit" size="sm" variant="primary" disabled={settlePending}>
@@ -48,6 +66,7 @@ export function ExitAdminActions({ id, name, status, noticeWaived }: { id: numbe
       </div>
       {settleState.error ? <div className="text-[13px] text-danger">{settleState.error}</div> : null}
       {waiveState.error ? <div className="text-[13px] text-danger">{waiveState.error}</div> : null}
+      {revokeState.error ? <div className="text-[13px] text-danger">{revokeState.error}</div> : null}
     </div>
   );
 }

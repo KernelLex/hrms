@@ -18,6 +18,8 @@ import { apiClient, call } from "./support/api";
  */
 
 const rupees = (n: number) => n * 100;
+/** Every claim line needs its own bill, so each test attaches one. */
+const bill = () => new File([new TextEncoder().encode("%PDF-1.4\n% bill\n%%EOF")], "bill.pdf", { type: "application/pdf" });
 const one = async (sql: string, args: (string | number)[] = []) =>
   (await rawClient().execute({ sql, args })).rows[0] as Record<string, unknown> | undefined;
 const all = async (sql: string, args: (string | number)[] = []) => (await rawClient().execute({ sql, args })).rows;
@@ -167,6 +169,7 @@ describe("claims", () => {
         line_date_0: "2026-01-15",
         line_description_0: "Way over the limit",
         line_amount_0: 50_000,
+        line_file_0: bill(),
       }),
     );
     expect(r.error).toMatch(/limit/i);
@@ -182,6 +185,7 @@ describe("claims", () => {
         line_date_0: "2026-01-20",
         line_description_0: "Petrol",
         line_amount_0: 2_000,
+        line_file_0: bill(),
       }),
     );
     expect(r.ok).toBe(true);
@@ -210,6 +214,7 @@ describe("claims", () => {
         line_date_0: "2026-02-01",
         line_description_0: "Consultation",
         line_amount_0: 1_000,
+        line_file_0: bill(),
       }),
     );
     actAs(null);
@@ -230,6 +235,7 @@ describe("claims", () => {
         line_date_0: "2026-03-01",
         line_description_0: "Rejected",
         line_amount_0: 500,
+        line_file_0: bill(),
       }),
     );
     actAs(null);

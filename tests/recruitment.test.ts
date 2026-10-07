@@ -54,11 +54,12 @@ async function vacantPosition(): Promise<string> {
   return code;
 }
 
-async function openRequisition(extra: Record<string, string> = {}): Promise<string> {
+async function openRequisition(extra: Record<string, string | number> = {}): Promise<string> {
   const r = await saveRequisition(
     {},
     form({
       positionCode: await vacantPosition(),
+      hiringManagerEmployeeId: interviewerA.employeeId,
       title: "Payroll analyst",
       description: DESCRIPTION,
       qualifications: "B.Com or equivalent",
@@ -118,9 +119,18 @@ describe("a requisition", () => {
   });
 
   it("needs a description candidates can read before it is published, and a vacant position", async () => {
-    const short = await saveRequisition({}, form({ positionCode: await vacantPosition(), title: "X", description: "Too short.", openings: 1, postedDate: day(0), isPublished: "on" }));
-    expect(short.error).toMatch(/description/);
-    const filled = await saveRequisition({}, form({ positionCode: "PS0001", title: "IT manager", openings: 1, postedDate: day(0) }));
+    const required = { skills: "Excel", experienceMinYears: 2, hiringManagerEmployeeId: interviewerA.employeeId, openings: 1, postedDate: day(0) };
+    const short = await saveRequisition({}, form({ positionCode: await vacantPosition(), title: "X", description: "Too short.", ...required, isPublished: "on" }));
+    expect(short.error).toMatch(/few sentences|describe/i);
+
+    // Opening one at all now needs the role described: a hiring manager, the
+    // skills and the experience, not just a title.
+    const bare = await saveRequisition({}, form({ positionCode: await vacantPosition(), title: "IT manager", openings: 1, postedDate: day(0) }));
+    expect(bare.error).toBeTruthy();
+    // What was typed comes back, so a long form does not have to be retyped.
+    expect(bare.values?.title).toBe("IT manager");
+
+    const filled = await saveRequisition({}, form({ positionCode: "PS0001", title: "IT manager", description: DESCRIPTION, ...required }));
     expect(filled.error).toMatch(/filled/);
   });
 });
