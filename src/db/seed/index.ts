@@ -233,7 +233,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   return [
     "  2 companies, 2 personnel areas, 2 sub-areas, 2 jobs",
     "  3 org units, 4 positions, 2 reporting lines",
-    `  4 users, all with password ${DEMO_PASSWORD}, one a recruiter who sees no pay`,
+    `  ${users.length} users, all with password ${DEMO_PASSWORD}; one a recruiter who sees no pay, one finance who sees pay but no employee records`,
     ...personnelNotes,
     ...timeNotes,
     ...payrollNotes,
