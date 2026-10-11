@@ -1738,6 +1738,9 @@ Needs `org:read`. Answers 200.
 | `name` | string | yes |  |
 | `city` | string, or null | yes |  |
 | `country` | string, or null | yes |  |
+| `currency` | string | yes | The three-letter code this legal entity pays in. |
+| `fiscal_year_start` | string | yes | The first day of its financial year, as MM-DD. |
+| `part_of` | string, or null | yes | The org unit this legal entity sits under, for a group. |
 | `is_active` | boolean | yes |  |
 
 ```json
@@ -1748,6 +1751,9 @@ Needs `org:read`. Answers 200.
       "name": "<name>",
       "city": "<city>",
       "country": "<country>",
+      "currency": "INR",
+      "fiscal_year_start": "<fiscal_year_start>",
+      "part_of": "<part_of>",
       "is_active": true
     }
   ],
@@ -1776,6 +1782,7 @@ Needs `org:read`. Answers 200.
 | `is_payroll_group` | boolean | yes |  |
 | `is_calendar_level` | boolean | yes |  |
 | `is_cost_centre` | boolean | yes |  |
+| `is_business_centre` | boolean | yes | Nodes at this level are classified PROFIT or SHARED. |
 | `is_active` | boolean | yes |  |
 
 ```json
@@ -1789,6 +1796,7 @@ Needs `org:read`. Answers 200.
       "is_payroll_group": true,
       "is_calendar_level": true,
       "is_cost_centre": true,
+      "is_business_centre": true,
       "is_active": true
     }
   ],
@@ -1815,6 +1823,7 @@ Needs `org:read`. Answers 200.
 | `parent` | string, or null | yes |  |
 | `company` | string, or null | yes |  |
 | `level` | string | yes |  |
+| `centre_type` | `PROFIT` \\| `SHARED`, or null | yes | Set on a business centre: it earns revenue, or recovers internal cost. |
 | `payroll_group` | string, or null | yes |  |
 | `valid_from` | string | yes | A date, YYYY-MM-DD. |
 | `valid_to` | string, or null | yes |  |
@@ -1830,6 +1839,7 @@ Needs `org:read`. Answers 200.
       "parent": "<parent>",
       "company": "<company>",
       "level": "<level>",
+      "centre_type": "PROFIT",
       "payroll_group": "<payroll_group>",
       "valid_from": "<valid_from>",
       "valid_to": "<valid_to>",
@@ -1858,6 +1868,7 @@ Needs `org:read`. Answers 200.
 | `code` | string | yes |  |
 | `title` | string | yes |  |
 | `job_family` | string, or null | yes |  |
+| `grade` | string, or null | yes |  |
 | `is_active` | boolean | yes |  |
 
 ```json
@@ -1867,6 +1878,7 @@ Needs `org:read`. Answers 200.
       "code": "<code>",
       "title": "<title>",
       "job_family": "<job_family>",
+      "grade": "<grade>",
       "is_active": true
     }
   ],

@@ -9,6 +9,7 @@ const COLUMNS: Column[] = [
   { key: "code", label: "Code" },
   { key: "title", label: "Job title" },
   { key: "family", label: "Job family" },
+  { key: "grade", label: "Grade" },
   { key: "description", label: "Description" },
   { key: "status", label: "Status" },
 ];
@@ -31,6 +32,7 @@ export default async function JobsPage() {
       options: families.filter((f) => f.isActive).map((f) => ({ value: f.code, label: `${f.code} — ${f.name}` })),
       emptyLabel: families.length === 0 ? "No job families yet" : undefined,
     },
+    { kind: "text", name: "grade", label: "Grade", placeholder: "M2", uppercase: true, hint: "The grade this job carries, which leave policies can match on." },
     {
       kind: "text",
       name: "description",
@@ -63,6 +65,7 @@ export default async function JobsPage() {
           ) : (
             <span className="text-decor">&mdash;</span>
           ),
+          grade: r.grade ?? <span className="text-decor">&mdash;</span>,
           description: (
             <span className="text-secondary">
               {r.description ?? <span className="text-decor">&mdash;</span>}
@@ -78,6 +81,7 @@ export default async function JobsPage() {
           code: r.code,
           title: r.title,
           jobFamilyCode: r.jobFamilyCode ?? "",
+          grade: r.grade ?? "",
           description: r.description ?? "",
           isActive: r.isActive,
         },

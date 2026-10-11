@@ -1,8 +1,9 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, gte, lte } from "drizzle-orm";
 import { Network, User, Waypoints } from "lucide-react";
 import { db } from "@/lib/db";
-import { omLevelType, omOrgUnit, omPosition } from "@/db/schema";
+import { omLevelType, omOrgUnit, omPosition, paEmployee, paOrgAssignment } from "@/db/schema";
 import { Card, PageHeader, EmptyState, Badge } from "@/components/ui";
+import { todayInIndia } from "@/lib/dates";
 import { OrgChartSvg } from "./svg-chart";
 import { ChartViewToggle } from "./view-toggle";
 
@@ -63,13 +64,22 @@ function Row({
 }
 
 export default async function OrgChartPage() {
-  const [levels, units, positions] = await Promise.all([
+  const today = todayInIndia();
+  const [levels, units, positions, staffed] = await Promise.all([
     db.select().from(omLevelType).orderBy(asc(omLevelType.rank)),
     db.select().from(omOrgUnit).where(eq(omOrgUnit.isActive, true)).orderBy(asc(omOrgUnit.code)),
     db.select().from(omPosition).orderBy(asc(omPosition.code)),
+    // Headcount per unit: people actually employed, by the assignment in force.
+    db
+      .select({ unit: paOrgAssignment.orgUnitCode, n: count() })
+      .from(paOrgAssignment)
+      .innerJoin(paEmployee, eq(paEmployee.id, paOrgAssignment.employeeId))
+      .where(and(eq(paEmployee.employmentStatus, "Active"), lte(paOrgAssignment.validFrom, today), gte(paOrgAssignment.validTo, today)))
+      .groupBy(paOrgAssignment.orgUnitCode),
   ]);
   const level = new Map<string, Level>(levels.map((l) => [l.code, l]));
   const levelOf = (u: Unit) => level.get(u.levelTypeCode);
+
 
   const childUnits = new Map<string | null, Unit[]>();
   for (const u of units) {
@@ -83,6 +93,36 @@ export default async function OrgChartPage() {
     if (!unitPositions.has(p.orgUnitCode)) unitPositions.set(p.orgUnitCode, []);
     unitPositions.get(p.orgUnitCode)!.push(p);
   }
+
+  // Headcount and vacancies roll up: a node's figure includes everything
+  // beneath it, which is what makes the tree view worth reading at the top.
+  const ownPeople = new Map(staffed.map((r) => [r.unit, r.n]));
+  const ownVacancies = new Map<string, number>();
+  for (const p of positions) {
+    if (!p.isActive || !p.isVacant) continue;
+    ownVacancies.set(p.orgUnitCode, (ownVacancies.get(p.orgUnitCode) ?? 0) + 1);
+  }
+  const rolled = new Map<string, { people: number; vacancies: number }>();
+  const rollUp = (code: string): { people: number; vacancies: number } => {
+    const had = rolled.get(code);
+    if (had) return had;
+    const total = { people: ownPeople.get(code) ?? 0, vacancies: ownVacancies.get(code) ?? 0 };
+    rolled.set(code, total);
+    for (const child of childUnits.get(code) ?? []) {
+      const sub = rollUp(child.code);
+      total.people += sub.people;
+      total.vacancies += sub.vacancies;
+    }
+    return total;
+  };
+
+  const countsLabel = (code: string) => {
+    const { people, vacancies } = rollUp(code);
+    if (people === 0 && vacancies === 0) return undefined;
+    const parts = [people === 1 ? "1 person" : `${people} people`];
+    if (vacancies > 0) parts.push(vacancies === 1 ? "1 vacancy" : `${vacancies} vacancies`);
+    return parts.join(", ");
+  };
 
   const positionUnit = new Map(positions.map((p) => [p.code, p.orgUnitCode]));
   const positionTitle = new Map(positions.map((p) => [p.code, p.title]));
@@ -133,7 +173,7 @@ export default async function OrgChartPage() {
         icon={<Network />}
         name={u.name}
         code={u.code}
-        meta={levelOf(u)?.name}
+        meta={[levelOf(u)?.name, countsLabel(u.code)].filter(Boolean).join(" · ")}
       />,
       ...renderPositions(u.code, depth + 1),
       ...renderUnits(u.code, depth + 1),

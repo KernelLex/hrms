@@ -15,6 +15,7 @@ import {
   omPosition,
   omReportingLine,
   pyPayrollPeriod,
+  CENTRE_TYPES,
   OPEN_ENDED,
 } from "@/db/schema";
 
@@ -101,6 +102,14 @@ const CompanyInput = z.object({
   address: z.string().trim().max(200).nullable(),
   city: z.string().trim().max(80).nullable(),
   country: z.string().trim().max(80).nullable(),
+  currency: z
+    .string()
+    .trim()
+    .regex(/^[A-Z]{3}$/, "A currency is its three-letter code, such as INR."),
+  fiscalYearStart: z
+    .string()
+    .trim()
+    .regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "A fiscal year starts on a date written MM-DD, such as 04-01."),
   /** The group node this legal entity sits under, where there is one. */
   parentNodeCode: z.string().trim().nullable(),
   isActive: z.boolean(),
@@ -119,6 +128,8 @@ export async function saveCompany(
     address: optional(form.get("address")),
     city: optional(form.get("city")),
     country: optional(form.get("country")),
+    currency: str(form.get("currency")).toUpperCase() || "INR",
+    fiscalYearStart: str(form.get("fiscalYearStart")) || "04-01",
     parentNodeCode: optional(form.get("parentNodeCode")),
     isActive: bool(form.get("isActive")),
   });
@@ -181,6 +192,7 @@ const LevelTypeInput = z.object({
   isPayrollGroup: z.boolean(),
   isCalendarLevel: z.boolean(),
   isCostCentre: z.boolean(),
+  isBusinessCentre: z.boolean(),
   isActive: z.boolean(),
 });
 
@@ -217,6 +229,7 @@ export async function saveLevelType(
     isPayrollGroup: bool(form.get("isPayrollGroup")),
     isCalendarLevel: bool(form.get("isCalendarLevel")),
     isCostCentre: bool(form.get("isCostCentre")),
+    isBusinessCentre: bool(form.get("isBusinessCentre")),
     isActive: bool(form.get("isActive")),
   });
   if (!parsed.success) return fail(firstIssue(parsed.error));
@@ -356,6 +369,7 @@ const JobInput = z.object({
   code: code("job code"),
   title: label("job title"),
   jobFamilyCode: code("job family"),
+  grade: z.string().trim().max(20).nullable(),
   description: z.string().trim().max(200).nullable(),
   isActive: z.boolean(),
 });
@@ -371,6 +385,7 @@ export async function saveJob(
     code: str(form.get("code")).toUpperCase(),
     title: str(form.get("title")),
     jobFamilyCode: str(form.get("jobFamilyCode")),
+    grade: optional(form.get("grade")),
     description: optional(form.get("description")),
     isActive: bool(form.get("isActive")),
   });
@@ -426,6 +441,7 @@ const OrgUnitInput = z.object({
   companyCode: z.string().trim().nullable(),
   levelTypeCode: code("level"),
   calendarCode: z.string().trim().nullable(),
+  centreType: z.enum(CENTRE_TYPES).nullable(),
   validFrom: dateish,
   validTo: dateish,
   isActive: z.boolean(),
@@ -462,6 +478,7 @@ export async function saveOrgUnit(
     companyCode: optional(form.get("companyCode")),
     levelTypeCode: str(form.get("levelTypeCode")),
     calendarCode: optional(form.get("calendarCode")),
+    centreType: optional(form.get("centreType")),
     validFrom: str(form.get("validFrom")),
     validTo: str(form.get("validTo")) || OPEN_ENDED,
     isActive: bool(form.get("isActive")),
@@ -484,17 +501,29 @@ export async function saveOrgUnit(
   });
   if (!level) return fail(`Level ${v.levelTypeCode} does not exist.`);
 
-  if (v.parentCode && level.parentLevelTypeCode) {
+  // "No orphans": a level that declares a parent level must be given a parent,
+  // and that parent has to be the right level, active, and valid on the day
+  // this unit starts.
+  if (level.parentLevelTypeCode && v.parentCode === null) {
+    return fail(`A ${level.name} must sit under a ${level.parentLevelTypeCode}.`);
+  }
+  if (v.parentCode) {
     const parent = await db.query.omOrgUnit.findFirst({
       where: eq(omOrgUnit.code, v.parentCode),
-      columns: { levelTypeCode: true },
+      columns: { levelTypeCode: true, isActive: true, validFrom: true, validTo: true },
     });
     if (!parent) return fail(`${v.parentCode} does not exist.`);
-    const allowed = [level.parentLevelTypeCode, level.code];
-    if (!allowed.includes(parent.levelTypeCode)) {
-      return fail(
-        `A ${level.name} may sit only under a ${level.parentLevelTypeCode} or another ${level.code}, and ${v.parentCode} is a ${parent.levelTypeCode}.`,
-      );
+    if (level.parentLevelTypeCode) {
+      const allowed = [level.parentLevelTypeCode, level.code];
+      if (!allowed.includes(parent.levelTypeCode)) {
+        return fail(
+          `A ${level.name} may sit only under a ${level.parentLevelTypeCode} or another ${level.code}, and ${v.parentCode} is a ${parent.levelTypeCode}.`,
+        );
+      }
+    }
+    if (!parent.isActive) return fail(`${v.parentCode} is inactive, so nothing can be put under it.`);
+    if (parent.validFrom > v.validFrom || parent.validTo < v.validFrom) {
+      return fail(`${v.parentCode} is not valid on ${v.validFrom}, so nothing can start under it that day.`);
     }
   }
 
@@ -507,6 +536,24 @@ export async function saveOrgUnit(
     return fail(`A ${level.name} must have a holiday calendar.`);
   }
   if (!level.isCalendarLevel) v.calendarCode = null;
+  if (level.isBusinessCentre && v.centreType === null) {
+    return fail(`A ${level.name} must be either a profit centre or shared services.`);
+  }
+  if (!level.isBusinessCentre) v.centreType = null;
+
+  // "Safe deactivation": nothing is switched off while live things hang off it.
+  if (original && !v.isActive) {
+    const [children, positions] = await Promise.all([
+      db.select({ n: count() }).from(omOrgUnit).where(and(eq(omOrgUnit.parentCode, original), eq(omOrgUnit.isActive, true))),
+      db.select({ n: count() }).from(omPosition).where(and(eq(omPosition.orgUnitCode, original), eq(omPosition.isActive, true))),
+    ]);
+    if (children[0].n > 0) {
+      return fail(`${original} still has ${children[0].n} active org unit${children[0].n === 1 ? "" : "s"} under it. Move or deactivate them first.`);
+    }
+    if (positions[0].n > 0) {
+      return fail(`${original} still holds ${positions[0].n} active position${positions[0].n === 1 ? "" : "s"}. Move or deactivate them first.`);
+    }
+  }
 
   if (!original) {
     const [dupe] = await db

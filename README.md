@@ -65,10 +65,12 @@ The modules below are not separate tools bolted together — the same hire, the 
 ### Organisation
 
 - **You decide the shape of your own hierarchy.** Set up the levels your group actually uses — organisation, business vertical, business centre, department, cost centre, or whatever you call them — and build the tree from them. Nothing is hard-coded: add a level, rename one, or nest them differently, and the whole system follows.
-- Each level carries what it is responsible for, and you choose which: **payroll runs against this level**, **a holiday calendar attaches here**, **cost is booked here**. Everything beneath a level inherits what it carries, so a department put under a business centre automatically picks up that centre's holidays and payroll group — set it in one place, not on every department.
+- Each level carries what it is responsible for, and you choose which: **payroll runs against this level**, **a holiday calendar attaches here**, **cost is booked here**, **this level is a profit centre or shared services**. Everything beneath a level inherits what it carries, so a department put under a business centre automatically picks up that centre's holidays and payroll group — set it in one place, not on every department.
+- Business centres say whether they **earn revenue or recover internal cost**, so the tree shows how the organisation is funded as well as how it is arranged.
 - Several companies under one group: each legal entity sits under a group node, and shares the levels, jobs and job families above it.
-- Companies, org units at every level, job families, jobs and positions, each with the dates it is valid for, so the structure has a history.
-- Reporting lines between positions, and an **org chart** drawn as boxes and lines you can search, collapse, pan and zoom — each box labelled with its own level — with a plain list alongside it for anyone who needs one.
+- Companies, org units at every level, job families, jobs and positions, each with the dates it is valid for, so the structure has a history. A company records the currency it pays in and when its financial year starts; a job records its grade.
+- The structure protects itself: nothing can be created without a live parent, a unit can only be placed where its level allows, and nothing can be switched off while live units or positions still hang off it.
+- Reporting lines between positions, and an **org chart** drawn as boxes and lines you can search, collapse, pan and zoom — each box labelled with its own level — with a plain list alongside it that shows **headcount and vacancies for every node**, counting everything beneath it.
 - Vacant positions, ready for hiring.
 - **Headcount requests**: a manager asks for a new position, with its budget; approved by their manager, HR and finance, it opens vacant and ready to hire against.
 - **Bulk import**: load positions, employees with their history, and opening balances — what someone earned, paid in tax and had left in leave before switching to this system — from a spreadsheet. Every row is checked before anything is written, and importing the same file twice changes nothing.
@@ -76,7 +78,7 @@ The modules below are not separate tools bolted together — the same hire, the 
 **How the org structure is set up:**
 1. Decide your levels under **Org levels** — their names, what may sit under what, and which of them payroll, holiday calendars and cost booking attach to.
 2. Add your companies, and put each under the group node it belongs to.
-3. Build the tree under **Org units**: one screen for every level, because every node is the same kind of record. The system only lets you place a unit where its level allows.
+3. Build the tree under **Org units**: one screen for every level, because every node is the same kind of record. The system only lets you place a unit where its level allows, and only under a parent that is live on the day the unit starts.
 4. Put a holiday calendar on each unit at your calendar level; everything beneath it inherits those holidays.
 5. Open positions against the units that need them, and the org chart draws itself.
 

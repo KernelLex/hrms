@@ -11,6 +11,7 @@ const COLUMNS: Column[] = [
   { key: "parent", label: "Part of" },
   { key: "city", label: "City" },
   { key: "country", label: "Country" },
+  { key: "books", label: "Books" },
   { key: "status", label: "Status" },
 ];
 
@@ -35,6 +36,8 @@ export default async function CompaniesPage() {
     { kind: "text", name: "address", label: "Address", full: true, placeholder: "Plot 12, Industrial Area" },
     { kind: "text", name: "city", label: "City", placeholder: "Bengaluru" },
     { kind: "text", name: "country", label: "Country", placeholder: "India" },
+    { kind: "text", name: "currency", label: "Currency", required: true, placeholder: "INR", uppercase: true, hint: "The three-letter code this entity pays in." },
+    { kind: "text", name: "fiscalYearStart", label: "Fiscal year starts", required: true, placeholder: "04-01", hint: "The first day of its financial year, as MM-DD." },
     { kind: "checkbox", name: "isActive", label: "Active" },
   ];
 
@@ -62,6 +65,11 @@ export default async function CompaniesPage() {
           ),
           city: r.city ?? <span className="text-decor">&mdash;</span>,
           country: r.country ?? <span className="text-decor">&mdash;</span>,
+          books: (
+            <span className="tabular text-secondary">
+              {r.currency}, year from {r.fiscalYearStart}
+            </span>
+          ),
           status: (
             <Status tone={r.isActive ? "done" : "neutral"}>
               {r.isActive ? "Active" : "Inactive"}
@@ -75,6 +83,8 @@ export default async function CompaniesPage() {
           address: r.address ?? "",
           city: r.city ?? "",
           country: r.country ?? "",
+          currency: r.currency,
+          fiscalYearStart: r.fiscalYearStart,
           isActive: r.isActive,
         },
       }))}

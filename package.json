@@ -15,7 +15,8 @@
     "sandbox": "tsx tools/mock-erp/run.ts",
     "api:docs": "tsx scripts/api-docs.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "org:shape": "tsx scripts/shape-org-tree.ts"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",

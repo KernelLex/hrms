@@ -60,7 +60,18 @@ export function codeList<T extends { code: string }>(opts: {
   };
 }
 
-const Company = z.object({ code: z.string(), name: z.string(), city: z.string().nullable(), country: z.string().nullable(), is_active: z.boolean() }).meta({ id: "Company" });
+const Company = z
+  .object({
+    code: z.string(),
+    name: z.string(),
+    city: z.string().nullable(),
+    country: z.string().nullable(),
+    currency: z.string().meta({ description: "The three-letter code this legal entity pays in." }),
+    fiscal_year_start: z.string().meta({ description: "The first day of its financial year, as MM-DD." }),
+    part_of: z.string().nullable().meta({ description: "The org unit this legal entity sits under, for a group." }),
+    is_active: z.boolean(),
+  })
+  .meta({ id: "Company" });
 const OrgLevel = z
   .object({
     code: z.string(),
@@ -70,6 +81,7 @@ const OrgLevel = z
     is_payroll_group: z.boolean(),
     is_calendar_level: z.boolean(),
     is_cost_centre: z.boolean(),
+    is_business_centre: z.boolean().meta({ description: "Nodes at this level are classified PROFIT or SHARED." }),
     is_active: z.boolean(),
   })
   .meta({ id: "OrgLevel" });
@@ -80,6 +92,7 @@ const Department = z
     parent: z.string().nullable(),
     company: z.string().nullable(),
     level: z.string(),
+    centre_type: z.enum(["PROFIT", "SHARED"]).nullable().meta({ description: "Set on a business centre: it earns revenue, or recovers internal cost." }),
     payroll_group: z.string().nullable(),
     valid_from: IsoDate,
     valid_to: IsoDate.nullable(),
@@ -87,7 +100,9 @@ const Department = z
     external_ids: z.record(z.string(), z.string()),
   })
   .meta({ id: "Department" });
-const Job = z.object({ code: z.string(), title: z.string(), job_family: z.string().nullable(), is_active: z.boolean() }).meta({ id: "Job" });
+const Job = z
+  .object({ code: z.string(), title: z.string(), job_family: z.string().nullable(), grade: z.string().nullable(), is_active: z.boolean() })
+  .meta({ id: "Job" });
 const Position = z
   .object({
     code: z.string(),
@@ -190,7 +205,16 @@ export const orgEndpoints: Endpoint[] = [
       const c = companyWhere(ctx, "code");
       return { sql: `SELECT * FROM om_company WHERE ${c.sql}`, args: c.args };
     },
-    map: (r) => ({ code: String(r.code), name: String(r.name), city: s(r.city), country: s(r.country), is_active: bool(r.is_active) }),
+    map: (r) => ({
+      code: String(r.code),
+      name: String(r.name),
+      city: s(r.city),
+      country: s(r.country),
+      currency: String(r.currency),
+      fiscal_year_start: String(r.fiscal_year_start),
+      part_of: s(r.parent_node_code),
+      is_active: bool(r.is_active),
+    }),
   }),
   codeList({
     path: "/org-levels",
@@ -207,6 +231,7 @@ export const orgEndpoints: Endpoint[] = [
       is_payroll_group: bool(r.is_payroll_group),
       is_calendar_level: bool(r.is_calendar_level),
       is_cost_centre: bool(r.is_cost_centre),
+      is_business_centre: bool(r.is_business_centre),
       is_active: bool(r.is_active),
     }),
   }),
@@ -227,6 +252,7 @@ export const orgEndpoints: Endpoint[] = [
         parent: s(r.parent_code),
         company: s(r.company_code),
         level: String(r.level_type_code),
+        centre_type: s(r.centre_type) as "PROFIT" | "SHARED" | null,
         payroll_group: s(r.payroll_group),
         valid_from: String(r.valid_from),
         valid_to: until(s(r.valid_to)),
@@ -254,6 +280,7 @@ export const orgEndpoints: Endpoint[] = [
           parent: s(r.parent_code),
           company: s(r.company_code),
           level: String(r.level_type_code),
+          centre_type: s(r.centre_type) as "PROFIT" | "SHARED" | null,
           payroll_group: nearestAncestorWithRole(tree, String(r.code), "isPayrollGroup")?.code ?? null,
           valid_from: String(r.valid_from),
           valid_to: until(s(r.valid_to)),
@@ -269,7 +296,7 @@ export const orgEndpoints: Endpoint[] = [
     summary: "List jobs",
     schema: Job,
     sql: () => ({ sql: "SELECT * FROM om_job", args: [] }),
-    map: (r) => ({ code: String(r.code), title: String(r.title), job_family: s(r.job_family_code), is_active: bool(r.is_active) }),
+    map: (r) => ({ code: String(r.code), title: String(r.title), job_family: s(r.job_family_code), grade: s(r.grade), is_active: bool(r.is_active) }),
   }),
   {
     method: "GET",

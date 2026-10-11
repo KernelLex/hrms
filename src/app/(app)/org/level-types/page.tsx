@@ -37,6 +37,7 @@ export default async function LevelTypesPage() {
     },
     { kind: "checkbox", name: "isCalendarLevel", label: "A holiday calendar attaches here" },
     { kind: "checkbox", name: "isCostCentre", label: "Cost is booked here" },
+    { kind: "checkbox", name: "isBusinessCentre", label: "Classified as a profit centre or shared services" },
     { kind: "checkbox", name: "isActive", label: "Active" },
   ];
 
@@ -45,6 +46,7 @@ export default async function LevelTypesPage() {
       r.isPayrollGroup ? "Payroll group" : null,
       r.isCalendarLevel ? "Holiday calendar" : null,
       r.isCostCentre ? "Cost centre" : null,
+      r.isBusinessCentre ? "Profit or shared" : null,
     ].filter(Boolean);
     return flags.length === 0 ? <span className="text-decor">&mdash;</span> : <span className="text-secondary">{flags.join(", ")}</span>;
   };
@@ -84,6 +86,7 @@ export default async function LevelTypesPage() {
           isPayrollGroup: r.isPayrollGroup,
           isCalendarLevel: r.isCalendarLevel,
           isCostCentre: r.isCostCentre,
+          isBusinessCentre: r.isBusinessCentre,
           isActive: r.isActive,
         },
       }))}

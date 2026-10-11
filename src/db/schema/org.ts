@@ -41,6 +41,11 @@ export const omLevelType = sqliteTable("om_level_type", {
   isCalendarLevel: integer("is_calendar_level", { mode: "boolean" }).notNull().default(false),
   /** A cost-booking leaf: these are what the ERP reads as cost centres. */
   isCostCentre: integer("is_cost_centre", { mode: "boolean" }).notNull().default(false),
+  /**
+   * Nodes at this level are classified as earning revenue or recovering cost,
+   * which is what the reference design calls a business centre.
+   */
+  isBusinessCentre: integer("is_business_centre", { mode: "boolean" }).notNull().default(false),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
 });
 
@@ -50,6 +55,10 @@ export const omCompany = sqliteTable("om_company", {
   address: text("address"),
   city: text("city"),
   country: text("country"),
+  /** The legal entity pays in one currency and keeps books to one year. */
+  currency: text("currency").notNull().default("INR"),
+  /** The fiscal year's first day, as MM-DD. India's April start is the default. */
+  fiscalYearStart: text("fiscal_year_start").notNull().default("04-01"),
   /**
    * The node this company sits under, for a group that owns several legal
    * entities. Null for a single-company tenant, which is why it is optional.
@@ -65,9 +74,15 @@ export const omJobFamily = sqliteTable("om_job_family", {
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
 });
 
+/** What a business centre is: it earns revenue, or it recovers internal cost. */
+export const CENTRE_TYPES = ["PROFIT", "SHARED"] as const;
+export type CentreType = (typeof CENTRE_TYPES)[number];
+
 export const omJob = sqliteTable("om_job", {
   code: text("code").primaryKey(),
   title: text("title").notNull(),
+  /** The job's own grade, carried by the job rather than the person. */
+  grade: text("grade"),
   /**
    * Optional on purpose: a job loaded before its family exists is better than
    * a refused import. The screens require one.
@@ -104,6 +119,8 @@ export const omOrgUnit = sqliteTable(
      * whose level is a calendar level; read by walking up from the employee.
      */
     calendarCode: text("calendar_code").references(() => ptHolidayCalendar.code),
+    /** "PROFIT" or "SHARED". Set only on nodes whose level is a business centre. */
+    centreType: text("centre_type"),
     validFrom: text("valid_from").notNull(),
     validTo: text("valid_to").notNull(),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),

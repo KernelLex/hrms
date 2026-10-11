@@ -53,7 +53,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
     .values([
       { code: "ORGANISATION", name: "Organisation", parentLevelTypeCode: null, rank: 0, isActive: true },
       { code: "VERTICAL", name: "Business vertical", parentLevelTypeCode: "ORGANISATION", rank: 1, isActive: true },
-      { code: "CENTER", name: "Business center", parentLevelTypeCode: "VERTICAL", rank: 2, isPayrollGroup: true, isCalendarLevel: true, isActive: true },
+      { code: "CENTER", name: "Business center", parentLevelTypeCode: "VERTICAL", rank: 2, isPayrollGroup: true, isCalendarLevel: true, isBusinessCentre: true, isActive: true },
       { code: "DEPARTMENT", name: "Department", parentLevelTypeCode: "CENTER", rank: 3, isActive: true },
       { code: "COST_CENTRE", name: "Cost centre", parentLevelTypeCode: "DEPARTMENT", rank: 4, isCostCentre: true, isActive: true },
     ])
@@ -103,8 +103,8 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   await db
     .insert(s.omJob)
     .values([
-      { code: "JB0001", title: "Software engineer", jobFamilyCode: "IT", description: "Develops and maintains applications", isActive: true },
-      { code: "JB0002", title: "HR executive", jobFamilyCode: "HR", description: "Handles recruitment and employee relations", isActive: true },
+      { code: "JB0001", title: "Software engineer", jobFamilyCode: "IT", grade: "L2", description: "Develops and maintains applications", isActive: true },
+      { code: "JB0002", title: "HR executive", jobFamilyCode: "HR", grade: "L2", description: "Handles recruitment and employee relations", isActive: true },
     ])
     .onConflictDoNothing();
 
@@ -122,8 +122,8 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   await db
     .insert(s.omOrgUnit)
     .values([
-      { code: "PA01", name: "Head office", parentCode: "BV01", companyCode: "CO01", levelTypeCode: "CENTER", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
-      { code: "PA02", name: "Factory unit 1", parentCode: "BV01", companyCode: "CO01", levelTypeCode: "CENTER", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+      { code: "PA01", name: "Head office", parentCode: "BV01", companyCode: "CO01", levelTypeCode: "CENTER", centreType: "SHARED", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+      { code: "PA02", name: "Factory unit 1", parentCode: "BV01", companyCode: "CO01", levelTypeCode: "CENTER", centreType: "PROFIT", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
     ])
     .onConflictDoNothing();
 

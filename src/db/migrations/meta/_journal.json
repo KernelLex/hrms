@@ -204,6 +204,13 @@
       "when": 1791714115877,
       "tag": "0028_noisy_darkhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1791720683482,
+      "tag": "0029_majestic_power_pack",
+      "breakpoints": true
     }
   ]
 }

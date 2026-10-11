@@ -1,6 +1,6 @@
 import { asc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { omOrgUnit, omCompany, omLevelType, ptHolidayCalendar, OPEN_ENDED } from "@/db/schema";
+import { omOrgUnit, omCompany, omLevelType, ptHolidayCalendar, CENTRE_TYPES, OPEN_ENDED } from "@/db/schema";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveOrgUnit, deleteOrgUnit } from "@/app/actions/org";
 import { Status, TwoLine } from "@/components/ui";
@@ -10,6 +10,7 @@ const COLUMNS: Column[] = [
   { key: "code", label: "Code" },
   { key: "name", label: "Org unit" },
   { key: "level", label: "Level" },
+  { key: "kind", label: "Earns or recovers" },
   { key: "parent", label: "Sits under" },
   { key: "company", label: "Company" },
   { key: "validity", label: "Valid" },
@@ -43,7 +44,10 @@ export default async function OrgUnitsPage() {
       kind: "select",
       name: "parentCode",
       label: "Sits under",
-      options: rows.map((u) => ({ value: u.code, label: `${u.code} — ${u.name}` })),
+      options: rows.map((u) => ({
+        value: u.code,
+        label: `${u.code} — ${u.name} (${level.get(u.levelTypeCode)?.name ?? u.levelTypeCode})`,
+      })),
       emptyLabel: "Top level",
       hint: "A level may only sit under the level it was set up for, or another unit of its own level.",
     },
@@ -54,6 +58,14 @@ export default async function OrgUnitsPage() {
       options: companies.map((c) => ({ value: c.code, label: `${c.code} — ${c.name}` })),
       emptyLabel: "Above the companies",
       hint: "Leave empty only for a group node that spans every legal entity.",
+    },
+    {
+      kind: "select",
+      name: "centreType",
+      label: "Earns or recovers",
+      options: CENTRE_TYPES.map((t) => ({ value: t, label: t === "PROFIT" ? "Profit centre" : "Shared services" })),
+      emptyLabel: "Not a business centre",
+      hint: "Set only on a level classified as a profit centre or shared services.",
     },
     {
       kind: "select",
@@ -92,6 +104,11 @@ export default async function OrgUnitsPage() {
               sub={r.calendarCode ? (calendarName.get(r.calendarCode) ?? r.calendarCode) : undefined}
             />
           ),
+          kind: r.centreType ? (
+            <span className="text-secondary">{r.centreType === "PROFIT" ? "Profit centre" : "Shared services"}</span>
+          ) : (
+            <span className="text-decor">&mdash;</span>
+          ),
           parent: r.parentCode ? (
             <span className="text-secondary">
               {r.parentCode} — {unitName.get(r.parentCode) ?? "unknown"}
@@ -118,6 +135,7 @@ export default async function OrgUnitsPage() {
           parentCode: r.parentCode ?? "",
           companyCode: r.companyCode ?? "",
           calendarCode: r.calendarCode ?? "",
+          centreType: r.centreType ?? "",
           validFrom: r.validFrom,
           validTo: r.validTo === OPEN_ENDED ? "" : r.validTo,
           isActive: r.isActive,

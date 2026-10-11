@@ -335,6 +335,9 @@ export function MasterScreen({
                   className={"full" in f && f.full ? "sm:col-span-2" : undefined}
                 >
                   {control}
+                  {/* A disabled control is not submitted, so the locked code
+                      would reach the action empty and be refused. */}
+                  {locked ? <input type="hidden" name={f.name} value={String(defaultValue ?? "")} /> : null}
                 </Field>
               );
             })}
