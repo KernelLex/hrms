@@ -17,7 +17,6 @@ export type HireData = {
   effectiveDate: string;
   reason: string | null;
   companyCode: string;
-  areaCode: string | null;
   orgUnitCode: string;
   positionCode: string;
   costCenter: string | null;
@@ -40,12 +39,11 @@ const one = async (sql: string, args: (string | number | null)[]) =>
  */
 export async function hire(actor: Actor, v: HireData, createdBy: string): Promise<Result<{ employeeId: number; employeeNumber: string }>> {
   if (!(v.amountPaise > 0)) return { error: "Enter a basic salary above zero." };
-  const [position, unit, company, schedule, area] = await Promise.all([
+  const [position, unit, company, schedule] = await Promise.all([
     one("SELECT * FROM om_position WHERE code = ?", [v.positionCode]),
     one("SELECT * FROM om_org_unit WHERE code = ?", [v.orgUnitCode]),
     one("SELECT * FROM om_company WHERE code = ?", [v.companyCode]),
     one("SELECT * FROM pt_work_schedule_rule WHERE code = ?", [v.workScheduleCode]),
-    v.areaCode ? one("SELECT * FROM om_personnel_area WHERE code = ?", [v.areaCode]) : Promise.resolve({}),
   ]);
   if (!position) return { error: "That position no longer exists." };
   if (Number(position.is_vacant) !== 1) {
@@ -54,7 +52,6 @@ export async function hire(actor: Actor, v: HireData, createdBy: string): Promis
   if (!unit) return { error: "That department no longer exists." };
   if (!company) return { error: "That company does not exist." };
   if (!schedule) return { error: "That work schedule does not exist." };
-  if (!area) return { error: "That personnel area does not exist." };
 
   // EMP1003, EMP1004, ... continuing from whatever exists. Ordered by the
   // number itself, not the text — "EMP2" must outrank "EMP1000", and a
@@ -86,9 +83,9 @@ export async function hire(actor: Actor, v: HireData, createdBy: string): Promis
     });
     await tx.execute({
       sql: `INSERT INTO pa_it0001_org_assignment (employee_id, valid_from, valid_to, seq, created_by, created_at,
-              company_code, area_code, sub_area_code, org_unit_code, position_code, cost_center)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [...common, v.companyCode, v.areaCode, null, v.orgUnitCode, v.positionCode, v.costCenter],
+              company_code, org_unit_code, position_code, cost_center)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      args: [...common, v.companyCode, v.orgUnitCode, v.positionCode, v.costCenter],
     });
     await tx.execute({
       sql: `INSERT INTO pa_it0002_personal_data (employee_id, valid_from, valid_to, seq, created_by, created_at,
@@ -197,7 +194,11 @@ export async function updateEmployeeFields(
       });
     }
     if (fields.cost_centre !== undefined) {
-      const known = await one("SELECT code FROM om_cost_centre WHERE code = ? AND is_active = 1", [fields.cost_centre]);
+      const known = await one(
+        `SELECT u.code FROM om_org_unit u JOIN om_level_type t ON t.code = u.level_type_code
+         WHERE u.code = ? AND u.is_active = 1 AND t.is_cost_centre = 1`,
+        [fields.cost_centre],
+      );
       if (!known) return { error: `There is no active cost centre ${fields.cost_centre}. Send it to /cost-centres first.` };
       const current = await readAsOf<Record<string, string | null>>(SLICED_TABLES.orgAssignment, employeeId, validFrom);
       if (!current) return { error: `There is no org assignment valid on ${validFrom} to change.` };
@@ -207,8 +208,6 @@ export async function updateEmployeeFields(
         validFrom,
         data: {
           company_code: current.company_code,
-          area_code: current.area_code,
-          sub_area_code: current.sub_area_code,
           org_unit_code: current.org_unit_code,
           position_code: current.position_code,
           cost_center: fields.cost_centre,

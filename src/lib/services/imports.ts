@@ -74,7 +74,6 @@ const COLUMNS: Record<ImportKind, { name: string; required: boolean; hint: strin
     { name: "gender", required: false, hint: "Female" },
     { name: "hire_date", required: true, hint: "2023-05-02" },
     { name: "company_code", required: true, hint: "CO01" },
-    { name: "area_code", required: false, hint: "PA01" },
     { name: "org_unit_code", required: true, hint: "OU0002" },
     { name: "position_code", required: true, hint: "PS0101" },
     { name: "cost_centre", required: false, hint: "CC-IT-01" },
@@ -233,11 +232,6 @@ async function checkEmployee(row: Row, cache: Cache): Promise<RowVerdict> {
   if (!company) messages.push("A company code is needed.");
   else if (!(await cachedOne(cache, "SELECT code FROM om_company WHERE code = ?", [company]))) messages.push(`There is no company ${company}.`);
 
-  const area = str(row, "area_code");
-  if (area && !(await cachedOne(cache, "SELECT code FROM om_personnel_area WHERE code = ?", [area]))) {
-    messages.push(`There is no personnel area ${area}.`);
-  }
-
   const unit = str(row, "org_unit_code");
   if (!unit) messages.push("A department code is needed.");
   else if (!(await cachedOne(cache, "SELECT code FROM om_org_unit WHERE code = ?", [unit]))) messages.push(`There is no department ${unit}.`);
@@ -298,9 +292,9 @@ async function writeEmployee(row: Row, actor: Actor, createdBy: string): Promise
     });
     await tx.execute({
       sql: `INSERT INTO pa_it0001_org_assignment (employee_id, valid_from, valid_to, seq, created_by, created_at,
-              company_code, area_code, sub_area_code, org_unit_code, position_code, cost_center)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [...common, str(row, "company_code"), str(row, "area_code") || null, null, str(row, "org_unit_code"), position, str(row, "cost_centre") || null],
+              company_code, org_unit_code, position_code, cost_center)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      args: [...common, str(row, "company_code"), str(row, "org_unit_code"), position, str(row, "cost_centre") || null],
     });
     await tx.execute({
       sql: `INSERT INTO pa_it0002_personal_data (employee_id, valid_from, valid_to, seq, created_by, created_at,

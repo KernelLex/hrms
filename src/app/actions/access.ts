@@ -84,7 +84,7 @@ export async function saveRole(_prev: ActionState, form: FormData): Promise<Acti
     (ALL_PERMISSIONS as string[]).includes(p),
   );
   const companies = [...new Set(form.getAll("company").map(String).filter(Boolean))];
-  const areas = [...new Set(form.getAll("area").map(String).filter(Boolean))];
+  const nodes = [...new Set(form.getAll("node").map(String).filter(Boolean))];
 
   if (!/^[A-Z][A-Z0-9_]{1,29}$/.test(code)) {
     return fail("A role code is 2 to 30 capital letters, digits or underscores, starting with a letter.");
@@ -113,9 +113,9 @@ export async function saveRole(_prev: ActionState, form: FormData): Promise<Acti
       sql: "INSERT INTO sec_role_scope (role_code, scope_type, scope_code) VALUES (?, 'company', ?)",
       args: [code, c],
     })),
-    ...areas.map((a) => ({
-      sql: "INSERT INTO sec_role_scope (role_code, scope_type, scope_code) VALUES (?, 'area', ?)",
-      args: [code, a],
+    ...nodes.map((n) => ({
+      sql: "INSERT INTO sec_role_scope (role_code, scope_type, scope_code) VALUES (?, 'node', ?)",
+      args: [code, n],
     })),
   ];
   await rawClient().batch(statements, "write");

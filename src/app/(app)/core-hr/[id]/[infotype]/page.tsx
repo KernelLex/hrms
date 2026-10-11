@@ -3,8 +3,6 @@ import { asc, eq, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   omCompany,
-  omPersonnelArea,
-  omPersonnelSubArea,
   omOrgUnit,
   omPosition,
   ptWorkScheduleRule,
@@ -48,10 +46,8 @@ export default async function InfotypePage(props: {
     logAccess(session, { subjectEmployeeId: employeeId, resource: `${meta.name} (IT${meta.code})` });
   }
 
-  const [companies, areas, subAreas, units, positions, schedules] = await Promise.all([
+  const [companies, units, positions, schedules] = await Promise.all([
     db.select().from(omCompany).orderBy(asc(omCompany.code)),
-    db.select().from(omPersonnelArea).orderBy(asc(omPersonnelArea.code)),
-    db.select().from(omPersonnelSubArea).orderBy(asc(omPersonnelSubArea.code)),
     db.select().from(omOrgUnit).orderBy(asc(omOrgUnit.code)),
     db.select().from(omPosition).orderBy(asc(omPosition.code)),
     db.select().from(ptWorkScheduleRule).orderBy(asc(ptWorkScheduleRule.code)),
@@ -59,8 +55,6 @@ export default async function InfotypePage(props: {
 
   const refs = {
     companies: companies.map((c) => ({ value: c.code, label: `${c.code} — ${c.name}` })),
-    areas: areas.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` })),
-    subAreas: subAreas.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` })),
     units: units.map((u) => ({ value: u.code, label: `${u.code} — ${u.name}` })),
     positions: positions.map((p) => ({ value: p.code, label: `${p.code} — ${p.title}` })),
     schedules: schedules.map((w) => ({ value: w.code, label: w.name })),
@@ -134,8 +128,6 @@ export default async function InfotypePage(props: {
         },
         values: {
           companyCode: String(h.company_code ?? ""),
-          areaCode: String(h.area_code ?? ""),
-          subAreaCode: String(h.sub_area_code ?? ""),
           orgUnitCode: String(h.org_unit_code ?? ""),
           positionCode: String(h.position_code ?? ""),
           costCenter: String(h.cost_center ?? ""),

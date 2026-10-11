@@ -20,19 +20,19 @@ import { logApiAccess, type ApiContext, type Endpoint } from "../router";
 const rows = async (sql: string, args: InValue[] = []) => (await rawClient().execute({ sql, args })).rows as unknown as Record<string, unknown>[];
 const s = (v: unknown) => (v === null || v === undefined ? null : String(v));
 
-/** Payroll areas the client may see, through each area's company. */
-function areaClause(ctx: ApiContext, column: string) {
+/** Payroll groups the client may see, through each group node's company. */
+function groupClause(ctx: ApiContext, column: string) {
   const companies = ctx.client.companies;
   if (!companies) return { sql: "1 = 1", args: [] as string[] };
   return {
-    sql: `${column} IN (SELECT code FROM om_personnel_area WHERE company_code IN (${companies.map(() => "?").join(", ")}))`,
+    sql: `${column} IN (SELECT code FROM om_org_unit WHERE company_code IN (${companies.map(() => "?").join(", ")}))`,
     args: companies,
   };
 }
 
 /** Runs visible to the client. */
 const runClause = (ctx: ApiContext, column: string) => {
-  const a = areaClause(ctx, "pp.area_code");
+  const a = groupClause(ctx, "pp.node_code");
   return {
     sql: `${column} IN (SELECT r.id FROM py_payroll_run r JOIN py_payroll_period pp ON pp.id = r.period_id WHERE ${a.sql})`,
     args: a.args,
@@ -49,7 +49,7 @@ const Ack = z
   .meta({ id: "Acknowledgement", description: "Whether the ERP booked it: its reference, or its reason for refusing." });
 
 const Period = z
-  .object({ id: z.number().int(), personnel_area: z.string(), year: z.number().int(), month: z.number().int(), pay_date: IsoDate.nullable(), status: z.string(), posted_at: z.string().nullable() })
+  .object({ id: z.number().int(), payroll_group: z.string(), year: z.number().int(), month: z.number().int(), pay_date: IsoDate.nullable(), status: z.string(), posted_at: z.string().nullable() })
   .meta({ id: "PayrollPeriod" });
 const Run = z
   .object({
@@ -282,12 +282,12 @@ export const payrollEndpoints: Endpoint[] = [
     query: z.object({ ...PageQuery, status: z.enum(["Open", "Locked", "Posted"]).optional() }),
     response: pageSchema(Period),
     handler: (ctx) => {
-      const a = areaClause(ctx, "area_code");
+      const a = groupClause(ctx, "node_code");
       const status = (ctx.query as { status?: string }).status;
       return idPage(ctx, `SELECT * FROM py_payroll_period WHERE ${a.sql} ${status ? "AND status = ?" : ""}`, [...a.args, ...(status ? [status] : [])], (rs) =>
         rs.map((r) => ({
           id: Number(r.id),
-          personnel_area: String(r.area_code),
+          payroll_group: String(r.node_code),
           year: Number(r.year),
           month: Number(r.month),
           pay_date: s(r.pay_date),
@@ -307,7 +307,7 @@ export const payrollEndpoints: Endpoint[] = [
     query: z.object({ ...PageQuery, period_id: z.coerce.number().int().optional() }),
     response: pageSchema(Run),
     handler: (ctx) => {
-      const a = areaClause(ctx, "pp.area_code");
+      const a = groupClause(ctx, "pp.node_code");
       const periodId = (ctx.query as { period_id?: number }).period_id;
       return idPage(
         ctx,
@@ -340,7 +340,7 @@ export const payrollEndpoints: Endpoint[] = [
     query: z.object(PageQuery),
     response: pageSchema(Result),
     handler: async (ctx) => {
-      const a = areaClause(ctx, "pp.area_code");
+      const a = groupClause(ctx, "pp.node_code");
       const [run] = await rows(
         `SELECT r.* FROM py_payroll_run r JOIN py_payroll_period pp ON pp.id = r.period_id WHERE r.id = ? AND ${a.sql}`,
         [Number(ctx.params.id), ...a.args],

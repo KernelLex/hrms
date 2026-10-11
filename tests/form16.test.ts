@@ -9,7 +9,8 @@ import {
   pyPayrollRun,
   pyPayrollResult,
   pyPayrollResultLine,
-  omPersonnelArea,
+  omOrgUnit,
+  omLevelType,
 } from "@/db/schema";
 import { financialQuarterOf, financialYearOf } from "@/lib/engines/tax";
 import { buildRegister, generateForm16 } from "@/app/actions/tax";
@@ -46,10 +47,14 @@ const certificate = () =>
 
 describe("register and Form 16", () => {
   beforeAll(async () => {
-    const area = await db.query.omPersonnelArea.findFirst({
-      where: eq(omPersonnelArea.isActive, true),
-    });
-    if (!area) throw new Error("No personnel area seeded.");
+    const group = await db
+      .select({ code: omOrgUnit.code })
+      .from(omOrgUnit)
+      .innerJoin(omLevelType, eq(omLevelType.code, omOrgUnit.levelTypeCode))
+      .where(and(eq(omLevelType.isPayrollGroup, true), eq(omOrgUnit.isActive, true)))
+      .limit(1);
+    const node = group[0];
+    if (!node) throw new Error("No payroll group seeded.");
 
     employeeId = await createBareEmployee("ZZF16");
 
@@ -60,11 +65,11 @@ describe("register and Form 16", () => {
 
       await db
         .insert(pyPayrollPeriod)
-        .values({ areaCode: area.code, year, month, status: "Posted", payDate: null })
+        .values({ nodeCode: node.code, year, month, status: "Posted", payDate: null })
         .onConflictDoNothing();
       const period = await db.query.pyPayrollPeriod.findFirst({
         where: and(
-          eq(pyPayrollPeriod.areaCode, area.code),
+          eq(pyPayrollPeriod.nodeCode, node.code),
           eq(pyPayrollPeriod.year, year),
           eq(pyPayrollPeriod.month, month),
         ),

@@ -216,15 +216,6 @@ export const appCursor = sqliteTable("app_cursor", {
 
 /* ------------------------------------------------ records the ERP owns */
 
-/** Cost centres, kept in step with the ERP's controlling area. */
-export const omCostCentre = sqliteTable("om_cost_centre", {
-  code: text("code").primaryKey(),
-  name: text("name").notNull(),
-  companyCode: text("company_code"),
-  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-  updatedAt: text("updated_at").notNull(),
-});
-
 /** The ERP's chart of accounts, as far as payroll posts to it. */
 export const pyGlAccount = sqliteTable("py_gl_account", {
   code: text("code").primaryKey(),

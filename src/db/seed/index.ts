@@ -45,6 +45,28 @@ export async function seedDatabase(client: Client): Promise<string[]> {
 
   /* ------------------------------------------------------------- org */
 
+  // The shape of the hierarchy, as data. Nothing in the code reads these
+  // names: the three role flags are what payroll, calendars and the ERP read,
+  // so HR can rename a level or add one without a migration.
+  await db
+    .insert(s.omLevelType)
+    .values([
+      { code: "ORGANISATION", name: "Organisation", parentLevelTypeCode: null, rank: 0, isActive: true },
+      { code: "VERTICAL", name: "Business vertical", parentLevelTypeCode: "ORGANISATION", rank: 1, isActive: true },
+      { code: "CENTER", name: "Business center", parentLevelTypeCode: "VERTICAL", rank: 2, isPayrollGroup: true, isCalendarLevel: true, isActive: true },
+      { code: "DEPARTMENT", name: "Department", parentLevelTypeCode: "CENTER", rank: 3, isActive: true },
+      { code: "COST_CENTRE", name: "Cost centre", parentLevelTypeCode: "DEPARTMENT", rank: 4, isCostCentre: true, isActive: true },
+    ])
+    .onConflictDoNothing();
+
+  // The group node sits above the legal entities, so it belongs to no company.
+  await db
+    .insert(s.omOrgUnit)
+    .values([
+      { code: "ORG", name: "Acme Group", parentCode: null, companyCode: null, levelTypeCode: "ORGANISATION", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+    ])
+    .onConflictDoNothing();
+
   await db
     .insert(s.omCompany)
     .values([
@@ -54,6 +76,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
         address: "Plot 12, Industrial Area",
         city: "Bengaluru",
         country: "India",
+        parentNodeCode: "ORG",
         isActive: true,
       },
       {
@@ -62,48 +85,71 @@ export async function seedDatabase(client: Client): Promise<string[]> {
         address: "5th Cross, MG Road",
         city: "Mumbai",
         country: "India",
+        parentNodeCode: "ORG",
         isActive: true,
       },
     ])
     .onConflictDoNothing();
 
   await db
-    .insert(s.omPersonnelArea)
+    .insert(s.omJobFamily)
     .values([
-      { code: "PA01", companyCode: "CO01", name: "Head office", location: "Bengaluru campus", isActive: true },
-      { code: "PA02", companyCode: "CO01", name: "Factory unit 1", location: "Hosur plant", isActive: true },
-    ])
-    .onConflictDoNothing();
-
-  await db
-    .insert(s.omPersonnelSubArea)
-    .values([
-      { code: "PSA01", areaCode: "PA02", name: "Day shift", isActive: true },
-      { code: "PSA02", areaCode: "PA02", name: "Night shift", isActive: true },
+      { code: "IT", name: "Information technology", isActive: true },
+      { code: "HR", name: "Human resources", isActive: true },
+      { code: "MFG", name: "Manufacturing", isActive: true },
     ])
     .onConflictDoNothing();
 
   await db
     .insert(s.omJob)
     .values([
-      { code: "JB0001", title: "Software engineer", jobGroup: "IT", description: "Develops and maintains applications", isActive: true },
-      { code: "JB0002", title: "HR executive", jobGroup: "HR", description: "Handles recruitment and employee relations", isActive: true },
+      { code: "JB0001", title: "Software engineer", jobFamilyCode: "IT", description: "Develops and maintains applications", isActive: true },
+      { code: "JB0002", title: "HR executive", jobFamilyCode: "HR", description: "Handles recruitment and employee relations", isActive: true },
     ])
     .onConflictDoNothing();
 
-  // Parents must land before children — the tree is self-referencing.
+  // Parents must land before children, and one table holds every level of the
+  // tree: a business center, a department and a cost centre are all org units.
   await db
     .insert(s.omOrgUnit)
     .values([
-      { code: "OU0001", name: "Information technology", parentCode: null, companyCode: "CO01", areaCode: "PA01", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
-      { code: "OU0003", name: "Human resources", parentCode: null, companyCode: "CO01", areaCode: "PA01", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+      { code: "BV01", name: "Technology", parentCode: "ORG", companyCode: "CO01", levelTypeCode: "VERTICAL", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+    ])
+    .onConflictDoNothing();
+
+  // The business centers: where payroll groups, and where a calendar attaches
+  // once the calendars themselves exist, which seedTime does.
+  await db
+    .insert(s.omOrgUnit)
+    .values([
+      { code: "PA01", name: "Head office", parentCode: "BV01", companyCode: "CO01", levelTypeCode: "CENTER", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+      { code: "PA02", name: "Factory unit 1", parentCode: "BV01", companyCode: "CO01", levelTypeCode: "CENTER", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
     ])
     .onConflictDoNothing();
 
   await db
     .insert(s.omOrgUnit)
     .values([
-      { code: "OU0002", name: "Application development", parentCode: "OU0001", companyCode: "CO01", areaCode: "PA01", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+      { code: "OU0001", name: "Information technology", parentCode: "PA01", companyCode: "CO01", levelTypeCode: "DEPARTMENT", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+      { code: "OU0003", name: "Human resources", parentCode: "PA01", companyCode: "CO01", levelTypeCode: "DEPARTMENT", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+      { code: "PSA01", name: "Day shift", parentCode: "PA02", companyCode: "CO01", levelTypeCode: "DEPARTMENT", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+      { code: "PSA02", name: "Night shift", parentCode: "PA02", companyCode: "CO01", levelTypeCode: "DEPARTMENT", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(s.omOrgUnit)
+    .values([
+      { code: "OU0002", name: "Application development", parentCode: "OU0001", companyCode: "CO01", levelTypeCode: "DEPARTMENT", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+    ])
+    .onConflictDoNothing();
+
+  // Cost centres are nodes too, at whichever level HR flagged for cost booking.
+  await db
+    .insert(s.omOrgUnit)
+    .values([
+      { code: "CC-IT-01", name: "IT operations", parentCode: "OU0002", companyCode: "CO01", levelTypeCode: "COST_CENTRE", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
+      { code: "CC-HR-01", name: "HR operations", parentCode: "OU0003", companyCode: "CO01", levelTypeCode: "COST_CENTRE", validFrom: "2024-01-01", validTo: OPEN, isActive: true },
     ])
     .onConflictDoNothing();
 
@@ -231,7 +277,7 @@ export async function seedDatabase(client: Client): Promise<string[]> {
   const sandboxNotes = sandboxSecret ? await seedSandboxClients(client, sandboxSecret) : [];
 
   return [
-    "  2 companies, 2 personnel areas, 2 sub-areas, 2 jobs",
+    "  5 org levels, 2 companies, a group node, a vertical, 2 business centers, 5 departments, 2 cost centres, 3 job families, 2 jobs",
     "  3 org units, 4 positions, 2 reporting lines",
     `  ${users.length} users, all with password ${DEMO_PASSWORD}; one a recruiter who sees no pay, one finance who sees pay but no employee records`,
     ...personnelNotes,

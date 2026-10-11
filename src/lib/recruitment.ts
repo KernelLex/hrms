@@ -537,14 +537,12 @@ export async function performConversion(opts: {
     await tx.execute({
       sql: `INSERT INTO pa_it0001_org_assignment
             (employee_id, valid_from, valid_to, seq, created_by, created_at,
-             company_code, area_code, sub_area_code, org_unit_code, position_code, cost_center)
+             company_code, org_unit_code, position_code, cost_center)
             VALUES (?,?,?,?,?,?,
              (SELECT company_code FROM om_org_unit WHERE code = ?),
-             (SELECT area_code FROM om_org_unit WHERE code = ?),
-             NULL, ?, ?, NULL)`,
+             ?, ?, NULL)`,
       args: [
         ...common,
-        requisition.orgUnitCode,
         requisition.orgUnitCode,
         requisition.orgUnitCode,
         requisition.positionCode,

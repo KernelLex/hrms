@@ -16,7 +16,7 @@ import { ApiSession, MockErp, verifyWebhook, type Fetcher } from "../tools/mock-
 import { runScenario } from "../tools/mock-erp/scenario";
 import { apiClient, call } from "./support/api";
 import { form } from "./support/fixtures";
-import { createArea, createPeriod, hireForPayroll, postPeriod } from "./support/payroll-fixtures";
+import { createPayrollGroup, createPeriod, hireForPayroll, postPeriod } from "./support/payroll-fixtures";
 
 /**
  * The integration as the client's ERP lives it: the mock ERP (tools/mock-erp)
@@ -46,8 +46,8 @@ beforeAll(async () => {
           VALUES (?, 'Integration analyst', 'OU0002', 'JB0001', 'PS0001', 0, 1, '2024-01-01', ?, 1)`,
     args: [`PSMK${randomUUID().slice(0, 6).toUpperCase()}`, OPEN_ENDED],
   });
-  const area = await createArea();
-  await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 60_000 }] });
+  const area = await createPayrollGroup();
+  await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 60_000 }] });
   const periodId = await createPeriod(area, 2026, 6);
   const { runId } = await runPayroll({ periodId, runBy: "test" });
   await postPeriod(periodId);
@@ -56,6 +56,13 @@ beforeAll(async () => {
 
   const erpClient = await createApiClient({ name: "Mock ERP (test)", scopes: ERP_SCOPES, companies: null, createdBy: "test" });
   const hrClient = await createApiClient({ name: "HR tool (test)", scopes: ["employees:hire", "employees:read", "pay:read"], companies: null, createdBy: "test" });
+  // The scenario pages deliberately small (limit=2) over every employee the
+  // whole suite has created by now, which is far more calls a minute than a
+  // real integration makes. The limiter itself is tested in api-contract.
+  await rawClient().execute({
+    sql: "UPDATE int_client SET rate_limit = 100000 WHERE id IN (?, ?)",
+    args: [erpClient.pk, hrClient.pk],
+  });
   erp = new MockErp(new ApiSession({ baseUrl: BASE, clientId: erpClient.clientId, secret: erpClient.secret, fetch: inProcess }));
   hr = new ApiSession({ baseUrl: BASE, clientId: hrClient.clientId, secret: hrClient.secret, fetch: inProcess });
   // Like the network: a delivery reaches the mock ERP only if addressed to it.
@@ -110,7 +117,6 @@ describe("guided actions, tasks and letters through the API", () => {
       body: {
         effective_date: "2026-01-05",
         company: "CO01",
-        personnel_area: "PA01",
         department: "OU0002",
         position: posA,
         first_name: "Test",
@@ -161,7 +167,6 @@ describe("guided actions, tasks and letters through the API", () => {
       body: {
         effective_date: "2026-01-05",
         company: "CO01",
-        personnel_area: "PA01",
         department: "OU0002",
         position: await vacantPosition(),
         first_name: "Second",

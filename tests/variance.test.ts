@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { runPayroll } from "@/lib/engines/payroll";
 import { saveTimeSlice, SLICED_TABLES } from "@/lib/engines/timeslice";
 import { varianceFor } from "@/lib/repositories/variance";
-import { createArea, createPeriod, hireForPayroll, postPeriod } from "./support/payroll-fixtures";
+import { createPayrollGroup, createPeriod, hireForPayroll, postPeriod } from "./support/payroll-fixtures";
 
 /** The check before posting: who is new, whose pay moved, and why. */
 describe("payroll variance", () => {
   it("flags new people and big moves, and says why", async () => {
-    const area = await createArea();
-    const steady = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 40_000 }] });
-    const raised = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 40_000 }] });
+    const area = await createPayrollGroup();
+    const steady = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 40_000 }] });
+    const raised = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 40_000 }] });
 
     const may = await createPeriod(area, 2026, 5);
     const first = await runPayroll({ periodId: may, runBy: "test" });

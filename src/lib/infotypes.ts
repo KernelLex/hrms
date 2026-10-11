@@ -28,7 +28,7 @@ export const INFOTYPES: InfotypeMeta[] = [
     code: "0001",
     name: "Org assignment",
     kind: "sliced",
-    description: "Company, area, department, position and cost centre.",
+    description: "Company, org unit, position and cost centre.",
   },
   {
     code: "0006",
@@ -85,8 +85,6 @@ export function infotypeFields(
   code: string,
   refs: {
     companies: Options;
-    areas: Options;
-    subAreas: Options;
     units: Options;
     positions: Options;
     schedules: Options;
@@ -120,9 +118,7 @@ export function infotypeFields(
     case "0001":
       return [
         { kind: "select", name: "companyCode", label: "Company", required: true, options: refs.companies },
-        { kind: "select", name: "areaCode", label: "Personnel area", options: refs.areas, emptyLabel: "None" },
-        { kind: "select", name: "subAreaCode", label: "Sub-area", options: refs.subAreas, emptyLabel: "None" },
-        { kind: "select", name: "orgUnitCode", label: "Department", required: true, options: refs.units },
+        { kind: "select", name: "orgUnitCode", label: "Org unit", required: true, options: refs.units },
         { kind: "select", name: "positionCode", label: "Position", required: true, options: refs.positions },
         { kind: "text", name: "costCenter", label: "Cost centre", placeholder: "CC-IT-01" },
       ];

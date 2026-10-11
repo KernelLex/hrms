@@ -153,7 +153,7 @@ describe("sensitive fields and scope", () => {
     await saveRole({}, f);
     const person = await createPerson({ roles: [code], email: false });
     const access = await accessFor(person.session);
-    expect(access.scope).toEqual({ companies: ["CO02"], areas: [] });
+    expect(access.scope).toEqual({ companies: ["CO02"], nodes: [] });
 
     // The seeded organisation is all in CO01, so none of it is visible.
     const outside = await createPerson(); // assigned to CO01
@@ -163,6 +163,6 @@ describe("sensitive fields and scope", () => {
 
     actAs(person.session);
     const refused = await saveInfotypeSlice({}, form({ employeeId: outside.employeeId, infotype: "0002", validFrom: "2025-01-01", firstName: "X", lastName: "Y" }));
-    expect(refused.error).toMatch(/outside the companies and areas/);
+    expect(refused.error).toMatch(/outside the org units/);
   });
 });

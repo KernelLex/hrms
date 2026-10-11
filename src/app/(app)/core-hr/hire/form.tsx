@@ -58,13 +58,11 @@ function Step({
 
 export function HireForm({
   companies,
-  areas,
   units,
   positions,
   schedules,
 }: {
   companies: Option[];
-  areas: Option[];
   units: Option[];
   positions: PositionOption[];
   schedules: Option[];
@@ -168,16 +166,6 @@ export function HireForm({
                   {companies.map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Personnel area" htmlFor="areaCode">
-                <Select id="areaCode" name="areaCode" defaultValue={areas[0]?.value ?? ""}>
-                  <option value="">None</option>
-                  {areas.map((a) => (
-                    <option key={a.value} value={a.value}>
-                      {a.label}
                     </option>
                   ))}
                 </Select>

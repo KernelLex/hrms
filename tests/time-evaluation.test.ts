@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
 import { ptTimeEvaluation } from "@/db/schema";
 import { evaluatePeriod } from "@/lib/engines/time-evaluation";
-import { createArea, hireForPayroll } from "./support/payroll-fixtures";
+import { createPayrollGroup, hireForPayroll } from "./support/payroll-fixtures";
 
 /** Time evaluation, rewritten to read in bulk. Quota generation is now
  * policy-driven; see tests/leave-policies.test.ts. */
@@ -19,8 +19,8 @@ async function absence(employeeId: number, type: string, from: string, to: strin
 
 describe("time evaluation", () => {
   it("counts working days, absences and unpaid days for the period", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 1 }] });
+    const area = await createPayrollGroup();
+    const id = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 1 }] });
     // July 2026: 23 working days. Two unpaid days, a paid half day.
     await absence(id, "0300", "2026-07-06", "2026-07-07");
     await absence(id, "0100", "2026-07-15", "2026-07-15", true);
@@ -30,15 +30,15 @@ describe("time evaluation", () => {
   });
 
   it("counts only the days a joiner was employed", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2026-07-20", pay: [{ from: "2026-07-20", amountRupees: 1 }] });
+    const area = await createPayrollGroup();
+    const id = await hireForPayroll({ node: area, hireDate: "2026-07-20", pay: [{ from: "2026-07-20", amountRupees: 1 }] });
     const [row] = await evaluatePeriod({ year: 2026, month: 7, employeeIds: [id] });
     expect(row.workingDays).toBe(10); // 20 to 31 July
   });
 
   it("stores one row per person and month, however often it runs", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 1 }] });
+    const area = await createPayrollGroup();
+    const id = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 1 }] });
     await evaluatePeriod({ year: 2026, month: 8, employeeIds: [id] });
     await absence(id, "0300", "2026-08-03", "2026-08-03");
     await evaluatePeriod({ year: 2026, month: 8, employeeIds: [id] });

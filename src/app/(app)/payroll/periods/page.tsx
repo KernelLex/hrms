@@ -1,7 +1,7 @@
 import { requirePage } from "@/lib/access";
-import { asc, desc } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { pyPayrollPeriod, pyPayrollRun, omPersonnelArea } from "@/db/schema";
+import { pyPayrollPeriod, pyPayrollRun, omOrgUnit, omLevelType } from "@/db/schema";
 import { formatINR } from "@/lib/money";
 import {
   Card,
@@ -29,16 +29,21 @@ const MONTHS = [
 export default async function PeriodsPage() {
   await requirePage(["payroll.view"], "/payroll/my-payslips");
 
-  const [periods, areas, runs] = await Promise.all([
+  const [periods, groups, runs] = await Promise.all([
     db
       .select()
       .from(pyPayrollPeriod)
       .orderBy(desc(pyPayrollPeriod.year), desc(pyPayrollPeriod.month)),
-    db.select().from(omPersonnelArea).orderBy(asc(omPersonnelArea.code)),
+    db
+      .select({ code: omOrgUnit.code, name: omOrgUnit.name })
+      .from(omOrgUnit)
+      .innerJoin(omLevelType, eq(omLevelType.code, omOrgUnit.levelTypeCode))
+      .where(and(eq(omLevelType.isPayrollGroup, true), eq(omOrgUnit.isActive, true)))
+      .orderBy(asc(omOrgUnit.code)),
     db.select().from(pyPayrollRun),
   ]);
 
-  const areaName = new Map(areas.map((a) => [a.code, a.name]));
+  const groupName = new Map(groups.map((a) => [a.code, a.name]));
   const runByPeriod = new Map(runs.map((r) => [r.periodId, r]));
 
   return (
@@ -56,7 +61,7 @@ export default async function PeriodsPage() {
 
       <div className="mt-6">
         <NewPeriodForm
-          areas={areas.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` }))}
+          groups={groups.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` }))}
         />
       </div>
 
@@ -64,14 +69,14 @@ export default async function PeriodsPage() {
         <Card>
           {periods.length === 0 ? (
             <EmptyState icon={<CalendarRange />} title="No payroll periods yet">
-              Create a period for a personnel area to begin.
+              Create a period for a payroll group to begin.
             </EmptyState>
           ) : (
             <Table>
               <thead>
                 <tr>
                   <Th>Period</Th>
-                  <Th>Personnel area</Th>
+                  <Th>Payroll group</Th>
                   <Th>Status</Th>
                   <Th>Pay date</Th>
                   <Th numeric>Net total</Th>
@@ -94,7 +99,7 @@ export default async function PeriodsPage() {
                       </Td>
                       <Td>
                         <span className="text-secondary">
-                          {areaName.get(p.areaCode) ?? p.areaCode}
+                          {groupName.get(p.nodeCode) ?? p.nodeCode}
                         </span>
                       </Td>
                       <Td>

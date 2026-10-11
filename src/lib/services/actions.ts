@@ -19,8 +19,6 @@ const one = async (sql: string, args: (string | number | null)[]) =>
 
 type OrgAssignmentRow = {
   company_code: string;
-  area_code: string | null;
-  sub_area_code: string | null;
   org_unit_code: string;
   position_code: string;
   cost_center: string | null;
@@ -67,7 +65,6 @@ export type TransferInput = {
   employeeId: number;
   effectiveDate: string;
   companyCode: string;
-  areaCode: string | null;
   orgUnitCode: string;
   positionCode: string;
   costCenter: string | null;
@@ -104,8 +101,6 @@ export async function transferEmployee(actor: Actor, v: TransferInput, createdBy
       validFrom: v.effectiveDate,
       data: {
         company_code: v.companyCode,
-        area_code: v.areaCode,
-        sub_area_code: current.sub_area_code ?? null,
         org_unit_code: v.orgUnitCode,
         position_code: v.positionCode,
         cost_center: v.costCenter,
@@ -167,8 +162,6 @@ export async function promoteEmployee(actor: Actor, v: PromotionInput, createdBy
       validFrom: v.effectiveDate,
       data: {
         company_code: current.company_code,
-        area_code: current.area_code,
-        sub_area_code: current.sub_area_code ?? null,
         org_unit_code: current.org_unit_code,
         position_code: v.positionCode,
         cost_center: current.cost_center,

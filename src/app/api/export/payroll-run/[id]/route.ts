@@ -16,7 +16,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/export/payroll-
   const [run, results, lines] = await rawClient().batch(
     [
       {
-        sql: `SELECT run.run_type, run.reason, p.year, p.month, p.area_code
+        sql: `SELECT run.run_type, run.reason, p.year, p.month, p.node_code
               FROM py_payroll_run run JOIN py_payroll_period p ON p.id = run.period_id WHERE run.id = ?`,
         args: [runId],
       },
@@ -87,6 +87,6 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/export/payroll-
         x.error_message === null ? null : String(x.error_message),
       ]),
     ]),
-    `payroll-${period}-${r.area_code}${r.run_type === "Off-cycle" ? "-off-cycle" : ""}-run${runId}.csv`,
+    `payroll-${period}-${r.node_code}${r.run_type === "Off-cycle" ? "-off-cycle" : ""}-run${runId}.csv`,
   );
 }

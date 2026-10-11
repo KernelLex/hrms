@@ -42,9 +42,9 @@ export const secRolePermission = sqliteTable(
 );
 
 /**
- * Limits a role to some companies or personnel areas: whoever holds it sees
- * and changes only the employees assigned there. A role with no rows here is
- * organisation-wide.
+ * Limits a role to some companies or parts of the org tree: whoever holds it
+ * sees and changes only the employees assigned there, or anywhere beneath. A
+ * role with no rows here is organisation-wide.
  */
 export const secRoleScope = sqliteTable(
   "sec_role_scope",
@@ -52,7 +52,7 @@ export const secRoleScope = sqliteTable(
     roleCode: text("role_code")
       .notNull()
       .references(() => secRole.code, { onDelete: "cascade" }),
-    /** "company" or "area". */
+    /** "company" or "node" — a node covers everything under it. */
     scopeType: text("scope_type").notNull(),
     scopeCode: text("scope_code").notNull(),
   },

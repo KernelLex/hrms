@@ -124,7 +124,7 @@ export async function hireEmployee(
  */
 async function guardEmployee(access: Access, employeeId: number, infotype?: string): Promise<string | null> {
   if (!(await inScope(access, employeeId))) {
-    return "That employee is outside the companies and areas your role covers.";
+    return "That employee is outside the org units your role covers.";
   }
   if (infotype === "0008" && !can(access, "pay.view")) {
     return "Changing basic pay needs permission to see pay.";

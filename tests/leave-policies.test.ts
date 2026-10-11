@@ -6,7 +6,7 @@ import { workingDaysBetween, consumeQuota, daysToUnits } from "@/lib/engines/quo
 import { accrueForPeriod, runYearEnd, forecastBalance, earnCompOff, compOffBalance, consumeCompOff, expireCompOffs, encashLeave } from "@/lib/engines/leave-policy";
 import { calculateEmployee } from "@/lib/engines/payroll";
 import { createBareEmployee } from "./support/fixtures";
-import { createArea, hireForPayroll } from "./support/payroll-fixtures";
+import { createPayrollGroup, hireForPayroll } from "./support/payroll-fixtures";
 
 /**
  * The leave-policy engine: accrual (with pro-ration for a joiner), the
@@ -260,8 +260,8 @@ describe("compensatory off", () => {
 
 describe("encashment", () => {
   it("pays five days at the daily rate through the next payroll run", async () => {
-    const area = await createArea();
-    const employeeId = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 60_000 }] });
+    const area = await createPayrollGroup();
+    const employeeId = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 60_000 }] });
     await db.insert(ptAbsenceQuota).values({
       employeeId,
       quotaTypeCode: "ANNUAL",
@@ -316,13 +316,11 @@ describe("calendars in payroll", () => {
   it("prorates Karnataka and Maharashtra against their own working days", async () => {
     // May 2026: Maharashtra Day (1 May) is a Friday, a working day everywhere
     // except on the Maharashtra calendar.
-    const karnataka = await createArea();
-    const maharashtra = await createArea();
-    await rawClient().execute({ sql: "UPDATE om_personnel_area SET calendar_code = 'KARNATAKA' WHERE code = ?", args: [karnataka] });
-    await rawClient().execute({ sql: "UPDATE om_personnel_area SET calendar_code = 'MAHARASHTRA' WHERE code = ?", args: [maharashtra] });
+    const karnataka = await createPayrollGroup("KARNATAKA");
+    const maharashtra = await createPayrollGroup("MAHARASHTRA");
 
-    const inKarnataka = await hireForPayroll({ area: karnataka, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 30_000 }] });
-    const inMaharashtra = await hireForPayroll({ area: maharashtra, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 30_000 }] });
+    const inKarnataka = await hireForPayroll({ node: karnataka, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 30_000 }] });
+    const inMaharashtra = await hireForPayroll({ node: maharashtra, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 30_000 }] });
 
     const [kResult, mResult] = await Promise.all([
       calculateEmployee({ employeeId: inKarnataka, year: 2026, month: 5 }),

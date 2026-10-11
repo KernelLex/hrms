@@ -120,8 +120,6 @@ export async function seedPersonnel(db: Db): Promise<string[]> {
       .values({
         ...common,
         companyCode: "CO01",
-        areaCode: "PA01",
-        subAreaCode: null,
         orgUnitCode: p.orgUnit,
         positionCode: p.position,
         costCenter: p.costCenter,

@@ -3,9 +3,9 @@ import { count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   omCompany,
-  omPersonnelArea,
-  omPersonnelSubArea,
+  omLevelType,
   omJob,
+  omJobFamily,
   omOrgUnit,
   omPosition,
   omReportingLine,
@@ -19,11 +19,11 @@ export default async function OrgLayout({
 }) {
   await requirePage(["org.view"], "/");
 
-  const [companies, areas, subAreas, jobs, orgUnits, positions, lines] =
+  const [companies, levels, jobFamilies, jobs, orgUnits, positions, lines] =
     await Promise.all([
       db.select({ n: count() }).from(omCompany),
-      db.select({ n: count() }).from(omPersonnelArea),
-      db.select({ n: count() }).from(omPersonnelSubArea),
+      db.select({ n: count() }).from(omLevelType),
+      db.select({ n: count() }).from(omJobFamily),
       db.select({ n: count() }).from(omJob),
       db.select({ n: count() }).from(omOrgUnit),
       db.select({ n: count() }).from(omPosition),
@@ -35,8 +35,8 @@ export default async function OrgLayout({
       <OrgTabs
         counts={{
           companies: companies[0].n,
-          areas: areas[0].n,
-          subAreas: subAreas[0].n,
+          levels: levels[0].n,
+          jobFamilies: jobFamilies[0].n,
           jobs: jobs[0].n,
           orgUnits: orgUnits[0].n,
           positions: positions[0].n,

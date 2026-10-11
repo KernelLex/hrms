@@ -1,7 +1,7 @@
 import { asc, sql } from "drizzle-orm";
 import { requirePage } from "@/lib/access";
 import { db } from "@/lib/db";
-import { ptHolidayCalendar, ptHoliday, omPersonnelArea } from "@/db/schema";
+import { ptHolidayCalendar, ptHoliday, omOrgUnit } from "@/db/schema";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveHolidayCalendar, deleteHolidayCalendar } from "@/app/actions/time";
 import { Status } from "@/components/ui";
@@ -12,7 +12,7 @@ const COLUMNS: Column[] = [
   { key: "name", label: "Name" },
   { key: "holidays", label: "Holidays" },
   { key: "optional", label: "Optional allowed", numeric: true },
-  { key: "areas", label: "Areas on it" },
+  { key: "units", label: "Org units on it" },
   { key: "status", label: "Status" },
 ];
 
@@ -29,24 +29,24 @@ const FIELDS: FieldDef[] = [
   { kind: "checkbox", name: "isActive", label: "Active" },
 ];
 
-/** TM-05 — the holiday calendars each personnel area sits on. */
+/** TM-05 — the holiday calendars org units sit on. */
 export default async function HolidayCalendarsPage() {
   await requirePage(["time.manage"], "/time/my-leave");
 
-  const [calendars, holidayCounts, areaCounts] = await Promise.all([
+  const [calendars, holidayCounts, unitCounts] = await Promise.all([
     db.select().from(ptHolidayCalendar).orderBy(asc(ptHolidayCalendar.code)),
     db.select({ code: ptHoliday.calendarCode, n: sql<number>`count(*)` }).from(ptHoliday).groupBy(ptHoliday.calendarCode),
-    db.select({ code: omPersonnelArea.calendarCode, n: sql<number>`count(*)` }).from(omPersonnelArea).groupBy(omPersonnelArea.calendarCode),
+    db.select({ code: omOrgUnit.calendarCode, n: sql<number>`count(*)` }).from(omOrgUnit).groupBy(omOrgUnit.calendarCode),
   ]);
   const holidaysOf = new Map(holidayCounts.map((h) => [h.code, h.n]));
-  const areasOf = new Map(areaCounts.map((a) => [a.code, a.n]));
+  const unitsOf = new Map(unitCounts.map((a) => [a.code, a.n]));
 
   return (
     <>
       <TimeTabs />
       <MasterScreen
         title="Holiday calendars"
-        subtitle="A named set of public holidays. Assign a personnel area to one on the Personnel areas screen — Karnataka and Maharashtra get different holidays this way, and payroll prorates each against its own."
+        subtitle="A named set of public holidays. Put an org unit on one from the Org units screen and everything beneath it follows — Karnataka and Maharashtra get different holidays this way, and payroll prorates each against its own."
         entity="holiday calendar"
         columns={COLUMNS}
         idField="code"
@@ -62,7 +62,7 @@ export default async function HolidayCalendarsPage() {
             name: c.name,
             holidays: <span className="tabular text-secondary">{holidaysOf.get(c.code) ?? 0}</span>,
             optional: <span className="tabular text-secondary">{c.optionalAllowance}</span>,
-            areas: <span className="tabular text-secondary">{areasOf.get(c.code) ?? 0}</span>,
+            units: <span className="tabular text-secondary">{unitsOf.get(c.code) ?? 0}</span>,
             status: (
               <Status tone={c.isActive ? "done" : "neutral"}>{c.isActive ? "Active" : "Inactive"}</Status>
             ),

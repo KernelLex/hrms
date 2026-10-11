@@ -1,4 +1,5 @@
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
+import { eq } from "drizzle-orm";
 import * as s from "../schema";
 
 type Db = LibSQLDatabase<typeof s>;
@@ -99,14 +100,18 @@ export async function seedPayroll(db: Db): Promise<string[]> {
     }
   }
 
-  // An open period for the current month, for each personnel area.
-  const areas = await db.select().from(s.omPersonnelArea);
+  // An open period for the current month, for each payroll group.
+  const groups = await db
+    .select({ code: s.omOrgUnit.code })
+    .from(s.omOrgUnit)
+    .innerJoin(s.omLevelType, eq(s.omLevelType.code, s.omOrgUnit.levelTypeCode))
+    .where(eq(s.omLevelType.isPayrollGroup, true));
   const nowDate = new Date();
-  for (const a of areas) {
+  for (const a of groups) {
     await db
       .insert(s.pyPayrollPeriod)
       .values({
-        areaCode: a.code,
+        nodeCode: a.code,
         year: nowDate.getUTCFullYear(),
         month: nowDate.getUTCMonth() + 1,
         payDate: null,
@@ -120,6 +125,6 @@ export async function seedPayroll(db: Db): Promise<string[]> {
 
   notes.push("  21 wage types, 3 TDS sections");
   notes.push(`  tax slabs for ${fy}${currentFy !== fy ? ` and ${currentFy}` : ""}, both regimes`);
-  notes.push(`  open payroll period for ${areas.length} personnel areas`);
+  notes.push(`  open payroll period for ${groups.length} payroll groups`);
   return notes;
 }

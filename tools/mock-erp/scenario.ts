@@ -37,7 +37,7 @@ function check(condition: unknown, message: string): asserts condition {
 const problemOf = (body: unknown) => body as Problem;
 
 type Position = { code: string; department: string; is_vacant: boolean; is_active: boolean };
-type Department = { code: string; company: string | null; personnel_area: string | null };
+type Department = { code: string; company: string | null; level: string; payroll_group: string | null };
 type CostCentre = { code: string; name: string };
 type Money = { amount: string; currency: string };
 type GlPosting = { id: number; total_debit: Money; total_credit: Money; acknowledgement: { state: string; reference: string | null } };
@@ -49,6 +49,7 @@ export async function runScenario(o: ScenarioOptions): Promise<Step[]> {
   const steps: Step[] = [];
   const stamp = randomUUID().slice(0, 6).toUpperCase();
   let costCentre = "";
+  let ownChangeSubject = "";
   let hiredId = 0;
   let feedStart = 0;
 
@@ -97,7 +98,7 @@ export async function runScenario(o: ScenarioOptions): Promise<Step[]> {
         const r = await s.get<{ data: { record_type: string; field: string | null; owner: string }[] }>("/ownership");
         check(r.status === 200, `Answered ${r.status}.`);
         const owner = (t: string) => r.body.data.find((d) => d.record_type === t && d.field === null)?.owner;
-        check(owner("cost_centre") === "erp", "The ERP should own cost centres.");
+        check(owner("cost_centre") === "hrms", "The HRMS should own cost centres.");
         check(owner("employee") === "hrms", "The HRMS should own employees.");
         return r.body.data.map((d) => `${d.record_type}${d.field ? `.${d.field}` : ""}=${d.owner}`).join(", ");
       }),
@@ -149,21 +150,20 @@ export async function runScenario(o: ScenarioOptions): Promise<Step[]> {
       }),
 
     async () =>
-      step("Pushes a cost centre, then is stopped from overwriting a newer one", async () => {
+      step("Reads HR's cost centres, and is refused writing one", async () => {
         const companies = await s.get<{ data: { code: string }[] }>("/companies");
+        const list = await s.get<{ data: CostCentre[] }>("/cost-centres");
+        check(list.status === 200, `Listing answered ${list.status}.`);
+        check(list.body.data.length > 0, "HR has no cost centres to read.");
+        // Cost centres are org units HR maintains, so the ERP reads them and
+        // is refused writing one until HR hands ownership over.
         costCentre = `CC-MOCK-${stamp}`;
-        const created = await s.request<CostCentre>("PUT", `/cost-centres/${costCentre}`, { body: { name: "Mock ERP projects", company: companies.body.data[0]?.code ?? null } });
-        check(created.status === 201, `Creating answered ${created.status}: ${JSON.stringify(created.body)}`);
-        const etag = created.headers.get("etag");
-        check(etag, "No ETag came back.");
-        const updated = await s.request<CostCentre>("PUT", `/cost-centres/${costCentre}`, {
-          body: { name: "Mock ERP projects and services" },
-          headers: { "If-Match": etag },
+        const refused = await s.request("PUT", `/cost-centres/${costCentre}`, {
+          body: { name: "Mock ERP projects", company: companies.body.data[0]?.code ?? null },
         });
-        check(updated.status === 200, `Updating with the current ETag answered ${updated.status}.`);
-        const stale = await s.request("PUT", `/cost-centres/${costCentre}`, { body: { name: "Stale" }, headers: { "If-Match": etag } });
-        check(stale.status === 412 && problemOf(stale.body).code === "precondition_failed", `The stale write answered ${stale.status}.`);
-        return `${costCentre} created, updated, stale write refused with 412`;
+        check(refused.status === 409, `Writing answered ${refused.status}: ${JSON.stringify(refused.body)}`);
+        check(problemOf(refused.body).code === "owned_by_hrms", `The refusal was ${problemOf(refused.body).code}.`);
+        return `read ${list.body.data.length}, writing ${costCentre} refused with 409 owned_by_hrms`;
       }),
 
     async () =>
@@ -192,7 +192,6 @@ export async function runScenario(o: ScenarioOptions): Promise<Step[]> {
         const body = {
           effective_date: o.today,
           company: dept.company,
-          personnel_area: dept.personnel_area,
           department: dept.code,
           position: vacant.code,
           first_name: "Kavya",
@@ -270,21 +269,23 @@ export async function runScenario(o: ScenarioOptions): Promise<Step[]> {
         check(first.body.wage_type === "REIMB", `Expected REIMB (fuel is not taxable), got ${first.body.wage_type}.`);
         const again = await s.request<ClaimRep>("POST", "/claims", { body, headers: { "Idempotency-Key": key } });
         check(again.status === 201 && again.body.id === first.body.id, "Retrying with the same key did not return the same claim.");
+        ownChangeSubject = `claims/${first.body.id}`;
         return `claim ${first.body.id} for employee ${hiredId}, approved and queued on REIMB`;
       }),
 
     async () =>
       step("Does not hear its own change back", async () => {
         await o.pump();
-        const echoed = erp.received.find((e) => e.type === "cost_centre.changed" && e.subject === `cost-centres/${costCentre}`);
-        check(!echoed, "The ERP's own cost centre change came back to it by webhook.");
+        check(ownChangeSubject, "The ERP has made no change of its own to look for.");
+        const echoed = erp.received.find((e) => e.subject === ownChangeSubject);
+        check(!echoed, "The ERP's own change came back to it by webhook.");
         const plain = await erp.feed(feedStart);
-        check(!plain.events.some((e) => e.subject === `cost-centres/${costCentre}`), "The feed returned the ERP's own change.");
+        check(!plain.events.some((e) => e.subject === ownChangeSubject), "The feed returned the ERP's own change.");
         const own = await erp.feed(feedStart, { includeOwn: true });
-        const mine = own.events.find((e) => e.subject === `cost-centres/${costCentre}`);
+        const mine = own.events.find((e) => e.subject === ownChangeSubject);
         check(mine, "include_own=true did not return the ERP's own change.");
         check(mine.originclient === s.clientId, `originclient was ${mine.originclient}.`);
-        return "not sent; visible with include_own=true, marked as its own";
+        return `${ownChangeSubject} not sent; visible with include_own=true, marked as its own`;
       }),
 
     async () =>

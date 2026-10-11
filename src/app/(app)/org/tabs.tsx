@@ -6,11 +6,11 @@ import { Tabs, Tab } from "@/components/ui";
 export type TabCounts = Record<string, number | undefined>;
 
 const ITEMS: { href: string; label: string; countKey?: string }[] = [
+  { href: "/org/level-types", label: "Org levels", countKey: "levels" },
   { href: "/org/companies", label: "Companies", countKey: "companies" },
-  { href: "/org/personnel-areas", label: "Personnel areas", countKey: "areas" },
-  { href: "/org/sub-areas", label: "Sub-areas", countKey: "subAreas" },
+  { href: "/org/departments", label: "Org units", countKey: "orgUnits" },
+  { href: "/org/job-families", label: "Job families", countKey: "jobFamilies" },
   { href: "/org/jobs", label: "Jobs", countKey: "jobs" },
-  { href: "/org/departments", label: "Departments", countKey: "orgUnits" },
   { href: "/org/positions", label: "Positions", countKey: "positions" },
   { href: "/org/reporting-lines", label: "Reporting lines", countKey: "lines" },
   { href: "/org/chart", label: "Org chart" },

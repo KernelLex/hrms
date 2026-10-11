@@ -100,7 +100,8 @@ describe("scorecards", () => {
   it("are required before a round's notes are recorded, once the role has one", async () => {
     // A job of its own, so this scorecard cannot affect any other test's job.
     const jobCode = `JBX${uid()}`;
-    await rawClient().execute({ sql: "INSERT INTO om_job (code, title, job_group, is_active) VALUES (?, 'Field engineer', 'Operations', 1)", args: [jobCode] });
+    await rawClient().execute({ sql: "INSERT OR IGNORE INTO om_job_family (code, name, is_active) VALUES ('MFG', 'Manufacturing', 1)" });
+    await rawClient().execute({ sql: "INSERT INTO om_job (code, title, job_family_code, is_active) VALUES (?, 'Field engineer', 'MFG', 1)", args: [jobCode] });
     const vacant = await vacantPosition(jobCode);
     await rawClient().execute({
       sql: "INSERT INTO rc_scorecard_template (job_code, criterion, weight, sort_order, is_active) VALUES (?, 'Diagnostics', 2, 1, 1)",

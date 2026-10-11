@@ -3,7 +3,7 @@ import { csvCell, toCsv } from "@/lib/csv";
 import { GET as exportEmployees } from "@/app/api/export/employees/route";
 import { GET as exportRun } from "@/app/api/export/payroll-run/[id]/route";
 import { runPayroll } from "@/lib/engines/payroll";
-import { createArea, createPeriod, hireForPayroll } from "./support/payroll-fixtures";
+import { createPayrollGroup, createPeriod, hireForPayroll } from "./support/payroll-fixtures";
 
 /** CSV downloads: safe to open in a spreadsheet, and complete. */
 describe("CSV", () => {
@@ -31,8 +31,8 @@ describe("exports", () => {
   });
 
   it("puts each wage type in its own column, and the columns add up", async () => {
-    const area = await createArea();
-    await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 50_000 }] });
+    const area = await createPayrollGroup();
+    await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 50_000 }] });
     const periodId = await createPeriod(area, 2026, 5);
     const { runId } = await runPayroll({ periodId, runBy: "test" });
 

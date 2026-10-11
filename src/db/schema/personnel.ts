@@ -5,7 +5,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import { omCompany, omPersonnelArea, omPersonnelSubArea, omOrgUnit, omPosition } from "./org";
+import { omCompany, omOrgUnit, omPosition } from "./org";
 
 /**
  * Core HR — personnel administration.
@@ -83,8 +83,6 @@ export const paOrgAssignment = sqliteTable(
     companyCode: text("company_code")
       .notNull()
       .references(() => omCompany.code),
-    areaCode: text("area_code").references(() => omPersonnelArea.code),
-    subAreaCode: text("sub_area_code").references(() => omPersonnelSubArea.code),
     orgUnitCode: text("org_unit_code")
       .notNull()
       .references(() => omOrgUnit.code),

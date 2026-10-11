@@ -17,7 +17,7 @@ import {
   pyStatutoryRemittance,
   pyCostSplit,
   pyGlMapping,
-  omPersonnelArea,
+  omOrgUnit,
   OPEN_ENDED,
   now,
 } from "@/db/schema";
@@ -183,17 +183,17 @@ export async function createPeriod(
   form: FormData,
 ): Promise<ActionState> {
   const session = await requirePermission("payroll.post");
-  const areaCode = str(form.get("areaCode"));
+  const nodeCode = str(form.get("nodeCode"));
   const year = num(form.get("year"));
   const month = num(form.get("month"));
 
-  if (!areaCode) return fail("Choose a personnel area.");
+  if (!nodeCode) return fail("Choose a payroll group.");
   if (!Number.isInteger(year) || year < 2000) return fail("Enter a year.");
   if (!Number.isInteger(month) || month < 1 || month > 12) return fail("Choose a month.");
 
   const existing = await db.query.pyPayrollPeriod.findFirst({
     where: and(
-      eq(pyPayrollPeriod.areaCode, areaCode),
+      eq(pyPayrollPeriod.nodeCode, nodeCode),
       eq(pyPayrollPeriod.year, year),
       eq(pyPayrollPeriod.month, month),
     ),
@@ -203,7 +203,7 @@ export async function createPeriod(
   const [created] = await db
     .insert(pyPayrollPeriod)
     .values({
-      areaCode,
+      nodeCode,
       year,
       month,
       payDate: opt(form.get("payDate")),
@@ -653,8 +653,10 @@ export async function postToLedger(
   }
 
   const wageTypes = await db.select().from(pyWageType);
-  const area = await db.query.omPersonnelArea.findFirst({ where: eq(omPersonnelArea.code, period.areaCode) });
-  const glMappings = area ? await db.select().from(pyGlMapping).where(eq(pyGlMapping.companyCode, area.companyCode)) : [];
+  const node = await db.query.omOrgUnit.findFirst({ where: eq(omOrgUnit.code, period.nodeCode) });
+  const glMappings = node?.companyCode
+    ? await db.select().from(pyGlMapping).where(eq(pyGlMapping.companyCode, node.companyCode))
+    : [];
   const glOverride = new Map(glMappings.map((m) => [m.wageTypeCode, m.glAccount]));
   const glOf = new Map(wageTypes.map((w) => [w.code, glOverride.get(w.code) ?? w.glAccount ?? "5010"]));
   const EMPLOYER_CONTRIBUTION_EXPENSE_GL = "5030";

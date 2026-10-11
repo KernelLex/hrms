@@ -1,6 +1,6 @@
 import "server-only";
 import { rawClient } from "@/lib/db";
-import { now } from "@/db/schema";
+import { now, today, OPEN_ENDED } from "@/db/schema";
 import { changeStatement, recordChanges, type Actor } from "@/lib/change-log";
 import { calendarDaysBetween, calendarFor, sandwichDays, workingDaysBetween } from "@/lib/engines/quota";
 import { notificationStatements, type NotificationItem } from "@/lib/notifications";
@@ -232,16 +232,31 @@ export async function upsertCostCentre(
   if (input.companyCode && !(await one("SELECT code FROM om_company WHERE code = ?", [input.companyCode]))) {
     return { error: `There is no company ${input.companyCode}.` };
   }
-  const before = await one("SELECT * FROM om_cost_centre WHERE code = ?", [code]);
+  // A cost centre is an org unit whose level HR flagged as a cost-booking leaf.
+  // Which level that is, is configuration, so the ERP never names it.
+  const level = await one(
+    "SELECT code FROM om_level_type WHERE is_cost_centre = 1 AND is_active = 1 ORDER BY rank DESC, code LIMIT 1",
+    [],
+  );
+  if (!level) return { error: "No org level is set up as a cost centre yet. Configure one under Organisation first." };
+
+  const before = await one("SELECT * FROM om_org_unit WHERE code = ?", [code]);
+  if (before && String(before.level_type_code) !== String(level.code)) {
+    const existing = await one("SELECT is_cost_centre FROM om_level_type WHERE code = ?", [String(before.level_type_code)]);
+    if (Number(existing?.is_cost_centre ?? 0) !== 1) {
+      return { error: `${code} is already an org unit that is not a cost centre. Use a different code.` };
+    }
+  }
   const r = await rawClient().execute({
-    sql: `INSERT INTO om_cost_centre (code, name, company_code, is_active, updated_at) VALUES (?, ?, ?, ?, ?)
+    sql: `INSERT INTO om_org_unit (code, name, company_code, level_type_code, valid_from, valid_to, is_active)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (code) DO UPDATE SET name = excluded.name, company_code = excluded.company_code,
-            is_active = excluded.is_active, updated_at = excluded.updated_at
+            is_active = excluded.is_active
           RETURNING *`,
-    args: [code, input.name.trim(), input.companyCode, input.isActive ? 1 : 0, now()],
+    args: [code, input.name.trim(), input.companyCode, String(level.code), today(), OPEN_ENDED, input.isActive ? 1 : 0],
   });
   const row = r.rows[0] as unknown as Record<string, unknown>;
-  await recordChanges(actor, [{ entity: "om_cost_centre", entityId: code, action: before ? "update" : "create", before, after: row }]);
+  await recordChanges(actor, [{ entity: "om_org_unit", entityId: code, action: before ? "update" : "create", before, after: row }]);
   return { ok: true, value: { created: !before, row } };
 }
 

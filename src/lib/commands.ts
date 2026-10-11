@@ -46,10 +46,10 @@ export const ACTIONS: Command[] = [
 /** Pages below the sidebar's top level, so the menu reaches every screen. */
 const SUBPAGES: Command[] = [
   { label: "Companies", href: "/org/companies", icon: "Network", anyOf: ["org.view"] },
-  { label: "Personnel areas", href: "/org/personnel-areas", icon: "Network", anyOf: ["org.view"], keywords: "location" },
-  { label: "Sub-areas", href: "/org/sub-areas", icon: "Network", anyOf: ["org.view"] },
+  { label: "Org levels", href: "/org/level-types", icon: "Network", anyOf: ["org.view"], keywords: "hierarchy level vertical centre" },
+  { label: "Job families", href: "/org/job-families", icon: "Network", anyOf: ["org.view"], keywords: "family group" },
   { label: "Jobs", href: "/org/jobs", icon: "Network", anyOf: ["org.view"] },
-  { label: "Departments", href: "/org/departments", icon: "Network", anyOf: ["org.view"], keywords: "org unit" },
+  { label: "Org units", href: "/org/departments", icon: "Network", anyOf: ["org.view"], keywords: "department vertical centre cost centre" },
   { label: "Positions", href: "/org/positions", icon: "Network", anyOf: ["org.view"], keywords: "vacancy" },
   { label: "Reporting lines", href: "/org/reporting-lines", icon: "Network", anyOf: ["org.view"], keywords: "manager" },
   { label: "Org chart", href: "/org/chart", icon: "Network", anyOf: ["org.view"], keywords: "tree hierarchy" },

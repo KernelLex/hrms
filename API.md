@@ -70,17 +70,17 @@ curl -X POST https://<hrms-host>/api/v1/absences \
 
 ## 1. How the two systems divide the work
 
-The HRMS is the system of record for **people**: who works here, in which position, department and company, their dated history, time off, pay and tax. The ERP is the system of record for **money and cost structure**: cost centres, the chart of accounts, the books, and the payments that leave the bank.
+The HRMS is the system of record for **people and the organisation**: who works here, in which position and part of the org tree, their dated history, time off, pay and tax. The ERP is the system of record for **money**: the chart of accounts, the books, and the payments that leave the bank.
 
 Every kind of record has one owner. Only the owner writes it; the other system reads it, and a write from the side that does not own it is refused (`owned_by_hrms` or `owned_by_erp`). The defaults:
 
 | Record | Owner | Meaning |
 | --- | --- | --- |
 | Employees and their records | HRMS | Hiring, org assignment, personal data, pay. Individual fields (name, work email, cost centre) can be handed to the ERP. |
-| Organisation | HRMS | Companies, personnel areas, departments, jobs, positions. |
+| Organisation | HRMS | Companies, the org tree at every level, job families, jobs, positions. |
 | Absences | HRMS | Leave and absences. Can be handed to the ERP if it runs time and attendance. |
 | Payroll | HRMS | Runs, results, the journal, payment batches, remittances. |
-| Cost centres | ERP | The ERP creates and changes them; the HRMS assigns people to them. |
+| Cost centres | HRMS | They are org units at the level HR flagged for cost booking. Hand them to the ERP if finance keeps them there instead. |
 | GL accounts | ERP | The chart of accounts the journal is booked against. |
 | Payments | ERP | Whether each salary and remittance was actually paid. |
 
@@ -443,7 +443,7 @@ Generated from the endpoint definitions, the same ones that validate every reque
 
 | Scope | Lets the client |
 | --- | --- |
-| `org:read` | Read companies, personnel areas, departments, jobs, positions and cost centres |
+| `org:read` | Read companies, org levels, org units, jobs, positions and cost centres |
 | `org:write` | Write cost centres, which the ERP owns by default |
 | `employees:read` | Read employees and their dated records, without pay, bank or tax identifiers |
 | `employees:write` | Change the employee fields the ERP owns, and record the ERP's own ids |
@@ -469,7 +469,7 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | `employee.hired` | `employees:read` | Someone was hired — on the screen, through recruitment or through the API. `data` is the employee. |
 | `employee.updated` | `employees:read` | Any of an employee's dated records changed. `data` is the employee as of today. |
 | `employee.status_changed` | `employees:read` | An employee went on leave, came back, or was terminated. `data` is the employee. |
-| `org.changed` | `org:read` | A company, personnel area, sub-area, job or department was created, changed or removed. `data` says which. |
+| `org.changed` | `org:read` | A company, job or org unit at any level was created, changed or removed. `data.kind` says which level. |
 | `position.changed` | `org:read` | A position or its reporting line changed. `data` names the position. |
 | `cost_centre.changed` | `org:read` | A cost centre was created or changed. `data` is the cost centre. |
 | `leave.requested` | `time:read` | Someone asked for leave. `data` is the request. |
@@ -554,8 +554,8 @@ Generated from the endpoint definitions, the same ones that validate every reque
 | POST | [`/employees/{id}/change-requests`](#post-employees-id-change-requests) | `employees:write` | Ask for a correction |
 | GET | [`/change-requests`](#get-change-requests) | `employees:read` | List correction requests |
 | GET | [`/companies`](#get-companies) | `org:read` | List companies |
-| GET | [`/personnel-areas`](#get-personnel-areas) | `org:read` | List personnel areas |
-| GET | [`/departments`](#get-departments) | `org:read` | List departments |
+| GET | [`/org-levels`](#get-org-levels) | `org:read` | List the levels of the hierarchy |
+| GET | [`/departments`](#get-departments) | `org:read` | List org units |
 | GET | [`/jobs`](#get-jobs) | `org:read` | List jobs |
 | GET | [`/positions`](#get-positions) | `org:read` | List positions |
 | GET | [`/cost-centres`](#get-cost-centres) | `org:read` | List cost centres |
@@ -1162,7 +1162,7 @@ Needs `employees:hire`. Send an `Idempotency-Key`. Answers 201.
 | `action_type` | string |  | Default `"Hire"`. |
 | `reason` | string, or null |  |  |
 | `company` | string | yes |  |
-| `personnel_area` | string, or null |  |  |
+| `personnel_area` | string, or null |  | Derived from the department now. Sending it is refused, so an old caller is told rather than ignored. |
 | `department` | string | yes |  |
 | `position` | string | yes |  |
 | `cost_centre` | string, or null |  |  |
@@ -1182,7 +1182,6 @@ Content-Type: application/json
 {
   "effective_date": "2026-10-01",
   "company": "CO01",
-  "personnel_area": "PA01",
   "department": "OU0002",
   "position": "PS0004",
   "cost_centre": "CC-IT-01",
@@ -1756,9 +1755,9 @@ Needs `org:read`. Answers 200.
 }
 ```
 
-#### GET /personnel-areas
+#### GET /org-levels
 
-<a id="get-personnel-areas"></a>**List personnel areas.** Locations within a company.
+<a id="get-org-levels"></a>**List the levels of the hierarchy.** What levels exist and what each one carries. The hierarchy's shape is HR's configuration, so read this before reading `/departments`: `level` on a department names a row here.
 
 Needs `org:read`. Answers 200.
 
@@ -1771,9 +1770,12 @@ Needs `org:read`. Answers 200.
 | Field, per item | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `code` | string | yes |  |
-| `company` | string | yes |  |
 | `name` | string | yes |  |
-| `location` | string, or null | yes |  |
+| `parent_level` | string, or null | yes |  |
+| `rank` | integer | yes |  |
+| `is_payroll_group` | boolean | yes |  |
+| `is_calendar_level` | boolean | yes |  |
+| `is_cost_centre` | boolean | yes |  |
 | `is_active` | boolean | yes |  |
 
 ```json
@@ -1781,9 +1783,12 @@ Needs `org:read`. Answers 200.
   "data": [
     {
       "code": "<code>",
-      "company": "<company>",
       "name": "<name>",
-      "location": "<location>",
+      "parent_level": "<parent_level>",
+      "rank": 1,
+      "is_payroll_group": true,
+      "is_calendar_level": true,
+      "is_cost_centre": true,
       "is_active": true
     }
   ],
@@ -1793,7 +1798,7 @@ Needs `org:read`. Answers 200.
 
 #### GET /departments
 
-<a id="get-departments"></a>**List departments.** Org units, with their parent, so the tree can be rebuilt.
+<a id="get-departments"></a>**List org units.** Every node of the hierarchy at every level, with its parent, so the tree can be rebuilt. `level` says what a node is; `payroll_group` is the nearest node above it that payroll runs against.
 
 Needs `org:read`. Answers 200.
 
@@ -1809,7 +1814,8 @@ Needs `org:read`. Answers 200.
 | `name` | string | yes |  |
 | `parent` | string, or null | yes |  |
 | `company` | string, or null | yes |  |
-| `personnel_area` | string, or null | yes |  |
+| `level` | string | yes |  |
+| `payroll_group` | string, or null | yes |  |
 | `valid_from` | string | yes | A date, YYYY-MM-DD. |
 | `valid_to` | string, or null | yes |  |
 | `is_active` | boolean | yes |  |
@@ -1823,7 +1829,8 @@ Needs `org:read`. Answers 200.
       "name": "<name>",
       "parent": "<parent>",
       "company": "<company>",
-      "personnel_area": "<personnel_area>",
+      "level": "<level>",
+      "payroll_group": "<payroll_group>",
       "valid_from": "<valid_from>",
       "valid_to": "<valid_to>",
       "is_active": true,
@@ -1850,7 +1857,7 @@ Needs `org:read`. Answers 200.
 | --- | --- | --- | --- |
 | `code` | string | yes |  |
 | `title` | string | yes |  |
-| `job_group` | string, or null | yes |  |
+| `job_family` | string, or null | yes |  |
 | `is_active` | boolean | yes |  |
 
 ```json
@@ -1859,7 +1866,7 @@ Needs `org:read`. Answers 200.
     {
       "code": "<code>",
       "title": "<title>",
-      "job_group": "<job_group>",
+      "job_family": "<job_family>",
       "is_active": true
     }
   ],
@@ -1918,7 +1925,7 @@ Needs `org:read`. Answers 200.
 
 #### GET /cost-centres
 
-<a id="get-cost-centres"></a>**List cost centres.** Cost centres as the ERP last sent them.
+<a id="get-cost-centres"></a>**List cost centres.** The org units whose level HR has flagged as a cost centre. Which level that is, is HR's configuration — see `/org-levels`.
 
 Needs `org:read`. Answers 200.
 
@@ -1954,7 +1961,7 @@ Needs `org:read`. Answers 200.
 
 #### PUT /cost-centres/{code}
 
-<a id="put-cost-centres-code"></a>**Create or update a cost centre.** Creates the cost centre, or replaces it. Cost centres are owned by the ERP by default; if HR has made the HRMS their owner, this is refused with `owned_by_hrms`. Send the ETag in If-Match to update safely: a stale write is refused with 412.
+<a id="put-cost-centres-code"></a>**Create or update a cost centre.** Creates the cost centre, or replaces it. Cost centres are owned by the HRMS by default, so this is refused with `owned_by_hrms` until HR makes the ERP their owner. Send the ETag in If-Match to update safely: a stale write is refused with 412.
 
 Needs `org:write`. Returns an `ETag`; honours `If-Match`. Answers 200.
 
@@ -2878,7 +2885,7 @@ Needs `time:read`. Answers 200.
 | `name` | string | yes |  |
 | `quota_type` | string | yes |  |
 | `applies_to_grade` | string, or null | yes |  |
-| `applies_to_area` | string, or null | yes |  |
+| `applies_to_node` | string, or null | yes |  |
 | `entitlement_days_per_year` | number | yes |  |
 | `accrual_frequency` | `Monthly` \\| `Yearly` | yes |  |
 | `pro_rata_for_joiners` | boolean | yes |  |
@@ -2896,7 +2903,7 @@ Needs `time:read`. Answers 200.
       "name": "<name>",
       "quota_type": "<quota_type>",
       "applies_to_grade": "<applies_to_grade>",
-      "applies_to_area": "<applies_to_area>",
+      "applies_to_node": "<applies_to_node>",
       "entitlement_days_per_year": 1,
       "accrual_frequency": "Monthly",
       "pro_rata_for_joiners": true,
@@ -2913,7 +2920,7 @@ Needs `time:read`. Answers 200.
 
 #### GET /holiday-calendars
 
-<a id="get-holiday-calendars"></a>**List holiday calendars.** The named holiday lists personnel areas sit on — see /holidays?calendar= for one calendar's own dates.
+<a id="get-holiday-calendars"></a>**List holiday calendars.** The named holiday lists org units sit on — see /holidays?calendar= for one calendar's own dates.
 
 Needs `time:read`. Answers 200.
 
@@ -3183,7 +3190,7 @@ Needs `payroll:read`. Answers 200.
 | Field, per item | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
-| `personnel_area` | string | yes |  |
+| `payroll_group` | string | yes |  |
 | `year` | integer | yes |  |
 | `month` | integer | yes |  |
 | `pay_date` | string, or null | yes |  |
@@ -3195,7 +3202,7 @@ Needs `payroll:read`. Answers 200.
   "data": [
     {
       "id": 3,
-      "personnel_area": "<personnel_area>",
+      "payroll_group": "<payroll_group>",
       "year": 1,
       "month": 1,
       "pay_date": "2026-10-01",

@@ -22,7 +22,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/payroll/ecr/[id
   const [run, results, lines, statutory] = await client.batch(
     [
       {
-        sql: `SELECT run.id, run.run_type, p.year, p.month, p.area_code
+        sql: `SELECT run.id, run.run_type, p.year, p.month, p.node_code
               FROM py_payroll_run run JOIN py_payroll_period p ON p.id = run.period_id WHERE run.id = ?`,
         args: [runId],
       },
@@ -90,7 +90,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/payroll/ecr/[id
 
   logAccess(session, { subjectEmployeeId: null, resource: "ECR file", resourceId: runId });
 
-  const name = `ecr-${period}-${r.area_code}-run${runId}.txt`.toLowerCase();
+  const name = `ecr-${period}-${r.node_code}-run${runId}.txt`.toLowerCase();
   return new Response(generateEcrText(rows) + "\r\n", {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",

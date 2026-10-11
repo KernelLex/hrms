@@ -52,7 +52,7 @@ export default async function PostingPage(props: {
       errorCount: pyPayrollRun.errorCount,
       year: pyPayrollPeriod.year,
       month: pyPayrollPeriod.month,
-      areaCode: pyPayrollPeriod.areaCode,
+      nodeCode: pyPayrollPeriod.nodeCode,
       periodStatus: pyPayrollPeriod.status,
     })
     .from(pyPayrollRun)
@@ -61,7 +61,7 @@ export default async function PostingPage(props: {
     .orderBy(desc(pyPayrollRun.runAt));
 
   const runLabel = (r: (typeof runs)[number]) =>
-    `${formatMonth(r.year, r.month)}, ${r.areaCode}${r.runType === "Off-cycle" ? `, off-cycle: ${r.reason ?? "payment"}` : ""}`;
+    `${formatMonth(r.year, r.month)}, ${r.nodeCode}${r.runType === "Off-cycle" ? `, off-cycle: ${r.reason ?? "payment"}` : ""}`;
 
   if (runs.length === 0) {
     return (

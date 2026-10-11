@@ -6,7 +6,7 @@ import { saveTimeSlice, SLICED_TABLES } from "@/lib/engines/timeslice";
 import { deleteAdditionalPayment, postToLedger } from "@/app/actions/payroll";
 import { form } from "./support/fixtures";
 import {
-  createArea,
+  createPayrollGroup,
   createPeriod,
   hireForPayroll,
   postPeriod,
@@ -64,8 +64,8 @@ describe("section 87A marginal relief", () => {
 
 describe("mid-month changes", () => {
   it("pays a joiner for the working days after joining", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2026-06-15", pay: [{ from: "2026-06-15", amountRupees: 60_000 }] });
+    const area = await createPayrollGroup();
+    const id = await hireForPayroll({ node: area, hireDate: "2026-06-15", pay: [{ from: "2026-06-15", amountRupees: 60_000 }] });
     const { runId } = await runMonth(area, 2026, 6);
     const r = (await storedResult(runId, id))!;
     // June 2026 has 22 working days; the 15th onwards holds 12 of them.
@@ -75,9 +75,9 @@ describe("mid-month changes", () => {
   });
 
   it("pays a leaver up to their last day, even once marked terminated", async () => {
-    const area = await createArea();
+    const area = await createPayrollGroup();
     const id = await hireForPayroll({
-      area,
+      node: area,
       hireDate: "2024-01-01",
       terminationDate: "2026-06-10",
       pay: [{ from: "2024-01-01", amountRupees: 60_000 }],
@@ -90,9 +90,9 @@ describe("mid-month changes", () => {
   });
 
   it("pays each basic-pay rate for its own days when pay changes mid-month", async () => {
-    const area = await createArea();
+    const area = await createPayrollGroup();
     const id = await hireForPayroll({
-      area,
+      node: area,
       hireDate: "2024-01-01",
       pay: [
         { from: "2024-01-01", to: "2026-06-15", amountRupees: 60_000 },
@@ -107,8 +107,8 @@ describe("mid-month changes", () => {
 
 describe("tax over a year", () => {
   it("deducts the year's tax evenly, not more each month", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 100_000 }] });
+    const area = await createPayrollGroup();
+    const id = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 100_000 }] });
 
     const monthly: number[] = [];
     for (let i = 0; i < 12; i += 1) {
@@ -126,8 +126,8 @@ describe("tax over a year", () => {
   });
 
   it("taxes a mid-year joiner on what they actually earn", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2026-09-15", pay: [{ from: "2026-09-15", amountRupees: 150_000 }] });
+    const area = await createPayrollGroup();
+    const id = await hireForPayroll({ node: area, hireDate: "2026-09-15", pay: [{ from: "2026-09-15", amountRupees: 150_000 }] });
 
     let taxable = 0;
     for (const [year, month] of [[2026, 9], [2026, 10], [2026, 11], [2026, 12], [2027, 1], [2027, 2], [2027, 3]]) {
@@ -142,8 +142,8 @@ describe("tax over a year", () => {
 
 describe("retro calculation", () => {
   it("pays arrears once for a raise backdated into months already paid", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 50_000 }] });
+    const area = await createPayrollGroup();
+    const id = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 50_000 }] });
 
     await runMonth(area, 2026, 4);
     const may = await runMonth(area, 2026, 5);
@@ -195,8 +195,8 @@ describe("retro calculation", () => {
   });
 
   it("recovers pay for unpaid leave recorded after the month was paid", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 44_000 }] });
+    const area = await createPayrollGroup();
+    const id = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 44_000 }] });
     const june = await runMonth(area, 2026, 6);
 
     // Two unpaid days in June, recorded in July.
@@ -218,8 +218,8 @@ describe("retro calculation", () => {
 
 describe("off-cycle runs", () => {
   it("pays a bonus agreed after the month was posted, and taxes it in full", async () => {
-    const area = await createArea();
-    const id = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 100_000 }] });
+    const area = await createPayrollGroup();
+    const id = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 100_000 }] });
     const april = await runMonth(area, 2026, 4);
 
     const bonus = await rawClient().execute({
@@ -270,8 +270,8 @@ describe("off-cycle runs", () => {
   });
 
   it("refuses a regular run on a posted period", async () => {
-    const area = await createArea();
-    await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 30_000 }] });
+    const area = await createPayrollGroup();
+    await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 30_000 }] });
     const { periodId } = await runMonth(area, 2026, 4);
     await expect(startRun({ periodId, runBy: "test" })).rejects.toThrow(/posted/);
   });
@@ -279,10 +279,10 @@ describe("off-cycle runs", () => {
 
 describe("running in batches", () => {
   it("calculates a few people per call and finishes with totals that add up", async () => {
-    const area = await createArea();
+    const area = await createPayrollGroup();
     const ids = [];
     for (const amount of [30_000, 40_000, 50_000]) {
-      ids.push(await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: amount }] }));
+      ids.push(await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: amount }] }));
     }
     const periodId = await createPeriod(area, 2026, 5);
     const { runId, planned } = await startRun({ periodId, runBy: "test" });
@@ -308,8 +308,8 @@ describe("running in batches", () => {
   });
 
   it("replaces the previous regular run without leaving its results behind", async () => {
-    const area = await createArea();
-    await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 30_000 }] });
+    const area = await createPayrollGroup();
+    await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 30_000 }] });
     const periodId = await createPeriod(area, 2026, 5);
     const first = await runPayroll({ periodId, runBy: "test" });
     const second = await runPayroll({ periodId, runBy: "test" });
@@ -329,8 +329,8 @@ describe("running in batches", () => {
 
 describe("ledger posting", () => {
   it("balances, and charges salary to each person's cost centre", async () => {
-    const area = await createArea();
-    await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 80_000 }] });
+    const area = await createPayrollGroup();
+    await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 80_000 }] });
     const { runId } = await runMonth(area, 2026, 5);
 
     const posted = await postToLedger({}, form({ runId, postingDate: "2026-05-31" }));

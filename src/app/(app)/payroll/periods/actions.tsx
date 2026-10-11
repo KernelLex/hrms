@@ -68,7 +68,7 @@ export function PeriodActions({
   );
 }
 
-export function NewPeriodForm({ areas }: { areas: { value: string; label: string }[] }) {
+export function NewPeriodForm({ groups }: { groups: { value: string; label: string }[] }) {
   const toast = useToast();
   const [open, setOpen] = React.useState(false);
   const nowDate = new Date();
@@ -96,12 +96,12 @@ export function NewPeriodForm({ areas }: { areas: { value: string; label: string
 
   return (
     <Card>
-      <CardHeader title="New payroll period" description="One per personnel area per month." />
+      <CardHeader title="New payroll period" description="One per payroll group per month." />
       <form action={action} className="px-6 pb-5">
         <FormGrid columns={3}>
-          <Field label="Personnel area" htmlFor="areaCode" required>
-            <Select id="areaCode" name="areaCode" required>
-              {areas.map((a) => (
+          <Field label="Payroll group" htmlFor="nodeCode" required>
+            <Select id="nodeCode" name="nodeCode" required>
+              {groups.map((a) => (
                 <option key={a.value} value={a.value}>
                   {a.label}
                 </option>

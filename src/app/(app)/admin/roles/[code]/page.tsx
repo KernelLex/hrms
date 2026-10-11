@@ -12,7 +12,7 @@ export default async function RolePage(props: { params: Promise<{ code: string }
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <RoleForm role={role} companies={scope.companies} areas={scope.areas} />
+      <RoleForm role={role} companies={scope.companies} nodes={scope.nodes} />
       <div className="flex flex-col gap-6">
         <RoleMembers roleCode={role.code} members={role.members} users={users} />
         {role.isBuiltIn ? null : <DeleteRole code={role.code} name={role.name} />}

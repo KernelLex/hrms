@@ -18,7 +18,7 @@ export default async function RolesPage() {
     <Card>
       <CardHeader
         title="Roles"
-        description="A role is a set of permissions, optionally limited to some companies or personnel areas."
+        description="A role is a set of permissions, optionally limited to some companies or parts of the org tree."
         actions={
           <ButtonLink href="/admin/roles/new" variant="primary" size="sm">
             <Plus />
@@ -56,9 +56,9 @@ export default async function RolesPage() {
               </Td>
               <Td>
                 <span className="text-secondary">
-                  {r.companies.length + r.areas.length === 0
+                  {r.companies.length + r.nodes.length === 0
                     ? "The whole organisation"
-                    : [...r.companies, ...r.areas].join(", ")}
+                    : [...r.companies, ...r.nodes].join(", ")}
                 </span>
               </Td>
               <Td>

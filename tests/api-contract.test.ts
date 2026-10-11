@@ -13,7 +13,7 @@ import { systemActor } from "@/lib/change-log";
 import type { Endpoint } from "@/lib/api/router";
 import { apiClient, call, type TestClient } from "./support/api";
 import { form } from "./support/fixtures";
-import { createArea, createPeriod, hireForPayroll, postPeriod } from "./support/payroll-fixtures";
+import { createPayrollGroup, createPeriod, hireForPayroll, postPeriod } from "./support/payroll-fixtures";
 
 /**
  * The API's contract: every endpoint answers with what its schema — and so
@@ -49,8 +49,8 @@ function sampleGet(e: Endpoint): string {
 
 beforeAll(async () => {
   // Lists with something in them, so their items are checked too.
-  const area = await createArea();
-  await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 70_000 }] });
+  const area = await createPayrollGroup();
+  await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 70_000 }] });
   const periodId = await createPeriod(area, 2026, 7);
   const { runId } = await runPayroll({ periodId, runBy: "test" });
   await postPeriod(periodId);

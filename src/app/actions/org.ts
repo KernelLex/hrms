@@ -8,12 +8,13 @@ import { requirePermission } from "@/lib/access";
 import { actorOf, audited, recordCreated, recordDeleted } from "@/lib/change-log";
 import {
   omCompany,
-  omPersonnelArea,
-  omPersonnelSubArea,
+  omLevelType,
   omJob,
+  omJobFamily,
   omOrgUnit,
   omPosition,
   omReportingLine,
+  pyPayrollPeriod,
   OPEN_ENDED,
 } from "@/db/schema";
 
@@ -64,6 +65,21 @@ const code = (label: string) =>
     .max(20, `A ${label} cannot be longer than 20 characters.`)
     .regex(/^[A-Za-z0-9_-]+$/, `A ${label} may use only letters, numbers, hyphens and underscores.`);
 
+/**
+ * Looser than `code`: cost centres are nodes now, and the ERP pushes codes
+ * like `CC-MFG.01` through `upsertCostCentre`. One table, one accepted format.
+ */
+const nodeCode = (label: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, `Enter a ${label}.`)
+    .max(40, `A ${label} cannot be longer than 40 characters.`)
+    .regex(
+      /^[A-Za-z0-9_.-]+$/,
+      `A ${label} may use only letters, numbers, hyphens, dots and underscores.`,
+    );
+
 const label = (what: string) =>
   z.string().trim().min(1, `Enter a ${what}.`).max(120, `That ${what} is too long.`);
 
@@ -85,6 +101,8 @@ const CompanyInput = z.object({
   address: z.string().trim().max(200).nullable(),
   city: z.string().trim().max(80).nullable(),
   country: z.string().trim().max(80).nullable(),
+  /** The group node this legal entity sits under, where there is one. */
+  parentNodeCode: z.string().trim().nullable(),
   isActive: z.boolean(),
 });
 
@@ -101,6 +119,7 @@ export async function saveCompany(
     address: optional(form.get("address")),
     city: optional(form.get("city")),
     country: optional(form.get("country")),
+    parentNodeCode: optional(form.get("parentNodeCode")),
     isActive: bool(form.get("isActive")),
   });
   if (!parsed.success) return fail(firstIssue(parsed.error));
@@ -133,22 +152,13 @@ export async function deleteCompany(
   const actor = actorOf(await requirePermission("org.edit"));
   const c = str(form.get("code"));
 
-  const [areas] = await db
-    .select({ n: count() })
-    .from(omPersonnelArea)
-    .where(eq(omPersonnelArea.companyCode, c));
-  if (areas.n > 0) {
-    return fail(
-      `${c} still has ${areas.n} personnel area${areas.n === 1 ? "" : "s"}. Remove or reassign them first.`,
-    );
-  }
   const [units] = await db
     .select({ n: count() })
     .from(omOrgUnit)
     .where(eq(omOrgUnit.companyCode, c));
   if (units.n > 0) {
     return fail(
-      `${c} still has ${units.n} department${units.n === 1 ? "" : "s"}. Remove or reassign them first.`,
+      `${c} still has ${units.n} org unit${units.n === 1 ? "" : "s"}. Remove or reassign them first.`,
     );
   }
 
@@ -161,52 +171,77 @@ export async function deleteCompany(
   return OK;
 }
 
-/* ----------------------------------------------------- OM-02 personnel area */
+/* ------------------------------------------------------- OM-02 level type */
 
-const AreaInput = z.object({
-  code: code("area code"),
-  companyCode: code("company"),
-  name: label("area name"),
-  location: z.string().trim().max(120).nullable(),
-  calendarCode: code("holiday calendar"),
+const LevelTypeInput = z.object({
+  code: code("level code"),
+  name: label("level name"),
+  parentLevelTypeCode: z.string().trim().nullable(),
+  rank: z.number().int().min(0, "Rank cannot be negative.").max(99, "Rank cannot exceed 99."),
+  isPayrollGroup: z.boolean(),
+  isCalendarLevel: z.boolean(),
+  isCostCentre: z.boolean(),
   isActive: z.boolean(),
 });
 
-export async function saveArea(
+/** Stops a level being made its own ancestor, the same way departments are checked. */
+async function levelWouldCycle(childCode: string, parentCode: string): Promise<boolean> {
+  let cursor: string | null = parentCode;
+  const seen = new Set<string>();
+  while (cursor) {
+    if (cursor === childCode) return true;
+    if (seen.has(cursor)) return true;
+    seen.add(cursor);
+    const row: { parentLevelTypeCode: string | null } | undefined =
+      await db.query.omLevelType.findFirst({
+        where: eq(omLevelType.code, cursor),
+        columns: { parentLevelTypeCode: true },
+      });
+    cursor = row?.parentLevelTypeCode ?? null;
+  }
+  return false;
+}
+
+export async function saveLevelType(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const actor = actorOf(await requirePermission("org.edit"));
   const original = optional(form.get("originalCode"));
 
-  const parsed = AreaInput.safeParse({
+  const parsed = LevelTypeInput.safeParse({
     code: str(form.get("code")).toUpperCase(),
-    companyCode: str(form.get("companyCode")),
     name: str(form.get("name")),
-    location: optional(form.get("location")),
-    calendarCode: str(form.get("calendarCode")),
+    parentLevelTypeCode: optional(form.get("parentLevelTypeCode")),
+    rank: Number(str(form.get("rank")) || "0"),
+    isPayrollGroup: bool(form.get("isPayrollGroup")),
+    isCalendarLevel: bool(form.get("isCalendarLevel")),
+    isCostCentre: bool(form.get("isCostCentre")),
     isActive: bool(form.get("isActive")),
   });
   if (!parsed.success) return fail(firstIssue(parsed.error));
   const v = parsed.data;
 
+  if (v.parentLevelTypeCode === v.code) {
+    return fail("A level cannot sit under itself.");
+  }
+  if (v.parentLevelTypeCode && (await levelWouldCycle(v.code, v.parentLevelTypeCode))) {
+    return fail("That parent would create a loop in the level hierarchy.");
+  }
+
   if (!original) {
     const [dupe] = await db
       .select({ n: count() })
-      .from(omPersonnelArea)
-      .where(eq(omPersonnelArea.code, v.code));
-    if (dupe.n > 0) return fail(`Personnel area ${v.code} already exists.`);
-    await recordCreated(
-      actor,
-      "om_personnel_area",
-      await db.insert(omPersonnelArea).values(v).returning(),
-    );
+      .from(omLevelType)
+      .where(eq(omLevelType.code, v.code));
+    if (dupe.n > 0) return fail(`Level ${v.code} already exists.`);
+    await recordCreated(actor, "om_level_type", await db.insert(omLevelType).values(v).returning());
   } else {
     await audited(
       actor,
-      { entity: "om_personnel_area", entityId: original },
-      () => db.query.omPersonnelArea.findFirst({ where: eq(omPersonnelArea.code, original) }),
-      () => db.update(omPersonnelArea).set(v).where(eq(omPersonnelArea.code, original)),
+      { entity: "om_level_type", entityId: original },
+      () => db.query.omLevelType.findFirst({ where: eq(omLevelType.code, original) }),
+      () => db.update(omLevelType).set(v).where(eq(omLevelType.code, original)),
     );
   }
 
@@ -214,51 +249,58 @@ export async function saveArea(
   return OK;
 }
 
-export async function deleteArea(
+export async function deleteLevelType(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const actor = actorOf(await requirePermission("org.edit"));
   const c = str(form.get("code"));
 
-  const [subs] = await db
+  const [nodes] = await db
     .select({ n: count() })
-    .from(omPersonnelSubArea)
-    .where(eq(omPersonnelSubArea.areaCode, c));
-  if (subs.n > 0) {
+    .from(omOrgUnit)
+    .where(eq(omOrgUnit.levelTypeCode, c));
+  if (nodes.n > 0) {
     return fail(
-      `${c} still has ${subs.n} sub-area${subs.n === 1 ? "" : "s"}. Remove them first.`,
+      `${c} is used by ${nodes.n} org unit${nodes.n === 1 ? "" : "s"}. Move them to another level first.`,
+    );
+  }
+  const [children] = await db
+    .select({ n: count() })
+    .from(omLevelType)
+    .where(eq(omLevelType.parentLevelTypeCode, c));
+  if (children.n > 0) {
+    return fail(
+      `${children.n} level${children.n === 1 ? "" : "s"} sit${children.n === 1 ? "s" : ""} under ${c}. Reassign them first.`,
     );
   }
 
   await recordDeleted(
     actor,
-    "om_personnel_area",
-    await db.delete(omPersonnelArea).where(eq(omPersonnelArea.code, c)).returning(),
+    "om_level_type",
+    await db.delete(omLevelType).where(eq(omLevelType.code, c)).returning(),
   );
   revalidateOrg();
   return OK;
 }
 
-/* ------------------------------------------------- OM-03 personnel sub-area */
+/* ------------------------------------------------------- OM-03 job family */
 
-const SubAreaInput = z.object({
-  code: code("sub-area code"),
-  areaCode: code("personnel area"),
-  name: label("sub-area name"),
+const JobFamilyInput = z.object({
+  code: code("job family code"),
+  name: label("job family name"),
   isActive: z.boolean(),
 });
 
-export async function saveSubArea(
+export async function saveJobFamily(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const actor = actorOf(await requirePermission("org.edit"));
   const original = optional(form.get("originalCode"));
 
-  const parsed = SubAreaInput.safeParse({
+  const parsed = JobFamilyInput.safeParse({
     code: str(form.get("code")).toUpperCase(),
-    areaCode: str(form.get("areaCode")),
     name: str(form.get("name")),
     isActive: bool(form.get("isActive")),
   });
@@ -268,20 +310,16 @@ export async function saveSubArea(
   if (!original) {
     const [dupe] = await db
       .select({ n: count() })
-      .from(omPersonnelSubArea)
-      .where(eq(omPersonnelSubArea.code, v.code));
-    if (dupe.n > 0) return fail(`Sub-area ${v.code} already exists.`);
-    await recordCreated(
-      actor,
-      "om_personnel_sub_area",
-      await db.insert(omPersonnelSubArea).values(v).returning(),
-    );
+      .from(omJobFamily)
+      .where(eq(omJobFamily.code, v.code));
+    if (dupe.n > 0) return fail(`Job family ${v.code} already exists.`);
+    await recordCreated(actor, "om_job_family", await db.insert(omJobFamily).values(v).returning());
   } else {
     await audited(
       actor,
-      { entity: "om_personnel_sub_area", entityId: original },
-      () => db.query.omPersonnelSubArea.findFirst({ where: eq(omPersonnelSubArea.code, original) }),
-      () => db.update(omPersonnelSubArea).set(v).where(eq(omPersonnelSubArea.code, original)),
+      { entity: "om_job_family", entityId: original },
+      () => db.query.omJobFamily.findFirst({ where: eq(omJobFamily.code, original) }),
+      () => db.update(omJobFamily).set(v).where(eq(omJobFamily.code, original)),
     );
   }
 
@@ -289,16 +327,24 @@ export async function saveSubArea(
   return OK;
 }
 
-export async function deleteSubArea(
+export async function deleteJobFamily(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
   const actor = actorOf(await requirePermission("org.edit"));
   const c = str(form.get("code"));
+
+  const [jobs] = await db.select({ n: count() }).from(omJob).where(eq(omJob.jobFamilyCode, c));
+  if (jobs.n > 0) {
+    return fail(
+      `${c} is used by ${jobs.n} job${jobs.n === 1 ? "" : "s"}. Reassign them first.`,
+    );
+  }
+
   await recordDeleted(
     actor,
-    "om_personnel_sub_area",
-    await db.delete(omPersonnelSubArea).where(eq(omPersonnelSubArea.code, c)).returning(),
+    "om_job_family",
+    await db.delete(omJobFamily).where(eq(omJobFamily.code, c)).returning(),
   );
   revalidateOrg();
   return OK;
@@ -309,7 +355,7 @@ export async function deleteSubArea(
 const JobInput = z.object({
   code: code("job code"),
   title: label("job title"),
-  jobGroup: z.string().trim().max(60).nullable(),
+  jobFamilyCode: code("job family"),
   description: z.string().trim().max(200).nullable(),
   isActive: z.boolean(),
 });
@@ -324,7 +370,7 @@ export async function saveJob(
   const parsed = JobInput.safeParse({
     code: str(form.get("code")).toUpperCase(),
     title: str(form.get("title")),
-    jobGroup: optional(form.get("jobGroup")),
+    jobFamilyCode: str(form.get("jobFamilyCode")),
     description: optional(form.get("description")),
     isActive: bool(form.get("isActive")),
   });
@@ -373,11 +419,13 @@ export async function deleteJob(
 /* ---------------------------------------------------------- OM-05 org unit */
 
 const OrgUnitInput = z.object({
-  code: code("org unit code"),
+  code: nodeCode("org unit code"),
   name: label("org unit name"),
   parentCode: z.string().trim().nullable(),
-  companyCode: code("company"),
-  areaCode: z.string().trim().nullable(),
+  /** Null for a group node sitting above the legal entities. */
+  companyCode: z.string().trim().nullable(),
+  levelTypeCode: code("level"),
+  calendarCode: z.string().trim().nullable(),
   validFrom: dateish,
   validTo: dateish,
   isActive: z.boolean(),
@@ -411,8 +459,9 @@ export async function saveOrgUnit(
     code: str(form.get("code")).toUpperCase(),
     name: str(form.get("name")),
     parentCode: optional(form.get("parentCode")),
-    companyCode: str(form.get("companyCode")),
-    areaCode: optional(form.get("areaCode")),
+    companyCode: optional(form.get("companyCode")),
+    levelTypeCode: str(form.get("levelTypeCode")),
+    calendarCode: optional(form.get("calendarCode")),
     validFrom: str(form.get("validFrom")),
     validTo: str(form.get("validTo")) || OPEN_ENDED,
     isActive: bool(form.get("isActive")),
@@ -424,11 +473,40 @@ export async function saveOrgUnit(
     return fail("Valid to cannot fall before valid from.");
   }
   if (v.parentCode === v.code) {
-    return fail("A department cannot report to itself.");
+    return fail("An org unit cannot sit under itself.");
   }
   if (v.parentCode && (await wouldCycle(v.code, v.parentCode))) {
-    return fail("That parent would create a loop in the department tree.");
+    return fail("That parent would create a loop in the org tree.");
   }
+
+  const level = await db.query.omLevelType.findFirst({
+    where: eq(omLevelType.code, v.levelTypeCode),
+  });
+  if (!level) return fail(`Level ${v.levelTypeCode} does not exist.`);
+
+  if (v.parentCode && level.parentLevelTypeCode) {
+    const parent = await db.query.omOrgUnit.findFirst({
+      where: eq(omOrgUnit.code, v.parentCode),
+      columns: { levelTypeCode: true },
+    });
+    if (!parent) return fail(`${v.parentCode} does not exist.`);
+    const allowed = [level.parentLevelTypeCode, level.code];
+    if (!allowed.includes(parent.levelTypeCode)) {
+      return fail(
+        `A ${level.name} may sit only under a ${level.parentLevelTypeCode} or another ${level.code}, and ${v.parentCode} is a ${parent.levelTypeCode}.`,
+      );
+    }
+  }
+
+  // Payroll and cost-centre nodes resolve a GL company when pay is posted, so
+  // they cannot be left on a group node that belongs to no legal entity.
+  if ((level.isPayrollGroup || level.isCostCentre) && v.companyCode === null) {
+    return fail(`A ${level.name} must belong to a company.`);
+  }
+  if (level.isCalendarLevel && v.calendarCode === null) {
+    return fail(`A ${level.name} must have a holiday calendar.`);
+  }
+  if (!level.isCalendarLevel) v.calendarCode = null;
 
   if (!original) {
     const [dupe] = await db
@@ -463,7 +541,25 @@ export async function deleteOrgUnit(
     .where(eq(omOrgUnit.parentCode, c));
   if (children.n > 0) {
     return fail(
-      `${c} still has ${children.n} child department${children.n === 1 ? "" : "s"}. Move them first.`,
+      `${c} still has ${children.n} child org unit${children.n === 1 ? "" : "s"}. Move them first.`,
+    );
+  }
+  const [companies] = await db
+    .select({ n: count() })
+    .from(omCompany)
+    .where(eq(omCompany.parentNodeCode, c));
+  if (companies.n > 0) {
+    return fail(
+      `${companies.n} compan${companies.n === 1 ? "y" : "ies"} sit${companies.n === 1 ? "s" : ""} under ${c}. Move them first.`,
+    );
+  }
+  const [periods] = await db
+    .select({ n: count() })
+    .from(pyPayrollPeriod)
+    .where(eq(pyPayrollPeriod.nodeCode, c));
+  if (periods.n > 0) {
+    return fail(
+      `${c} has ${periods.n} payroll period${periods.n === 1 ? "" : "s"} against it. Those must stay for the record.`,
     );
   }
   const [positions] = await db

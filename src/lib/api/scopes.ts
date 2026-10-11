@@ -11,7 +11,7 @@
  */
 
 export const SCOPES = {
-  "org:read": "Read companies, personnel areas, departments, jobs, positions and cost centres",
+  "org:read": "Read companies, org levels, org units, jobs, positions and cost centres",
   "org:write": "Write cost centres, which the ERP owns by default",
   "employees:read": "Read employees and their dated records, without pay, bank or tax identifiers",
   "employees:write": "Change the employee fields the ERP owns, and record the ERP's own ids",

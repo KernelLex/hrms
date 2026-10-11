@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { inScope, requirePage } from "@/lib/access";
-import { omCompany, omOrgUnit, omPersonnelArea, omPosition } from "@/db/schema";
+import { omCompany, omOrgUnit, omPosition } from "@/db/schema";
 import { getEmployee, fullName } from "@/lib/repositories/employees";
 import { PageHeader, Card, EmptyState, ButtonLink } from "@/components/ui";
 import { ArrowRightLeft } from "lucide-react";
@@ -18,9 +18,8 @@ export default async function TransferPage({ params }: { params: Promise<{ id: s
   if (!(await inScope(session, employeeId))) notFound();
   if (employee.employment_status === "Terminated") redirect(`/core-hr/${employeeId}`);
 
-  const [companies, areas, units, vacantPositions] = await Promise.all([
+  const [companies, units, vacantPositions] = await Promise.all([
     db.select().from(omCompany).where(eq(omCompany.isActive, true)).orderBy(asc(omCompany.code)),
-    db.select().from(omPersonnelArea).orderBy(asc(omPersonnelArea.code)),
     db.select().from(omOrgUnit).orderBy(asc(omOrgUnit.code)),
     db
       .select()
@@ -58,7 +57,6 @@ export default async function TransferPage({ params }: { params: Promise<{ id: s
       <TransferForm
         employeeId={employeeId}
         companies={companies.map((c) => ({ value: c.code, label: `${c.code} — ${c.name}` }))}
-        areas={areas.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` }))}
         units={units.map((u) => ({ value: u.code, label: `${u.code} — ${u.name}` }))}
         positions={vacantPositions.map((p) => ({ value: p.code, label: `${p.code} — ${p.title}`, orgUnitCode: p.orgUnitCode }))}
       />

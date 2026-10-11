@@ -10,7 +10,7 @@ export type RoleSummary = {
   isBuiltIn: boolean;
   permissions: string[];
   companies: string[];
-  areas: string[];
+  nodes: string[];
   members: { userId: number; username: string; displayName: string }[];
 };
 
@@ -36,7 +36,7 @@ export async function listRoles(): Promise<RoleSummary[]> {
       isBuiltIn: Number(r.is_built_in) === 1,
       permissions: perms.rows.filter((p) => p.role_code === code).map((p) => String(p.permission_code)),
       companies: scopes.rows.filter((s) => s.role_code === code && s.scope_type === "company").map((s) => String(s.scope_code)),
-      areas: scopes.rows.filter((s) => s.role_code === code && s.scope_type === "area").map((s) => String(s.scope_code)),
+      nodes: scopes.rows.filter((s) => s.role_code === code && s.scope_type === "node").map((s) => String(s.scope_code)),
       members: members.rows
         .filter((m) => m.role_code === code)
         .map((m) => ({ userId: Number(m.id), username: String(m.username), displayName: String(m.display_name) })),
@@ -60,14 +60,18 @@ export async function listUsers(): Promise<UserOption[]> {
 
 export async function scopeOptions(): Promise<{
   companies: { code: string; name: string }[];
-  areas: { code: string; name: string }[];
+  nodes: { code: string; name: string }[];
 }> {
-  const [companies, areas] = await Promise.all([
+  const [companies, nodes] = await Promise.all([
     rawClient().execute("SELECT code, name FROM om_company ORDER BY code"),
-    rawClient().execute("SELECT code, name FROM om_personnel_area ORDER BY code"),
+    rawClient().execute(
+      `SELECT u.code, u.name || ' (' || t.name || ')' AS name
+       FROM om_org_unit u JOIN om_level_type t ON t.code = u.level_type_code
+       WHERE u.is_active = 1 ORDER BY t.rank, u.code`,
+    ),
   ]);
   return {
     companies: companies.rows.map((c) => ({ code: String(c.code), name: String(c.name) })),
-    areas: areas.rows.map((a) => ({ code: String(a.code), name: String(a.name) })),
+    nodes: nodes.rows.map((n) => ({ code: String(n.code), name: String(n.name) })),
   };
 }

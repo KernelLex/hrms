@@ -149,7 +149,7 @@ export const ptLeaveRequest = sqliteTable(
 
 /* ------------------------------------------------------ holiday calendar */
 
-/** A named set of public holidays; each personnel area sits on one (org.ts). */
+/** A named set of public holidays; org units sit on one and their children inherit it (org.ts). */
 export const ptHolidayCalendar = sqliteTable("pt_holiday_calendar", {
   code: text("code").primaryKey(),
   name: text("name").notNull(),
@@ -199,7 +199,7 @@ export type AccrualFrequency = (typeof ACCRUAL_FREQUENCIES)[number];
  * and what happens to what is left over. Several policies can name the same
  * quota type — grade L1-L3 gets one entitlement, L4 and above another — and
  * the one an employee falls under is resolved by their grade (basic pay's
- * `pay_scale_group`) and personnel area, the more specific policy winning a
+ * `pay_scale_group`) and org unit, the closer match winning a
  * tie. `appliesToGrade` is unenforced by a foreign key on purpose: a grade
  * is free text on the pay record, not a master table of its own.
  */
@@ -213,8 +213,11 @@ export const ptLeavePolicy = sqliteTable(
       .references(() => ptQuotaType.code),
     /** Null means every grade. */
     appliesToGrade: text("applies_to_grade"),
-    /** Null means every area. Soft reference, like appliesToGrade. */
-    appliesToAreaCode: text("applies_to_area_code"),
+    /**
+     * Null means every node. Soft reference, like appliesToGrade. Matches any
+     * ancestor of the employee's org unit; the closest one wins.
+     */
+    appliesToNodeCode: text("applies_to_node_code"),
     /** In half-day units, so 0.5-day accrual is representable. */
     entitlementHalfDaysPerYear: integer("entitlement_half_days_per_year").notNull(),
     accrualFrequency: text("accrual_frequency").notNull().default("Yearly"),

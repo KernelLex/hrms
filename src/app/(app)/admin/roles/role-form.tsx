@@ -18,7 +18,7 @@ type Option = { code: string; name: string };
 export function RoleForm({
   role,
   companies,
-  areas,
+  nodes,
 }: {
   role: {
     code: string;
@@ -27,10 +27,10 @@ export function RoleForm({
     isBuiltIn: boolean;
     permissions: string[];
     companies: string[];
-    areas: string[];
+    nodes: string[];
   } | null;
   companies: Option[];
-  areas: Option[];
+  nodes: Option[];
 }) {
   const toast = useToast();
   const [state, action, pending] = useActionState(
@@ -126,11 +126,11 @@ export function RoleForm({
       <Card>
         <CardHeader
           title="Where it applies"
-          description="Leave everything unticked for the whole organisation. Otherwise, whoever holds the role sees and changes only employees assigned to what is ticked."
+          description="Leave everything unticked for the whole organisation. Otherwise, whoever holds the role sees and changes only employees assigned to what is ticked, or to anything beneath it."
         />
         <div className="grid grid-cols-1 gap-6 px-6 pb-5 sm:grid-cols-2">
           <ScopeList title="Companies" name="company" options={companies} ticked={role?.companies ?? []} />
-          <ScopeList title="Personnel areas" name="area" options={areas} ticked={role?.areas ?? []} />
+          <ScopeList title="Org units" name="node" options={nodes} ticked={role?.nodes ?? []} />
         </div>
       </Card>
 

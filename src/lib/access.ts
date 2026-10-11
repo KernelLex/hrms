@@ -5,6 +5,7 @@ import { rawClient } from "@/lib/db";
 import { getSession, type Session } from "@/lib/auth";
 import { PERMISSIONS, type Permission } from "@/lib/permissions";
 import { kickJobs } from "@/lib/jobs/runner";
+import { loadOrgTree, subtreeOf } from "@/lib/org-tree";
 
 /**
  * Who someone is and what they may do, read fresh on every request.
@@ -28,8 +29,12 @@ export class PermissionError extends Error {
   }
 }
 
-/** The employees a person may see: everyone, or those in some companies or areas. */
-export type EmployeeScope = { companies: string[]; areas: string[] } | null;
+/**
+ * The employees a person may see: everyone, or those in some companies or
+ * parts of the org tree. `nodes` is already expanded to include everything
+ * beneath each scoped node, so the queries that use it stay plain SQL.
+ */
+export type EmployeeScope = { companies: string[]; nodes: string[] } | null;
 
 export type Access = Session & {
   roleCodes: string[];
@@ -75,18 +80,26 @@ const loadAccess = cache(async (userId: number) => {
 
   // A person sees every employee if any role that lets them see employees is
   // unscoped; otherwise the union of their roles' scopes.
-  const scoped = new Map<string, { companies: string[]; areas: string[] }>();
+  const scoped = new Map<string, { companies: string[]; nodes: string[] }>();
   for (const s of scopes.rows) {
-    const entry = scoped.get(String(s.role_code)) ?? { companies: [], areas: [] };
-    (s.scope_type === "company" ? entry.companies : entry.areas).push(String(s.scope_code));
+    const entry = scoped.get(String(s.role_code)) ?? { companies: [], nodes: [] };
+    (s.scope_type === "company" ? entry.companies : entry.nodes).push(String(s.scope_code));
     scoped.set(String(s.role_code), entry);
   }
   let scope: EmployeeScope = null;
   if (roleCodes.length > 0 && roleCodes.every((c) => scoped.has(c))) {
-    scope = { companies: [], areas: [] };
+    scope = { companies: [], nodes: [] };
     for (const entry of scoped.values()) {
       scope.companies.push(...entry.companies);
-      scope.areas.push(...entry.areas);
+      scope.nodes.push(...entry.nodes);
+    }
+    // A node grants what sits under it too, so the tree is walked here once
+    // rather than in every query that reads the scope.
+    if (scope.nodes.length > 0) {
+      const tree = await loadOrgTree();
+      const expanded = new Set<string>();
+      for (const code of scope.nodes) for (const c of subtreeOf(tree, code)) expanded.add(c);
+      scope.nodes = [...expanded];
     }
   }
 
@@ -172,14 +185,14 @@ export function roleLabel(access: Pick<Access, "roleNames">): string {
 }
 
 /**
- * Whether an employee falls inside the companies or areas this person's
+ * Whether an employee falls inside the companies or org units this person's
  * roles cover, going by their latest org assignment. Always true for someone
  * whose roles are organisation-wide.
  */
 export async function inScope(access: Access, employeeId: number): Promise<boolean> {
   if (!access.scope) return true;
   const r = await rawClient().execute({
-    sql: `SELECT company_code, area_code FROM pa_it0001_org_assignment
+    sql: `SELECT company_code, org_unit_code FROM pa_it0001_org_assignment
           WHERE employee_id = ? ORDER BY valid_from DESC LIMIT 1`,
     args: [employeeId],
   });
@@ -187,19 +200,6 @@ export async function inScope(access: Access, employeeId: number): Promise<boole
   if (!row) return false;
   return (
     access.scope.companies.includes(String(row.company_code)) ||
-    access.scope.areas.includes(String(row.area_code))
+    access.scope.nodes.includes(String(row.org_unit_code))
   );
-}
-
-/** The SQL condition limiting `alias` (an org assignment) to a person's scope. */
-export function scopeCondition(
-  access: Access,
-  alias: string,
-): { sql: string; args: string[] } {
-  if (!access.scope) return { sql: "1 = 1", args: [] };
-  const { companies, areas } = access.scope;
-  const parts: string[] = [];
-  if (companies.length) parts.push(`${alias}.company_code IN (${companies.map(() => "?").join(", ")})`);
-  if (areas.length) parts.push(`${alias}.area_code IN (${areas.map(() => "?").join(", ")})`);
-  return { sql: parts.length ? `(${parts.join(" OR ")})` : "1 = 0", args: [...companies, ...areas] };
 }

@@ -7,10 +7,10 @@
  */
 export const OWNERSHIP_DEFAULTS: { recordType: string; label: string; owner: "hrms" | "erp"; fields?: string[] }[] = [
   { recordType: "employee", label: "People and their dated records", owner: "hrms", fields: ["first_name", "last_name", "work_email", "cost_centre"] },
-  { recordType: "org", label: "Companies, locations, departments and positions", owner: "hrms" },
+  { recordType: "org", label: "Companies, org units at every level, jobs and positions", owner: "hrms" },
   { recordType: "absence", label: "Leave and absences", owner: "hrms" },
   { recordType: "payroll", label: "Pay results, payslips and the journal", owner: "hrms" },
-  { recordType: "cost_centre", label: "Cost centres", owner: "erp" },
+  { recordType: "cost_centre", label: "Cost centres", owner: "hrms" },
   { recordType: "gl_account", label: "Chart of accounts", owner: "erp" },
   { recordType: "payment", label: "Payments once made: salary credits and remittances", owner: "erp" },
 ];

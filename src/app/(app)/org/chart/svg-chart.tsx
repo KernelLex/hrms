@@ -5,17 +5,27 @@ import { Minus, Plus, RotateCcw, Search } from "lucide-react";
 
 /**
  * The drawn org chart: boxes and hairlines, laid out from the same two
- * hierarchies the indented list walks — `parent_code` for departments,
- * `reports_to_code` for positions within one. A department whose positions
- * report across department lines still shows those positions where they sit,
+ * hierarchies the indented list walks — `parent_code` for the org tree,
+ * `reports_to_code` for positions within one unit. A unit whose positions
+ * report across unit lines still shows those positions where they sit,
  * exactly as the list does.
+ *
+ * Nothing here knows what a level is called. A box is dark when its level
+ * sits at the top of the hierarchy and plain otherwise, and the level's own
+ * name is what the box shows underneath.
  *
  * Search, collapse, pan and zoom are state kept only in this component; the
  * data itself is read once, server-side, and handed down as plain props.
  */
 
-export type ChartCompany = { code: string; name: string };
-export type ChartUnit = { code: string; name: string; parentCode: string | null; companyCode: string };
+export type ChartUnit = {
+  code: string;
+  name: string;
+  parentCode: string | null;
+  levelName: string;
+  /** 0 at the top of the hierarchy; drives nothing but the box's weight. */
+  levelRank: number;
+};
 export type ChartPosition = {
   code: string;
   title: string;
@@ -26,9 +36,12 @@ export type ChartPosition = {
 
 type Node = {
   id: string;
-  kind: "company" | "unit" | "position";
+  kind: "node" | "position";
   title: string;
   code: string;
+  /** The level's name, for a unit; the code, for a position. */
+  sub: string;
+  isTop?: boolean;
   isVacant?: boolean;
   crossReports?: string | null;
   children: Node[];
@@ -41,7 +54,7 @@ const V_GAP = 56;
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 2;
 
-function buildTree(companies: ChartCompany[], units: ChartUnit[], positions: ChartPosition[]): Node[] {
+function buildTree(units: ChartUnit[], positions: ChartPosition[]): Node[] {
   const childUnits = new Map<string | null, ChartUnit[]>();
   for (const u of units) {
     const key = u.parentCode ?? null;
@@ -71,6 +84,7 @@ function buildTree(companies: ChartCompany[], units: ChartUnit[], positions: Cha
         kind: "position" as const,
         title: p.title,
         code: p.code,
+        sub: p.code,
         isVacant: p.isVacant,
         crossReports: managerCode === null && p.reportsToCode ? (positionTitle.get(p.reportsToCode) ?? p.reportsToCode) : null,
         children: walk(p.code),
@@ -81,24 +95,16 @@ function buildTree(companies: ChartCompany[], units: ChartUnit[], positions: Cha
   function unitNodes(parent: string | null): Node[] {
     return (childUnits.get(parent) ?? []).map((u) => ({
       id: `unit:${u.code}`,
-      kind: "unit" as const,
+      kind: "node" as const,
       title: u.name,
       code: u.code,
+      sub: u.levelName,
+      isTop: u.levelRank === 0,
       children: [...positionNodes(u.code), ...unitNodes(u.code)],
     }));
   }
 
-  const companyOf = new Map(units.map((u) => [u.code, u.companyCode]));
-  const rootUnits = unitNodes(null);
-  return companies
-    .map((c) => ({
-      id: `co:${c.code}`,
-      kind: "company" as const,
-      title: c.name,
-      code: c.code,
-      children: rootUnits.filter((u) => companyOf.get(u.code) === c.code),
-    }))
-    .filter((c) => c.children.length > 0);
+  return unitNodes(null);
 }
 
 type Positioned = { node: Node; x: number; y: number; depth: number };
@@ -129,7 +135,7 @@ function layout(roots: Node[], collapsed: Set<string>): { positioned: Positioned
     return { slotX, self };
   }
 
-  // Roots (companies) laid out left to right, each its own little forest.
+  // Roots laid out left to right, each its own little forest.
   for (const r of roots) place(r, 0);
 
   const width = positioned.length ? Math.max(...positioned.map((p) => p.x)) + BOX_W : BOX_W;
@@ -156,8 +162,8 @@ function ancestorsOf(roots: Node[], targetId: string): string[] {
   return path;
 }
 
-export function OrgChartSvg({ companies, units, positions }: { companies: ChartCompany[]; units: ChartUnit[]; positions: ChartPosition[] }) {
-  const tree = React.useMemo(() => buildTree(companies, units, positions), [companies, units, positions]);
+export function OrgChartSvg({ units, positions }: { units: ChartUnit[]; positions: ChartPosition[] }) {
+  const tree = React.useMemo(() => buildTree(units, positions), [units, positions]);
   const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
   const [query, setQuery] = React.useState("");
   const [transform, setTransform] = React.useState({ x: 24, y: 24, scale: 0.85 });
@@ -254,7 +260,7 @@ export function OrgChartSvg({ companies, units, positions }: { companies: ChartC
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find a department or position"
+            placeholder="Find an org unit or position"
             className="h-9 w-full rounded-xl border border-control bg-surface pr-3 pl-9 text-sm text-ink placeholder:text-faint focus:border-ink focus:ring-4 focus:ring-ink/5 focus-visible:outline-none"
           />
         </div>
@@ -297,8 +303,7 @@ export function OrgChartSvg({ companies, units, positions }: { companies: ChartC
               return <path key={`${a.node.id}-${b.node.id}`} d={path} fill="none" stroke="var(--color-line)" strokeWidth={1} />;
             })}
             {positioned.map((p) => {
-              const isCompany = p.node.kind === "company";
-              const isUnit = p.node.kind === "unit";
+              const isTop = p.node.kind === "node" && p.node.isTop === true;
               const hasChildren = p.node.children.length > 0;
               // effectiveCollapsed, not collapsed: a node the search revealed
               // shows "expanded" even though the user's own choice is untouched.
@@ -314,18 +319,16 @@ export function OrgChartSvg({ companies, units, positions }: { companies: ChartC
                     width={BOX_W}
                     height={BOX_H}
                     rx={12}
-                    fill={isCompany ? "var(--color-ink)" : "var(--color-surface)"}
+                    fill={isTop ? "var(--color-ink)" : "var(--color-surface)"}
                     stroke={isMatch ? "var(--color-ink)" : "var(--color-line)"}
                     strokeWidth={isMatch ? 2 : 1}
                   />
-                  <text x={12} y={isUnit || isCompany ? BOX_H / 2 + 4 : 24} fontSize={13} fontWeight={500} fill={isCompany ? "var(--color-surface)" : "var(--color-ink)"}>
+                  <text x={12} y={24} fontSize={13} fontWeight={500} fill={isTop ? "var(--color-surface)" : "var(--color-ink)"}>
                     {truncate(p.node.title, 20)}
                   </text>
-                  {!isCompany && !isUnit ? (
-                    <text x={12} y={40} fontSize={11} fill="var(--color-muted)">
-                      {p.node.code}
-                    </text>
-                  ) : null}
+                  <text x={12} y={40} fontSize={11} fill={isTop ? "var(--color-line)" : "var(--color-muted)"}>
+                    {truncate(p.node.sub, 24)}
+                  </text>
                   {p.node.kind === "position" && p.node.isVacant ? (
                     <g transform="translate(12, 44)">
                       <rect width={52} height={16} rx={8} fill="var(--color-surface)" stroke="var(--color-ink)" strokeWidth={1} />
@@ -341,7 +344,7 @@ export function OrgChartSvg({ companies, units, positions }: { companies: ChartC
                   ) : null}
                   {hasChildren ? (
                     <g transform={`translate(${BOX_W - 20}, 8)`} style={{ cursor: "pointer" }} onClick={() => toggle(p.node.id)}>
-                      <circle r={9} cx={0} cy={0} fill={isCompany ? "var(--color-surface)" : "var(--color-canvas)"} stroke="var(--color-line)" strokeWidth={1} />
+                      <circle r={9} cx={0} cy={0} fill={isTop ? "var(--color-surface)" : "var(--color-canvas)"} stroke="var(--color-line)" strokeWidth={1} />
                       <text x={0} y={3.5} fontSize={12} textAnchor="middle" fill="var(--color-ink)" style={{ userSelect: "none" }}>
                         {isCollapsed ? "+" : "−"}
                       </text>

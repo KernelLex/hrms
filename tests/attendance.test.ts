@@ -7,7 +7,7 @@ import { calculateEmployee } from "@/lib/engines/payroll";
 import { decideApproval } from "@/app/actions/approvals";
 import { submitRegularisation } from "@/app/actions/attendance";
 import { createBareEmployee, form } from "./support/fixtures";
-import { createArea, hireForPayroll } from "./support/payroll-fixtures";
+import { createPayrollGroup, hireForPayroll } from "./support/payroll-fixtures";
 import { actAs, createPerson } from "./support/people";
 
 /**
@@ -145,8 +145,8 @@ describe("overtime", () => {
   it("reaches payroll as its own line, at double the hourly rate", async () => {
     const shift = await insertShift({ start: "09:00", end: "17:00", breakMinutes: 30, graceMinutes: 10 });
     const device = await insertDevice();
-    const area = await createArea();
-    const employeeId = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 60_000 }] });
+    const area = await createPayrollGroup();
+    const employeeId = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 60_000 }] });
 
     const now = new Date();
     const year = now.getUTCFullYear();

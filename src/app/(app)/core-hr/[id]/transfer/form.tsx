@@ -17,13 +17,11 @@ const INITIAL: ActionState = {};
 export function TransferForm({
   employeeId,
   companies,
-  areas,
   units,
   positions,
 }: {
   employeeId: number;
   companies: Option[];
-  areas: Option[];
   units: Option[];
   positions: PositionOption[];
 }) {
@@ -69,16 +67,6 @@ export function TransferForm({
                 {companies.map((c) => (
                   <option key={c.value} value={c.value}>
                     {c.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Personnel area" htmlFor="areaCode">
-              <Select id="areaCode" name="areaCode" defaultValue="">
-                <option value="">None</option>
-                {areas.map((a) => (
-                  <option key={a.value} value={a.value}>
-                    {a.label}
                   </option>
                 ))}
               </Select>

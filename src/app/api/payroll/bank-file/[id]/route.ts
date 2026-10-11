@@ -23,7 +23,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/payroll/bank-fi
   const [file, lines] = await client.batch(
     [
       {
-        sql: `SELECT f.id, f.payment_date, run.id AS run_id, run.run_type, p.year, p.month, p.area_code
+        sql: `SELECT f.id, f.payment_date, run.id AS run_id, run.run_type, p.year, p.month, p.node_code
               FROM py_bank_transfer_file f
               JOIN py_payroll_run run ON run.id = f.run_id
               JOIN py_payroll_period p ON p.id = run.period_id
@@ -61,7 +61,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/payroll/bank-fi
 
   logAccess(session, { subjectEmployeeId: null, resource: "bank file", resourceId: fileId });
 
-  const name = `neft-${period}-${f.area_code}-run${f.run_id}.csv`.toLowerCase();
+  const name = `neft-${period}-${f.node_code}-run${f.run_id}.csv`.toLowerCase();
   // No byte-order mark: bank upload portals are stricter than spreadsheets.
   return new Response(`${csv}\r\n`, {
     headers: {

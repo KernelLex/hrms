@@ -9,9 +9,9 @@ import type { RequisitionValues } from "../forms";
 export async function requisitionChoices(current: string | null) {
   const positions = (
     await rawClient().execute({
-      sql: `SELECT p.code, p.title, ou.name AS department, a.location
+      sql: `SELECT p.code, p.title, ou.name AS department, c.city AS location
             FROM om_position p JOIN om_org_unit ou ON ou.code = p.org_unit_code
-            LEFT JOIN om_personnel_area a ON a.code = ou.area_code
+            LEFT JOIN om_company c ON c.code = ou.company_code
             WHERE (p.is_vacant = 1 AND p.is_active = 1) OR p.code = ?
             ORDER BY p.code`,
       args: [current ?? ""],

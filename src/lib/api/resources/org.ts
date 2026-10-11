@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { InValue } from "@libsql/client";
 import { rawClient } from "@/lib/db";
+import { loadOrgTree, nearestAncestorWithRole } from "@/lib/org-tree";
 import { upsertCostCentre, upsertGlAccount } from "@/lib/services/records";
 import { externalIdsFor, listOwnership, ownerOf } from "@/lib/services/integration";
 import { OWNERSHIP_DEFAULTS } from "../ownership-defaults";
@@ -60,21 +61,33 @@ export function codeList<T extends { code: string }>(opts: {
 }
 
 const Company = z.object({ code: z.string(), name: z.string(), city: z.string().nullable(), country: z.string().nullable(), is_active: z.boolean() }).meta({ id: "Company" });
-const Area = z.object({ code: z.string(), company: z.string(), name: z.string(), location: z.string().nullable(), is_active: z.boolean() }).meta({ id: "PersonnelArea" });
+const OrgLevel = z
+  .object({
+    code: z.string(),
+    name: z.string(),
+    parent_level: z.string().nullable(),
+    rank: z.number().int(),
+    is_payroll_group: z.boolean(),
+    is_calendar_level: z.boolean(),
+    is_cost_centre: z.boolean(),
+    is_active: z.boolean(),
+  })
+  .meta({ id: "OrgLevel" });
 const Department = z
   .object({
     code: z.string(),
     name: z.string(),
     parent: z.string().nullable(),
     company: z.string().nullable(),
-    personnel_area: z.string().nullable(),
+    level: z.string(),
+    payroll_group: z.string().nullable(),
     valid_from: IsoDate,
     valid_to: IsoDate.nullable(),
     is_active: z.boolean(),
     external_ids: z.record(z.string(), z.string()),
   })
   .meta({ id: "Department" });
-const Job = z.object({ code: z.string(), title: z.string(), job_group: z.string().nullable(), is_active: z.boolean() }).meta({ id: "Job" });
+const Job = z.object({ code: z.string(), title: z.string(), job_family: z.string().nullable(), is_active: z.boolean() }).meta({ id: "Job" });
 const Position = z
   .object({
     code: z.string(),
@@ -125,6 +138,17 @@ export const GlAccount = z
   .object({ code: z.string(), name: z.string(), kind: z.enum(["expense", "liability", "asset"]), is_active: z.boolean(), updated_at: z.string() })
   .meta({ id: "GlAccount" });
 
+/**
+ * Cost centres are org units at a level HR flagged, so there is no table of
+ * them and no `updated_at` column — the change log is what "last changed"
+ * means, and it is what `updated_since` filters on.
+ */
+const COST_CENTRE_SELECT = `SELECT u.code, u.name, u.company_code, u.is_active,
+         coalesce((SELECT max(cl.at) FROM app_change_log cl
+                   WHERE cl.entity = 'om_org_unit' AND cl.entity_id = u.code), u.valid_from) AS updated_at
+  FROM om_org_unit u JOIN om_level_type t ON t.code = u.level_type_code
+  WHERE t.is_cost_centre = 1`;
+
 const costCentreOf = (r: Record<string, unknown>) => ({
   code: String(r.code),
   name: String(r.name),
@@ -169,21 +193,29 @@ export const orgEndpoints: Endpoint[] = [
     map: (r) => ({ code: String(r.code), name: String(r.name), city: s(r.city), country: s(r.country), is_active: bool(r.is_active) }),
   }),
   codeList({
-    path: "/personnel-areas",
-    summary: "List personnel areas",
-    description: "Locations within a company.",
-    schema: Area,
-    sql: (ctx) => {
-      const c = companyWhere(ctx, "company_code");
-      return { sql: `SELECT * FROM om_personnel_area WHERE ${c.sql}`, args: c.args };
-    },
-    map: (r) => ({ code: String(r.code), company: String(r.company_code), name: String(r.name), location: s(r.location), is_active: bool(r.is_active) }),
+    path: "/org-levels",
+    summary: "List the levels of the hierarchy",
+    description:
+      "What levels exist and what each one carries. The hierarchy's shape is HR's configuration, so read this before reading `/departments`: `level` on a department names a row here.",
+    schema: OrgLevel,
+    sql: () => ({ sql: "SELECT * FROM om_level_type", args: [] }),
+    map: (r) => ({
+      code: String(r.code),
+      name: String(r.name),
+      parent_level: s(r.parent_level_type_code),
+      rank: Number(r.rank),
+      is_payroll_group: bool(r.is_payroll_group),
+      is_calendar_level: bool(r.is_calendar_level),
+      is_cost_centre: bool(r.is_cost_centre),
+      is_active: bool(r.is_active),
+    }),
   }),
   {
     ...codeList({
       path: "/departments",
-      summary: "List departments",
-      description: "Org units, with their parent, so the tree can be rebuilt.",
+      summary: "List org units",
+      description:
+        "Every node of the hierarchy at every level, with its parent, so the tree can be rebuilt. `level` says what a node is; `payroll_group` is the nearest node above it that payroll runs against.",
       schema: Department,
       sql: (ctx) => {
         const c = companyWhere(ctx, "company_code");
@@ -194,7 +226,8 @@ export const orgEndpoints: Endpoint[] = [
         name: String(r.name),
         parent: s(r.parent_code),
         company: s(r.company_code),
-        personnel_area: s(r.area_code),
+        level: String(r.level_type_code),
+        payroll_group: s(r.payroll_group),
         valid_from: String(r.valid_from),
         valid_to: until(s(r.valid_to)),
         is_active: bool(r.is_active),
@@ -205,10 +238,13 @@ export const orgEndpoints: Endpoint[] = [
       const q = ctx.query as { limit?: number; cursor?: string; fields?: string };
       const limit = q.limit ?? DEFAULT_LIMIT;
       const c = companyWhere(ctx, "company_code");
-      const found = await rows(`SELECT * FROM om_org_unit WHERE ${c.sql} AND code > ? ORDER BY code LIMIT ?`, [
-        ...c.args,
-        q.cursor ? Buffer.from(q.cursor, "base64url").toString() : "",
-        limit + 1,
+      const [found, tree] = await Promise.all([
+        rows(`SELECT * FROM om_org_unit WHERE ${c.sql} AND code > ? ORDER BY code LIMIT ?`, [
+          ...c.args,
+          q.cursor ? Buffer.from(q.cursor, "base64url").toString() : "",
+          limit + 1,
+        ]),
+        loadOrgTree(),
       ]);
       const list = await withExternal(
         "department",
@@ -217,7 +253,8 @@ export const orgEndpoints: Endpoint[] = [
           name: String(r.name),
           parent: s(r.parent_code),
           company: s(r.company_code),
-          personnel_area: s(r.area_code),
+          level: String(r.level_type_code),
+          payroll_group: nearestAncestorWithRole(tree, String(r.code), "isPayrollGroup")?.code ?? null,
           valid_from: String(r.valid_from),
           valid_to: until(s(r.valid_to)),
           is_active: bool(r.is_active),
@@ -232,7 +269,7 @@ export const orgEndpoints: Endpoint[] = [
     summary: "List jobs",
     schema: Job,
     sql: () => ({ sql: "SELECT * FROM om_job", args: [] }),
-    map: (r) => ({ code: String(r.code), title: String(r.title), job_group: s(r.job_group), is_active: bool(r.is_active) }),
+    map: (r) => ({ code: String(r.code), title: String(r.title), job_family: s(r.job_family_code), is_active: bool(r.is_active) }),
   }),
   {
     method: "GET",
@@ -278,9 +315,10 @@ export const orgEndpoints: Endpoint[] = [
     ...codeList({
       path: "/cost-centres",
       summary: "List cost centres",
-      description: "Cost centres as the ERP last sent them.",
+      description:
+        "The org units whose level HR has flagged as a cost centre. Which level that is, is HR's configuration — see `/org-levels`.",
       schema: CostCentre,
-      sql: () => ({ sql: "SELECT * FROM om_cost_centre", args: [] }),
+      sql: () => ({ sql: COST_CENTRE_SELECT, args: [] }),
       map: costCentreOf,
     }),
     query: z.object({ ...PageQuery, updated_since: z.string().datetime({ offset: true }).optional() }),
@@ -288,7 +326,7 @@ export const orgEndpoints: Endpoint[] = [
       const q = ctx.query as { limit?: number; cursor?: string; fields?: string; updated_since?: string };
       const limit = q.limit ?? DEFAULT_LIMIT;
       const since = q.updated_since ? new Date(q.updated_since).toISOString() : "";
-      const found = await rows("SELECT * FROM om_cost_centre WHERE code > ? AND updated_at > ? ORDER BY code LIMIT ?", [
+      const found = await rows(`${COST_CENTRE_SELECT} AND u.code > ? AND updated_at > ? ORDER BY u.code LIMIT ?`, [
         q.cursor ? Buffer.from(q.cursor, "base64url").toString() : "",
         since,
         limit + 1,
@@ -303,7 +341,7 @@ export const orgEndpoints: Endpoint[] = [
     tag: "Organisation",
     summary: "Create or update a cost centre",
     description:
-      "Creates the cost centre, or replaces it. Cost centres are owned by the ERP by default; if HR has made the HRMS their owner, this is refused with `owned_by_hrms`. Send the ETag in If-Match to update safely: a stale write is refused with 412.",
+      "Creates the cost centre, or replaces it. Cost centres are owned by the HRMS by default, so this is refused with `owned_by_hrms` until HR makes the ERP their owner. Send the ETag in If-Match to update safely: a stale write is refused with 412.",
     scopes: ["org:write"],
     params: { code: "The cost centre's code, which is also its id." },
     body: z.object({ name: z.string().min(1), company: z.string().nullable().default(null), is_active: z.boolean().default(true) }),
@@ -313,12 +351,16 @@ export const orgEndpoints: Endpoint[] = [
     handler: async (ctx) => {
       await requireErpOwned("cost_centre");
       const code = ctx.params.code;
-      const [existing] = await rows("SELECT * FROM om_cost_centre WHERE code = ?", [code]);
+      const [existing] = await rows(`${COST_CENTRE_SELECT} AND u.code = ?`, [code]);
       checkIfMatch(ctx, existing ? etagOf(costCentreOf(existing)) : null);
       const b = ctx.body as { name: string; company: string | null; is_active: boolean };
       const saved = await upsertCostCentre(ctx.actor, code, { name: b.name, companyCode: b.company, isActive: b.is_active });
       if (!saved.ok) throw invalid(saved.error);
-      const rep = costCentreOf(saved.value.row);
+      // Read it back the way the listing does: `updated_at` comes from the
+      // change log, so building the rep any other way would hand out an ETag
+      // that the next read disagrees with.
+      const [written] = await rows(`${COST_CENTRE_SELECT} AND u.code = ?`, [code]);
+      const rep = costCentreOf(written);
       return { status: saved.value.created ? 201 : 200, body: rep, headers: { ETag: etagOf(rep) } };
     },
   },

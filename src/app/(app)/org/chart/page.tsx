@@ -1,8 +1,8 @@
-import { asc } from "drizzle-orm";
-import { Building2, Network, User, Waypoints } from "lucide-react";
+import { asc, eq } from "drizzle-orm";
+import { Network, User, Waypoints } from "lucide-react";
 import { db } from "@/lib/db";
-import { omCompany, omOrgUnit, omPosition } from "@/db/schema";
-import { Card, CardHeader, PageHeader, EmptyState, Badge } from "@/components/ui";
+import { omLevelType, omOrgUnit, omPosition } from "@/db/schema";
+import { Card, PageHeader, EmptyState, Badge } from "@/components/ui";
 import { OrgChartSvg } from "./svg-chart";
 import { ChartViewToggle } from "./view-toggle";
 
@@ -10,12 +10,15 @@ import { ChartViewToggle } from "./view-toggle";
  * OM-08 — the org chart.
  *
  * Derived entirely from the two self-referencing hierarchies:
- * `om_org_unit.parent_code` for the department tree, and
- * `om_position.reports_to_code` for the reporting line inside each department.
+ * `om_org_unit.parent_code` for the org tree, and
+ * `om_position.reports_to_code` for the reporting line inside each unit.
  *
- * A position whose manager sits in a different department is rendered at the
- * top of its own department rather than being hidden — otherwise a cross-team
- * reporting line would make a position disappear from the chart.
+ * One tree covers every level, so this screen never asks what a unit is — it
+ * shows each unit's level name beside it and lets the tree speak for itself.
+ *
+ * A position whose manager sits in a different unit is rendered at the top of
+ * its own unit rather than being hidden — otherwise a cross-team reporting
+ * line would make a position disappear from the chart.
  *
  * Two views of the same read: boxes and lines, drawn client-side with pan,
  * zoom, search and collapse; and this indented list, which stays the
@@ -26,6 +29,7 @@ import { ChartViewToggle } from "./view-toggle";
 
 type Unit = typeof omOrgUnit.$inferSelect;
 type Position = typeof omPosition.$inferSelect;
+type Level = typeof omLevelType.$inferSelect;
 
 function Row({
   depth,
@@ -59,11 +63,13 @@ function Row({
 }
 
 export default async function OrgChartPage() {
-  const [companies, units, positions] = await Promise.all([
-    db.select().from(omCompany).orderBy(asc(omCompany.code)),
-    db.select().from(omOrgUnit).orderBy(asc(omOrgUnit.code)),
+  const [levels, units, positions] = await Promise.all([
+    db.select().from(omLevelType).orderBy(asc(omLevelType.rank)),
+    db.select().from(omOrgUnit).where(eq(omOrgUnit.isActive, true)).orderBy(asc(omOrgUnit.code)),
     db.select().from(omPosition).orderBy(asc(omPosition.code)),
   ]);
+  const level = new Map<string, Level>(levels.map((l) => [l.code, l]));
+  const levelOf = (u: Unit) => level.get(u.levelTypeCode);
 
   const childUnits = new Map<string | null, Unit[]>();
   for (const u of units) {
@@ -121,7 +127,14 @@ export default async function OrgChartPage() {
 
   function renderUnits(parent: string | null, depth: number): React.ReactNode[] {
     return (childUnits.get(parent) ?? []).flatMap((u) => [
-      <Row key={u.code} depth={depth} icon={<Network />} name={u.name} code={u.code} />,
+      <Row
+        key={u.code}
+        depth={depth}
+        icon={<Network />}
+        name={u.name}
+        code={u.code}
+        meta={levelOf(u)?.name}
+      />,
       ...renderPositions(u.code, depth + 1),
       ...renderUnits(u.code, depth + 1),
     ]);
@@ -133,52 +146,33 @@ export default async function OrgChartPage() {
     <>
       <PageHeader
         title="Org chart"
-        subtitle="Built by walking the department tree and the reporting line on each position. Read only — change the structure on the other tabs."
+        subtitle="Built by walking the org tree and the reporting line on each position. Read only — change the structure on the other tabs."
       />
 
       {!hasAnything ? (
         <Card>
           <EmptyState icon={<Waypoints />} title="Nothing to draw yet">
-            Add a department and a position, and the chart appears here.
+            Add an org unit and a position, and the chart appears here.
           </EmptyState>
         </Card>
       ) : (
         <ChartViewToggle
           chart={
             <OrgChartSvg
-              companies={companies.map((c) => ({ code: c.code, name: c.name }))}
-              units={units.map((u) => ({ code: u.code, name: u.name, parentCode: u.parentCode, companyCode: u.companyCode }))}
+              units={units.map((u) => ({
+                code: u.code,
+                name: u.name,
+                parentCode: u.parentCode,
+                levelName: levelOf(u)?.name ?? u.levelTypeCode,
+                levelRank: levelOf(u)?.rank ?? 0,
+              }))}
               positions={positions.map((p) => ({ code: p.code, title: p.title, orgUnitCode: p.orgUnitCode, reportsToCode: p.reportsToCode, isVacant: p.isVacant }))}
             />
           }
           list={
-            <div className="flex flex-col gap-6">
-              {companies.map((c) => {
-                const roots = (childUnits.get(null) ?? []).filter(
-                  (u) => u.companyCode === c.code,
-                );
-                if (roots.length === 0) return null;
-
-                return (
-                  <Card key={c.code}>
-                    <CardHeader title={c.name} description={c.code} />
-                    <div className="px-3 pb-4">
-                      {roots.flatMap((u) => [
-                        <Row
-                          key={u.code}
-                          depth={0}
-                          icon={<Building2 />}
-                          name={u.name}
-                          code={u.code}
-                        />,
-                        ...renderPositions(u.code, 1),
-                        ...renderUnits(u.code, 1),
-                      ])}
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
+            <Card>
+              <div className="px-3 py-4">{renderUnits(null, 0)}</div>
+            </Card>
           }
         />
       )}

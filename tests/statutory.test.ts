@@ -5,7 +5,7 @@ import { professionalTaxFromSlabs, generateEcrText, type PtSlabRow } from "@/lib
 import { postToLedger } from "@/app/actions/payroll";
 import { saveInfotypeSlice } from "@/app/actions/core-hr";
 import { form, createBareEmployee } from "./support/fixtures";
-import { createArea, createPeriod, hireForPayroll, storedResult } from "./support/payroll-fixtures";
+import { createPayrollGroup, createPeriod, hireForPayroll, storedResult } from "./support/payroll-fixtures";
 
 /**
  * PF, ESI, professional tax, the labour welfare fund, employer contributions
@@ -32,9 +32,9 @@ describe("CTC breakdown", () => {
 
 describe("ESI", () => {
   it("continues through a raise until the contribution period ends", async () => {
-    const area = await createArea();
+    const area = await createPayrollGroup();
     const employee = await hireForPayroll({
-      area,
+      node: area,
       hireDate: "2020-01-01",
       pay: [
         { from: "2020-01-01", to: "2026-08-31", amountRupees: 14_000 }, // gross 21,000 — exactly the ceiling
@@ -58,8 +58,8 @@ describe("ESI", () => {
   });
 
   it("never enrols someone whose wages start the period over the ceiling", async () => {
-    const area = await createArea();
-    const employee = await hireForPayroll({ area, hireDate: "2026-09-01", pay: [{ from: "2026-09-01", amountRupees: 20_000 }] });
+    const area = await createPayrollGroup();
+    const employee = await hireForPayroll({ node: area, hireDate: "2026-09-01", pay: [{ from: "2026-09-01", amountRupees: 20_000 }] });
     const september = await createPeriod(area, 2026, 9);
     const run = await runPayroll({ periodId: september, runBy: "test" });
     const result = await storedResult(run.runId, employee);
@@ -89,8 +89,8 @@ describe("professional tax", () => {
 
 describe("employer contributions", () => {
   it("reach the payslip as their own line, never net pay", async () => {
-    const area = await createArea();
-    const employee = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 80_000 }] });
+    const area = await createPayrollGroup();
+    const employee = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 80_000 }] });
     const period = await createPeriod(area, 2026, 5);
     const run = await runPayroll({ periodId: period, runBy: "test" });
     const result = await storedResult(run.runId, employee);
@@ -113,8 +113,8 @@ describe("employer contributions", () => {
   });
 
   it("post to the ledger as a debit to expense and a credit to a payable, balanced", async () => {
-    const area = await createArea();
-    await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 80_000 }] });
+    const area = await createPayrollGroup();
+    await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 80_000 }] });
     const period = await createPeriod(area, 2026, 6);
     const run = await runPayroll({ periodId: period, runBy: "test" });
 
@@ -138,8 +138,8 @@ describe("employer contributions", () => {
 
 describe("cost splits", () => {
   it("posts a 60/40 split to two cost centres", async () => {
-    const area = await createArea();
-    const employee = await hireForPayroll({ area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 50_000 }] });
+    const area = await createPayrollGroup();
+    const employee = await hireForPayroll({ node: area, hireDate: "2020-01-01", pay: [{ from: "2020-01-01", amountRupees: 50_000 }] });
     await rawClient().execute({
       sql: `INSERT INTO py_cost_split (employee_id, cost_centre, percent_basis_points, valid_from, valid_to, created_by, created_at)
             VALUES (?, 'CC-A', 6000, '2020-01-01', '9999-12-31', 'test', ?), (?, 'CC-B', 4000, '2020-01-01', '9999-12-31', 'test', ?)`,

@@ -42,8 +42,8 @@ const ROLES = [
 /** Static routes. Dynamic ones are discovered from links on list pages. */
 const ROUTES = [
   "/", "/me", "/reports", "/time/calendar",
-  "/org", "/org/companies", "/org/personnel-areas", "/org/sub-areas", "/org/jobs",
-  "/org/departments", "/org/positions", "/org/reporting-lines", "/org/chart",
+  "/org", "/org/level-types", "/org/companies", "/org/departments", "/org/job-families",
+  "/org/jobs", "/org/positions", "/org/reporting-lines", "/org/chart",
   "/org/imports", "/org/imports/new", "/org/imports/1", "/headcount-requests", "/exits", "/exit",
   "/core-hr", "/core-hr/hire", "/core-hr/mass-update", "/core-hr/probation", "/core-hr/letter-templates",
   "/core-hr/2/career", "/core-hr/2/transfer", "/core-hr/2/promote", "/core-hr/2/ctc", "/core-hr/2/0011", "/tasks",

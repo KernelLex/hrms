@@ -3,7 +3,7 @@
  *
  * Every Server Function, route and page checks a permission, never a role.
  * Roles are rows HR edits on the Roles and permissions screen: a set of these
- * permissions, and optionally a limit to some companies or personnel areas.
+ * permissions, and optionally a limit to some companies or parts of the org tree.
  * The three built-in roles hold exactly the rights they had before
  * permissions existed, so nothing changed until HR changes it.
  *

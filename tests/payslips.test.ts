@@ -11,7 +11,7 @@ import { resendPayslip, setPeriodEmail, setPeriodStatus } from "@/app/actions/pa
 import { GET as payslipPdf } from "@/app/api/payroll/payslip/[id]/pdf/route";
 import { form } from "./support/fixtures";
 import { actAs } from "./support/people";
-import { createArea, createPeriod, hireForPayroll, postPeriod } from "./support/payroll-fixtures";
+import { createPayrollGroup, createPeriod, hireForPayroll, postPeriod } from "./support/payroll-fixtures";
 
 /**
  * Payslips: the year to date, the PDF, and one email per person when a
@@ -23,7 +23,7 @@ afterEach(() => actAs(null));
 const rupees = (n: number) => n * 100;
 
 async function person(area: string, opts: { email?: string; dob?: string; first?: string } = {}) {
-  const id = await hireForPayroll({ area, hireDate: "2025-01-01", pay: [{ from: "2025-01-01", amountRupees: 60_000 }] });
+  const id = await hireForPayroll({ node: area, hireDate: "2025-01-01", pay: [{ from: "2025-01-01", amountRupees: 60_000 }] });
   const now = new Date().toISOString();
   await rawClient().execute({
     sql: "UPDATE pa_it0002_personal_data SET first_name = ?, date_of_birth = ? WHERE employee_id = ?",
@@ -54,7 +54,7 @@ async function resultOf(runId: number, employeeId: number): Promise<number> {
 
 describe("the year to date", () => {
   it("is the sum of that financial year's payslips, and nothing before April", async () => {
-    const area = await createArea();
+    const area = await createPayrollGroup();
     const id = await person(area);
     const months: { runId: number; month: number; year: number }[] = [];
     for (const [year, month] of [[2026, 3], [2026, 4], [2026, 5], [2026, 6]] as const) {
@@ -104,7 +104,7 @@ describe("the year to date", () => {
 
 describe("posting a month", () => {
   it("emails each person their payslip once, as a PDF only their password opens", async () => {
-    const area = await createArea();
+    const area = await createPayrollGroup();
     const withEmail = await person(area, { email: "asha@example.test", first: "Asha", dob: "1994-02-09" });
     const noEmail = await person(area, { first: "Ravi" });
     const periodId = await createPeriod(area, 2026, 8);
@@ -150,7 +150,7 @@ describe("posting a month", () => {
   });
 
   it("emails nothing when the period says not to", async () => {
-    const area = await createArea();
+    const area = await createPayrollGroup();
     await person(area, { email: "noemail@example.test" });
     const periodId = await createPeriod(area, 2026, 9);
     await runPayroll({ periodId, runBy: "test" });
@@ -164,7 +164,7 @@ describe("posting a month", () => {
 
 describe("the PDF download", () => {
   it("is for the employee once published, and for payroll", async () => {
-    const area = await createArea();
+    const area = await createPayrollGroup();
     const id = await person(area);
     const periodId = await createPeriod(area, 2026, 10);
     const run = await runPayroll({ periodId, runBy: "test" });

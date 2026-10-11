@@ -5,8 +5,13 @@ import { rawClient } from "@/lib/db";
 import { todayInIndia } from "@/lib/dates";
 import { hire, updateEmployeeFields, EMPLOYEE_FIELDS, type EmployeeField } from "@/lib/services/people";
 import { externalIdsFor, findByExternalId, ownerOf, setExternalId } from "@/lib/services/integration";
+import { loadOrgTree, nearestAncestorWithRole } from "@/lib/org-tree";
 import { IsoDate, Money, DEFAULT_LIMIT, PageQuery, decodeCursor, etagOf, money, page, pageSchema, pickFields, toPaiseExact, until } from "../format";
 import { ApiError, invalid, notFound } from "../problem";
+
+/** One wording for both writers, so an old integration gets the same answer. */
+const NO_PERSONNEL_AREA =
+  "personnel_area is derived from the department now and cannot be sent. Set the department instead; read personnel_area back from the employee.";
 import { checkIfMatch, logApiAccess, type ApiContext, type Endpoint } from "../router";
 
 /**
@@ -35,7 +40,10 @@ export const EmployeeSchema = z
     org_assignment: z
       .object({
         company: z.string().nullable(),
-        personnel_area: z.string().nullable(),
+        personnel_area: z
+          .string()
+          .nullable()
+          .meta({ description: "Derived from the department: the nearest org unit above it that payroll runs against. Read-only." }),
         department: Department.nullable(),
         position: Position.nullable(),
         cost_centre: z.string().nullable(),
@@ -70,11 +78,11 @@ const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 export async function loadEmployees(ids: number[], asOf: string, opts: { pay: boolean; bank: boolean }): Promise<EmployeeRep[]> {
   if (ids.length === 0) return [];
   const marks = ids.map(() => "?").join(", ");
-  const [base, extIds, changed] = await Promise.all([
+  const [base, extIds, tree, changed] = await Promise.all([
     rows(
       `SELECT e.id, e.employee_number, e.employment_status, e.hire_date, e.termination_date,
               p.first_name, p.last_name, p.date_of_birth, p.gender,
-              o.company_code, o.area_code, o.org_unit_code, ou.name AS org_unit_name, o.position_code,
+              o.company_code, o.org_unit_code, ou.name AS org_unit_name, o.position_code,
               pos.title AS position_title, o.cost_center, o.valid_from AS o_from, o.valid_to AS o_to,
               w.work_schedule_code, w.weekly_hours,
               bp.amount_paise, bp.currency, bp.pay_scale_group, bp.valid_from AS bp_from, bp.valid_to AS bp_to,
@@ -94,6 +102,7 @@ export async function loadEmployees(ids: number[], asOf: string, opts: { pay: bo
       [asOf, ...ids],
     ),
     externalIdsFor("employee", ids),
+    loadOrgTree(),
     rows(
       `SELECT subject_employee_id AS id, MAX(at) AS at FROM app_change_log
        WHERE subject_employee_id IN (${marks}) GROUP BY subject_employee_id`,
@@ -117,7 +126,7 @@ export async function loadEmployees(ids: number[], asOf: string, opts: { pay: bo
           ? null
           : {
               company: s(r.company_code),
-              personnel_area: s(r.area_code),
+              personnel_area: nearestAncestorWithRole(tree, s(r.org_unit_code), "isPayrollGroup")?.code ?? null,
               department: r.org_unit_code === null ? null : { code: String(r.org_unit_code), name: s(r.org_unit_name) },
               position: r.position_code === null ? null : { code: String(r.position_code), title: s(r.position_title) },
               cost_centre: s(r.cost_center),
@@ -193,7 +202,7 @@ const HISTORY = {
   action: { table: "pa_it0000_action", columns: ["action_type", "reason"], scope: null },
   org_assignment: {
     table: "pa_it0001_org_assignment",
-    columns: ["company_code", "area_code", "sub_area_code", "org_unit_code", "position_code", "cost_center"],
+    columns: ["company_code", "org_unit_code", "position_code", "cost_center"],
     scope: null,
   },
   personal_data: { table: "pa_it0002_personal_data", columns: ["first_name", "last_name", "date_of_birth", "gender", "marital_status", "nationality"], scope: null },
@@ -221,7 +230,11 @@ const HireBody = z
     action_type: z.string().default("Hire"),
     reason: z.string().nullable().default(null),
     company: z.string().min(1),
-    personnel_area: z.string().nullable().default(null),
+    personnel_area: z
+      .string()
+      .nullable()
+      .default(null)
+      .meta({ description: "Derived from the department now. Sending it is refused, so an old caller is told rather than ignored." }),
     department: z.string().min(1),
     position: z.string().min(1),
     cost_centre: z.string().nullable().default(null),
@@ -418,7 +431,6 @@ export const employeeEndpoints: Endpoint[] = [
       body: {
         effective_date: "2026-10-01",
         company: "CO01",
-        personnel_area: "PA01",
         department: "OU0002",
         position: "PS0004",
         cost_centre: "CC-IT-01",
@@ -430,6 +442,7 @@ export const employeeEndpoints: Endpoint[] = [
     },
     handler: async (ctx) => {
       const b = ctx.body as z.infer<typeof HireBody>;
+      if (b.personnel_area !== null) throw invalid(NO_PERSONNEL_AREA);
       if (ctx.client.companies && !ctx.client.companies.includes(b.company)) {
         throw invalid(`This client may not hire into ${b.company}.`);
       }
@@ -440,7 +453,6 @@ export const employeeEndpoints: Endpoint[] = [
           effectiveDate: b.effective_date,
           reason: b.reason,
           companyCode: b.company,
-          areaCode: b.personnel_area,
           orgUnitCode: b.department,
           positionCode: b.position,
           costCenter: b.cost_centre,

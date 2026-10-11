@@ -53,7 +53,6 @@ async function hireInto(positionCode: string, amountPaise = 5_000_000): Promise<
       effectiveDate: "2024-01-01",
       reason: null,
       companyCode: "CO01",
-      areaCode: "PA01",
       orgUnitCode: "OU0002",
       positionCode,
       costCenter: null,

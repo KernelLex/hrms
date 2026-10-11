@@ -89,8 +89,8 @@ export async function seedTime(db: Db): Promise<string[]> {
 
   // The head office sits in Karnataka; the factory, for the demo, in
   // Maharashtra — enough for payroll and quotas to show two real calendars.
-  await db.update(s.omPersonnelArea).set({ calendarCode: "KARNATAKA" }).where(eq(s.omPersonnelArea.code, "PA01"));
-  await db.update(s.omPersonnelArea).set({ calendarCode: "MAHARASHTRA" }).where(eq(s.omPersonnelArea.code, "PA02"));
+  await db.update(s.omOrgUnit).set({ calendarCode: "KARNATAKA" }).where(eq(s.omOrgUnit.code, "PA01"));
+  await db.update(s.omOrgUnit).set({ calendarCode: "MAHARASHTRA" }).where(eq(s.omOrgUnit.code, "PA02"));
 
   // One policy per quota type, open to every grade and area, covering the
   // same entitlements the old flat grant used — but earned through the

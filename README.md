@@ -64,11 +64,23 @@ The modules below are not separate tools bolted together — the same hire, the 
 
 ### Organisation
 
-- Companies, locations, departments, jobs and positions, each with the dates it is valid for, so the structure has a history.
-- Reporting lines between positions, and an **org chart** drawn as boxes and lines you can search, collapse, pan and zoom — with a plain list alongside it for anyone who needs one.
+- **You decide the shape of your own hierarchy.** Set up the levels your group actually uses — organisation, business vertical, business centre, department, cost centre, or whatever you call them — and build the tree from them. Nothing is hard-coded: add a level, rename one, or nest them differently, and the whole system follows.
+- Each level carries what it is responsible for, and you choose which: **payroll runs against this level**, **a holiday calendar attaches here**, **cost is booked here**. Everything beneath a level inherits what it carries, so a department put under a business centre automatically picks up that centre's holidays and payroll group — set it in one place, not on every department.
+- Several companies under one group: each legal entity sits under a group node, and shares the levels, jobs and job families above it.
+- Companies, org units at every level, job families, jobs and positions, each with the dates it is valid for, so the structure has a history.
+- Reporting lines between positions, and an **org chart** drawn as boxes and lines you can search, collapse, pan and zoom — each box labelled with its own level — with a plain list alongside it for anyone who needs one.
 - Vacant positions, ready for hiring.
 - **Headcount requests**: a manager asks for a new position, with its budget; approved by their manager, HR and finance, it opens vacant and ready to hire against.
 - **Bulk import**: load positions, employees with their history, and opening balances — what someone earned, paid in tax and had left in leave before switching to this system — from a spreadsheet. Every row is checked before anything is written, and importing the same file twice changes nothing.
+
+**How the org structure is set up:**
+1. Decide your levels under **Org levels** — their names, what may sit under what, and which of them payroll, holiday calendars and cost booking attach to.
+2. Add your companies, and put each under the group node it belongs to.
+3. Build the tree under **Org units**: one screen for every level, because every node is the same kind of record. The system only lets you place a unit where its level allows.
+4. Put a holiday calendar on each unit at your calendar level; everything beneath it inherits those holidays.
+5. Open positions against the units that need them, and the org chart draws itself.
+
+If you reorganise later — a new region, a vertical split in two — you move units in the tree and everything that hangs off them follows: holidays, payroll grouping, cost booking and who each role can see.
 
 **How a headcount request flows:**
 1. A manager asks for a new position and gives it a budget.
@@ -351,7 +363,7 @@ The modules below are not separate tools bolted together — the same hire, the 
 These are the pieces we cannot decide for you. Each one is a decision or a credential, not a long build.
 
 - **Who signs in, and how.** There is no screen for creating users yet, on purpose: if your ERP is to be the single place people are created and given access, then the two systems should share one source of identity rather than keep two. Tell us whether you want **single sign-on from the ERP** — we would take its tokens and map its groups to roles here — or users created in the HRMS and kept in step through the API. That answer decides what gets built.
-- **One HRMS or one per company.** Today it runs as one organisation, with companies, locations and departments inside it. If you want a company's own address — `company1.hr.example`, `company2.hr.example` — each pointing at its own data, say so: it changes how the data is separated and how sign-in works, and is much cheaper to decide now than later.
+- **One HRMS or one per company.** Today it runs as one organisation, with companies and the whole org tree inside it. If you want a company's own address — `company1.hr.example`, `company2.hr.example` — each pointing at its own data, say so: it changes how the data is separated and how sign-in works, and is much cheaper to decide now than later.
 - **Where the MySQL database should live.** Turso is a prototype convenience; production is MySQL. We need to know whether that is a MySQL instance of our own, or HR data inside **your ERP's own MySQL database** — and, if it is yours, the host, version and who administers it.
 - **Email.** Choose a provider and give us an account and a sending domain, and every email already written starts going out.
 - **Document storage.** Cloudflare R2 enabled on your account, and documents go there instead of the database.

@@ -1,7 +1,7 @@
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { requirePage } from "@/lib/access";
 import { db } from "@/lib/db";
-import { ptLeavePolicy, ptQuotaType, omPersonnelArea } from "@/db/schema";
+import { ptLeavePolicy, ptQuotaType, omOrgUnit, omLevelType } from "@/db/schema";
 import { unitsToDays, formatDays } from "@/lib/engines/quota";
 import { MasterScreen, type Column, type FieldDef } from "@/components/master-screen";
 import { saveLeavePolicy, deleteLeavePolicy } from "@/app/actions/time";
@@ -24,13 +24,18 @@ const COLUMNS: Column[] = [
 export default async function LeavePoliciesPage() {
   await requirePage(["time.manage"], "/time/my-leave");
 
-  const [policies, quotaTypes, areas] = await Promise.all([
+  const [policies, quotaTypes, nodes] = await Promise.all([
     db.select().from(ptLeavePolicy).orderBy(asc(ptLeavePolicy.code)),
     db.select().from(ptQuotaType).orderBy(asc(ptQuotaType.code)),
-    db.select().from(omPersonnelArea).orderBy(asc(omPersonnelArea.name)),
+    db
+      .select({ code: omOrgUnit.code, name: omOrgUnit.name, levelName: omLevelType.name })
+      .from(omOrgUnit)
+      .innerJoin(omLevelType, eq(omLevelType.code, omOrgUnit.levelTypeCode))
+      .where(eq(omOrgUnit.isActive, true))
+      .orderBy(asc(omLevelType.rank), asc(omOrgUnit.code)),
   ]);
   const quotaTypeName = new Map(quotaTypes.map((t) => [t.code, t.name]));
-  const areaName = new Map(areas.map((a) => [a.code, a.name]));
+  const nodeName = new Map(nodes.map((a) => [a.code, a.name]));
 
   const FIELDS: FieldDef[] = [
     { kind: "text", name: "code", label: "Code", required: true, placeholder: "ANNUAL-L4", uppercase: true },
@@ -45,11 +50,11 @@ export default async function LeavePoliciesPage() {
     { kind: "text", name: "appliesToGrade", label: "Grade", hint: "Leave blank for every grade." },
     {
       kind: "select",
-      name: "appliesToAreaCode",
-      label: "Personnel area",
-      emptyLabel: "Every area",
-      options: areas.map((a) => ({ value: a.code, label: a.name })),
-      hint: "Leave unset for every area.",
+      name: "appliesToNodeCode",
+      label: "Org unit",
+      emptyLabel: "Everywhere",
+      options: nodes.map((a) => ({ value: a.code, label: `${a.name} (${a.levelName})` })),
+      hint: "Applies to this unit and everything beneath it. The closest match wins, so a department policy beats a company-wide one.",
     },
     { kind: "text", name: "entitlementDays", label: "Entitlement (days/year)", required: true, placeholder: "18" },
     {
@@ -91,7 +96,7 @@ export default async function LeavePoliciesPage() {
             code: <span className="font-medium text-ink">{p.code}</span>,
             name: p.name,
             quotaType: quotaTypeName.get(p.quotaTypeCode) ?? p.quotaTypeCode,
-            scope: [p.appliesToGrade, p.appliesToAreaCode ? areaName.get(p.appliesToAreaCode) ?? p.appliesToAreaCode : null]
+            scope: [p.appliesToGrade, p.appliesToNodeCode ? nodeName.get(p.appliesToNodeCode) ?? p.appliesToNodeCode : null]
               .filter(Boolean)
               .join(" · ") || "Everyone",
             entitlement: <span className="tabular">{formatDays(p.entitlementHalfDaysPerYear)}</span>,
@@ -105,7 +110,7 @@ export default async function LeavePoliciesPage() {
             name: p.name,
             quotaTypeCode: p.quotaTypeCode,
             appliesToGrade: p.appliesToGrade ?? "",
-            appliesToAreaCode: p.appliesToAreaCode ?? "",
+            appliesToNodeCode: p.appliesToNodeCode ?? "",
             entitlementDays: String(unitsToDays(p.entitlementHalfDaysPerYear)),
             accrualFrequency: p.accrualFrequency,
             proRataForJoiners: p.proRataForJoiners,

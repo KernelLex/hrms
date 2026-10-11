@@ -4,6 +4,7 @@ import { and, eq, gte, lte } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
 import { ptHoliday, ptAbsenceQuota, ptQuotaType, ptAbsenceType, now } from "@/db/schema";
 import { changeStatement, type Actor } from "@/lib/change-log";
+import { loadOrgTree, ancestryOf, nearestAncestorWithRole, type OrgTree } from "@/lib/org-tree";
 import type { LedgerEntryType } from "@/db/schema";
 
 /**
@@ -71,17 +72,28 @@ export function calendarDaysBetween(from: string, to: string): number {
 
 const DEFAULT_CALENDAR = "NATIONAL";
 
-/** The holiday calendar an employee's current (or as-of-date) area sits on. */
+/**
+ * The holiday calendar an employee follows: the nearest calendar level at or
+ * above the org unit they are assigned to on that date.
+ */
 export async function calendarFor(employeeId: number, asOf?: string): Promise<string> {
   const date = asOf ?? new Date().toISOString().slice(0, 10);
   const r = await rawClient().execute({
-    sql: `SELECT a.calendar_code FROM pa_it0001_org_assignment o
-          JOIN om_personnel_area a ON a.code = o.area_code
+    sql: `SELECT o.org_unit_code FROM pa_it0001_org_assignment o
           WHERE o.employee_id = ? AND o.valid_from <= ? AND o.valid_to >= ?
           ORDER BY o.valid_from DESC LIMIT 1`,
     args: [employeeId, date, date],
   });
-  return r.rows[0] ? String(r.rows[0].calendar_code) : DEFAULT_CALENDAR;
+  const orgUnitCode = r.rows[0] ? String(r.rows[0].org_unit_code) : null;
+  if (!orgUnitCode) return DEFAULT_CALENDAR;
+  const tree = await loadOrgTree();
+  return calendarForOrgUnit(tree, orgUnitCode);
+}
+
+/** The same resolution against a tree already in hand, for batch callers. */
+export function calendarForOrgUnit(tree: OrgTree, orgUnitCode: string | null): string {
+  const node = nearestAncestorWithRole(tree, orgUnitCode, "isCalendarLevel");
+  return node?.calendarCode ?? DEFAULT_CALENDAR;
 }
 
 /**
@@ -363,7 +375,7 @@ export type LeavePolicyRow = {
   name: string;
   quotaTypeCode: string;
   appliesToGrade: string | null;
-  appliesToAreaCode: string | null;
+  appliesToNodeCode: string | null;
   entitlementHalfDaysPerYear: number;
   accrualFrequency: "Monthly" | "Yearly";
   proRataForJoiners: boolean;
@@ -381,7 +393,7 @@ export function rowToPolicy(r: Record<string, unknown>): LeavePolicyRow {
     name: String(r.name),
     quotaTypeCode: String(r.quota_type_code),
     appliesToGrade: r.applies_to_grade === null ? null : String(r.applies_to_grade),
-    appliesToAreaCode: r.applies_to_area_code === null ? null : String(r.applies_to_area_code),
+    appliesToNodeCode: r.applies_to_node_code === null ? null : String(r.applies_to_node_code),
     entitlementHalfDaysPerYear: Number(r.entitlement_half_days_per_year),
     accrualFrequency: String(r.accrual_frequency) as "Monthly" | "Yearly",
     proRataForJoiners: Number(r.pro_rata_for_joiners) === 1,
@@ -396,16 +408,25 @@ export function rowToPolicy(r: Record<string, unknown>): LeavePolicyRow {
 
 /**
  * Among policies already narrowed to one quota type, the one that governs a
- * grade and area: the one whose grade and area both match beats one that
- * matches on area alone, which beats one that applies to everyone. A policy
- * naming a grade or area the employee does not have never matches. Pure and
- * synchronous, so a batch job can resolve hundreds of employees against
- * facts it already read, rather than one query per employee.
+ * grade and a place in the hierarchy: naming both beats naming the place
+ * alone, which beats applying to everyone. A policy naming a grade the
+ * employee does not have, or a node they do not sit under, never matches.
+ *
+ * `ancestry` is the employee's own org unit first, then each parent upward,
+ * so a policy pinned to their department beats one pinned to the company
+ * above it — distance decides, not merely whether a node was named. Pure and
+ * synchronous, so a batch job can resolve hundreds of employees against facts
+ * it already read, rather than one query per employee.
  */
-export function matchPolicy(candidates: LeavePolicyRow[], grade: string | null, areaCode: string | null): LeavePolicyRow | null {
-  const matching = candidates.filter((p) => (p.appliesToGrade === null || p.appliesToGrade === grade) && (p.appliesToAreaCode === null || p.appliesToAreaCode === areaCode));
+export function matchPolicy(candidates: LeavePolicyRow[], grade: string | null, ancestry: string[]): LeavePolicyRow | null {
+  const depthOf = (node: string | null) => (node === null ? -1 : ancestry.indexOf(node));
+  const matching = candidates.filter(
+    (p) => (p.appliesToGrade === null || p.appliesToGrade === grade) && (p.appliesToNodeCode === null || depthOf(p.appliesToNodeCode) !== -1),
+  );
   if (matching.length === 0) return null;
-  const specificity = (p: LeavePolicyRow) => (p.appliesToGrade ? 1 : 0) + (p.appliesToAreaCode ? 1 : 0);
+  // Grade outranks place; among equals, the closer ancestor wins.
+  const specificity = (p: LeavePolicyRow) =>
+    (p.appliesToGrade ? 1000 : 0) + (p.appliesToNodeCode === null ? 0 : 100 - depthOf(p.appliesToNodeCode));
   matching.sort((a, b) => specificity(b) - specificity(a));
   return matching[0];
 }
@@ -414,21 +435,24 @@ export function matchPolicy(candidates: LeavePolicyRow[], grade: string | null, 
 export async function policyFor(employeeId: number, quotaTypeCode: string, asOf?: string): Promise<LeavePolicyRow | null> {
   const date = asOf ?? new Date().toISOString().slice(0, 10);
   const facts = await rawClient().execute({
-    sql: `SELECT o.area_code, p.pay_scale_group FROM pa_it0001_org_assignment o
+    sql: `SELECT o.org_unit_code, p.pay_scale_group FROM pa_it0001_org_assignment o
           LEFT JOIN pa_it0008_basic_pay p ON p.employee_id = o.employee_id AND p.valid_from <= ?1 AND p.valid_to >= ?1
           WHERE o.employee_id = ?2 AND o.valid_from <= ?1 AND o.valid_to >= ?1
           ORDER BY o.valid_from DESC LIMIT 1`,
     args: [date, employeeId],
   });
-  const areaCode = facts.rows[0] ? String(facts.rows[0].area_code) : null;
+  const orgUnitCode = facts.rows[0] ? String(facts.rows[0].org_unit_code) : null;
   const grade = facts.rows[0]?.pay_scale_group ? String(facts.rows[0].pay_scale_group) : null;
 
-  const found = await rawClient().execute({
-    sql: "SELECT * FROM pt_leave_policy WHERE quota_type_code = ? AND is_active = 1",
-    args: [quotaTypeCode],
-  });
+  const [tree, found] = await Promise.all([
+    loadOrgTree(),
+    rawClient().execute({
+      sql: "SELECT * FROM pt_leave_policy WHERE quota_type_code = ? AND is_active = 1",
+      args: [quotaTypeCode],
+    }),
+  ]);
   const candidates = found.rows.map((r) => rowToPolicy(r as unknown as Record<string, unknown>));
-  return matchPolicy(candidates, grade, areaCode);
+  return matchPolicy(candidates, grade, ancestryOf(tree, orgUnitCode).map((n) => n.code));
 }
 
 /* ---------------------------------------------------------- sandwich rule */

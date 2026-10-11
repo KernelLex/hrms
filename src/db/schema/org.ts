@@ -4,13 +4,45 @@ import { ptHolidayCalendar } from "./time";
 /**
  * Org management — the backbone every other module foreign-keys into.
  *
- *   company -> personnel area -> personnel sub-area
- *   org unit (self-referencing tree)
+ *   organisation / company / vertical / department / cost centre ...
+ *     all one self-referencing tree of org units, each tagged with a level type
  *   position (self-referencing reporting line, points at an org unit and a job)
+ *   job family -> job (classification, cross-cutting, not part of the tree)
+ *
+ * The shape of the hierarchy is data, not code: `om_level_type` says what
+ * levels exist, what may nest under what, and which behaviours each level
+ * carries. That is why there is no table per level — one tree holds them all,
+ * and HR can add a level without a migration.
  *
  * Org units and positions carry validity dates, so the structure has a history
  * rather than only a current state.
  */
+
+/**
+ * A level in the hierarchy, defined by HR rather than by this file.
+ *
+ * The three role flags are what the rest of the system actually reads: a level
+ * is where payroll periods group, or where a holiday calendar attaches, or a
+ * cost-booking leaf — and a level may carry more than one of those at once
+ * (a business center is typically both a payroll group and a calendar level).
+ * Nothing resolves a role by level name; it walks up the tree looking for the
+ * nearest ancestor whose level carries the flag.
+ */
+export const omLevelType = sqliteTable("om_level_type", {
+  code: text("code").primaryKey(),
+  name: text("name").notNull(),
+  /** What a node of this level may sit under. Null means it may sit at the top. */
+  parentLevelTypeCode: text("parent_level_type_code").references((): AnySQLiteColumn => omLevelType.code),
+  /** Display and creation order, top of the hierarchy first. */
+  rank: integer("rank").notNull().default(0),
+  /** Payroll periods are opened against nodes of this level, and leave policies match by it. */
+  isPayrollGroup: integer("is_payroll_group", { mode: "boolean" }).notNull().default(false),
+  /** A holiday calendar attaches to nodes of this level. */
+  isCalendarLevel: integer("is_calendar_level", { mode: "boolean" }).notNull().default(false),
+  /** A cost-booking leaf: these are what the ERP reads as cost centres. */
+  isCostCentre: integer("is_cost_centre", { mode: "boolean" }).notNull().default(false),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+});
 
 export const omCompany = sqliteTable("om_company", {
   code: text("code").primaryKey(),
@@ -18,60 +50,60 @@ export const omCompany = sqliteTable("om_company", {
   address: text("address"),
   city: text("city"),
   country: text("country"),
+  /**
+   * The node this company sits under, for a group that owns several legal
+   * entities. Null for a single-company tenant, which is why it is optional.
+   */
+  parentNodeCode: text("parent_node_code").references((): AnySQLiteColumn => omOrgUnit.code),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
 });
 
-export const omPersonnelArea = sqliteTable(
-  "om_personnel_area",
-  {
-    code: text("code").primaryKey(),
-    companyCode: text("company_code")
-      .notNull()
-      .references(() => omCompany.code),
-    name: text("name").notNull(),
-    location: text("location"),
-    /** Which public holidays this area's employees get. Every area has one. */
-    calendarCode: text("calendar_code")
-      .notNull()
-      .default("NATIONAL")
-      .references(() => ptHolidayCalendar.code),
-    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-  },
-  (t) => [index("ix_area_company").on(t.companyCode)],
-);
-
-export const omPersonnelSubArea = sqliteTable(
-  "om_personnel_sub_area",
-  {
-    code: text("code").primaryKey(),
-    areaCode: text("area_code")
-      .notNull()
-      .references(() => omPersonnelArea.code),
-    name: text("name").notNull(),
-    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-  },
-  (t) => [index("ix_subarea_area").on(t.areaCode)],
-);
+/** Groups similar jobs across the whole organisation — Manufacturing, IT, HR. */
+export const omJobFamily = sqliteTable("om_job_family", {
+  code: text("code").primaryKey(),
+  name: text("name").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+});
 
 export const omJob = sqliteTable("om_job", {
   code: text("code").primaryKey(),
   title: text("title").notNull(),
-  jobGroup: text("job_group"),
+  /**
+   * Optional on purpose: a job loaded before its family exists is better than
+   * a refused import. The screens require one.
+   */
+  jobFamilyCode: text("job_family_code").references(() => omJobFamily.code),
   description: text("description"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
 });
 
+/**
+ * Every node of the hierarchy, at every level: an organisation, a vertical, a
+ * department, a cost centre. What a row *is* comes from its level type, not
+ * from which table it sits in.
+ */
 export const omOrgUnit = sqliteTable(
   "om_org_unit",
   {
     code: text("code").primaryKey(),
     name: text("name").notNull(),
-    /** Self-reference builds the department tree. Null means top level. */
+    /** Self-reference builds the tree. Null means top level. */
     parentCode: text("parent_code").references((): AnySQLiteColumn => omOrgUnit.code),
-    companyCode: text("company_code")
+    /**
+     * Nullable because a node above the legal entities — a group's
+     * "Organisation" node — belongs to no single company.
+     */
+    companyCode: text("company_code").references(() => omCompany.code),
+    /** Which level this node is. Defaults to a plain department. */
+    levelTypeCode: text("level_type_code")
       .notNull()
-      .references(() => omCompany.code),
-    areaCode: text("area_code").references(() => omPersonnelArea.code),
+      .default("DEPARTMENT")
+      .references(() => omLevelType.code),
+    /**
+     * The public holidays everyone under this node gets. Set only on nodes
+     * whose level is a calendar level; read by walking up from the employee.
+     */
+    calendarCode: text("calendar_code").references(() => ptHolidayCalendar.code),
     validFrom: text("valid_from").notNull(),
     validTo: text("valid_to").notNull(),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
@@ -79,6 +111,7 @@ export const omOrgUnit = sqliteTable(
   (t) => [
     index("ix_orgunit_parent").on(t.parentCode),
     index("ix_orgunit_company").on(t.companyCode),
+    index("ix_orgunit_level").on(t.levelTypeCode),
   ],
 );
 

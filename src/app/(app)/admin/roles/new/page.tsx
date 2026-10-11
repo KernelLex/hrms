@@ -6,5 +6,5 @@ import { RoleForm } from "../role-form";
 export default async function NewRolePage() {
   await requirePage(["access.manage"], "/admin");
   const scope = await scopeOptions();
-  return <RoleForm role={null} companies={scope.companies} areas={scope.areas} />;
+  return <RoleForm role={null} companies={scope.companies} nodes={scope.nodes} />;
 }

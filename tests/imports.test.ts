@@ -7,7 +7,7 @@ import { calculateEmployee } from "@/lib/engines/payroll";
 import { hire } from "@/lib/services/people";
 import { startImport, confirmImport, runImportBatch, getImport, importRows, type ImportSummary } from "@/lib/services/imports";
 import type { Result } from "@/lib/services/result";
-import { createArea, hireForPayroll } from "./support/payroll-fixtures";
+import { createPayrollGroup, hireForPayroll } from "./support/payroll-fixtures";
 
 /**
  * Bulk import: nothing is written by the dry run, only what passed is
@@ -193,7 +193,6 @@ describe("importing opening balances", () => {
           effectiveDate: "2020-01-01",
           reason: null,
           companyCode: "CO01",
-          areaCode: "PA01",
           orgUnitCode: "OU0002",
           positionCode: position,
           costCenter: null,
@@ -229,9 +228,9 @@ describe("importing opening balances", () => {
     // account on record (IT0009), which this fixture gives it directly.
     // Hired well before this financial year, so several months are
     // "unrecorded" and, without an opening balance, assumed at today's rate.
-    const area = await createArea();
+    const area = await createPayrollGroup();
     const employeeId = await hireForPayroll({
-      area,
+      node: area,
       hireDate: "2023-04-01",
       pay: [{ from: "2023-04-01", amountRupees: 100_000 }], // comfortably taxable
     });

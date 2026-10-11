@@ -40,8 +40,8 @@ export async function createPerson(opts: {
     [
       {
         sql: `INSERT INTO pa_it0001_org_assignment (employee_id, valid_from, valid_to, seq, created_by, created_at,
-                company_code, area_code, org_unit_code, position_code)
-              VALUES (?, ?, ?, 1, ?, ?, 'CO01', 'PA01', 'OU0002', ?)`,
+                company_code, org_unit_code, position_code)
+              VALUES (?, ?, ?, 1, ?, ?, 'CO01', 'OU0002', ?)`,
         args: [...common, position],
       },
       {

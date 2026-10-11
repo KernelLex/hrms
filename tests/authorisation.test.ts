@@ -172,9 +172,9 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   },
   notifications: { openNotification: "signed-in", markAllRead: "signed-in", saveNotificationPrefs: "signed-in" },
   org: org_([
-    "saveCompany", "deleteCompany", "saveArea", "deleteArea", "saveSubArea", "deleteSubArea", "saveJob",
-    "deleteJob", "saveOrgUnit", "deleteOrgUnit", "savePosition", "deletePosition", "saveReportingLine",
-    "deleteReportingLine",
+    "saveCompany", "deleteCompany", "saveLevelType", "deleteLevelType", "saveJobFamily", "deleteJobFamily",
+    "saveJob", "deleteJob", "saveOrgUnit", "deleteOrgUnit", "savePosition", "deletePosition",
+    "saveReportingLine", "deleteReportingLine",
   ]),
   payroll: {
     setPeriodStatus: ["payroll.post"],

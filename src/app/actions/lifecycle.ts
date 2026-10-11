@@ -35,7 +35,7 @@ function revalidateEmployee(id?: number) {
 }
 
 async function guardEmployee(access: Access, employeeId: number): Promise<string | null> {
-  if (!(await inScope(access, employeeId))) return "That employee is outside the companies and areas your role covers.";
+  if (!(await inScope(access, employeeId))) return "That employee is outside the org units your role covers.";
   return null;
 }
 

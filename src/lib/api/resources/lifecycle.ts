@@ -40,7 +40,11 @@ const TransferAction = z.object({
   action: z.literal("transfer"),
   effective_date: IsoDate,
   company: z.string().min(1),
-  personnel_area: z.string().nullable().default(null),
+  personnel_area: z
+    .string()
+    .nullable()
+    .default(null)
+    .meta({ description: "Derived from the department now. Sending it is refused, so an old caller is told rather than ignored." }),
   department: z.string().min(1),
   position: z.string().min(1),
   cost_centre: z.string().nullable().default(null),
@@ -143,12 +147,15 @@ export const lifecycleEndpoints: Endpoint[] = [
       const actorName = `${ctx.client.name} (API)`;
 
       if (b.action === "transfer") {
+        if (b.personnel_area !== null) {
+          throw invalid("personnel_area is derived from the department now and cannot be sent. Set the department instead.");
+        }
         if (ctx.client.companies && !ctx.client.companies.includes(b.company)) {
           throw invalid(`This client may not transfer into ${b.company}.`);
         }
         const r = await transferEmployee(
           ctx.actor,
-          { employeeId: id, effectiveDate: b.effective_date, companyCode: b.company, areaCode: b.personnel_area, orgUnitCode: b.department, positionCode: b.position, costCenter: b.cost_centre, reason: b.reason },
+          { employeeId: id, effectiveDate: b.effective_date, companyCode: b.company, orgUnitCode: b.department, positionCode: b.position, costCenter: b.cost_centre, reason: b.reason },
           actorName,
         );
         if (!r.ok) throw r.code === "conflict" ? new ApiError(409, "conflict", r.error) : invalid(r.error);

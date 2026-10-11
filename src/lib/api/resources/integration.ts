@@ -45,7 +45,7 @@ const DELETED_RESOURCES: Record<string, string> = {
   py_it0015_additional_payment: "one-off-payments",
   py_it0014_recurring_payment: "recurring-payments",
   om_company: "companies",
-  om_personnel_area: "personnel-areas",
+  om_level_type: "org-levels",
   om_org_unit: "departments",
   om_job: "jobs",
   om_position: "positions",

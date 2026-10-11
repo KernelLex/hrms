@@ -4,7 +4,6 @@ import { asc, eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   omCompany,
-  omPersonnelArea,
   omOrgUnit,
   omPosition,
   ptWorkScheduleRule,
@@ -22,9 +21,8 @@ export default async function HirePage() {
   const session = await requirePage(["employee.edit"]);
   if (!can(session, "pay.view")) redirect("/core-hr");
 
-  const [companies, areas, units, vacantPositions, schedules] = await Promise.all([
+  const [companies, units, vacantPositions, schedules] = await Promise.all([
     db.select().from(omCompany).where(eq(omCompany.isActive, true)).orderBy(asc(omCompany.code)),
-    db.select().from(omPersonnelArea).orderBy(asc(omPersonnelArea.code)),
     db.select().from(omOrgUnit).orderBy(asc(omOrgUnit.code)),
     db
       .select()
@@ -68,7 +66,6 @@ export default async function HirePage() {
       />
       <HireForm
         companies={companies.map((c) => ({ value: c.code, label: `${c.code} — ${c.name}` }))}
-        areas={areas.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` }))}
         units={units.map((u) => ({ value: u.code, label: `${u.code} — ${u.name}` }))}
         positions={vacantPositions.map((p) => ({
           value: p.code,

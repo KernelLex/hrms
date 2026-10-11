@@ -40,7 +40,7 @@ export default async function RunPage(props: {
   const periods = await db
     .select()
     .from(pyPayrollPeriod)
-    .orderBy(desc(pyPayrollPeriod.year), desc(pyPayrollPeriod.month), asc(pyPayrollPeriod.areaCode));
+    .orderBy(desc(pyPayrollPeriod.year), desc(pyPayrollPeriod.month), asc(pyPayrollPeriod.nodeCode));
 
   const runnable = periods.filter((p) => p.status === "Locked");
   const selectedId = Number(params.period) || runnable[0]?.id || periods[0]?.id;
@@ -85,7 +85,7 @@ export default async function RunPage(props: {
       <RunForm
         periods={periods.map((p) => ({
           value: String(p.id),
-          label: `${formatMonth(p.year, p.month)}, ${p.areaCode} (${p.status.toLowerCase()})`,
+          label: `${formatMonth(p.year, p.month)}, ${p.nodeCode} (${p.status.toLowerCase()})`,
           runnable: p.status === "Locked",
         }))}
         selectedId={selectedId ? String(selectedId) : ""}

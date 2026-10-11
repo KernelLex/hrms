@@ -18,6 +18,8 @@ import {
   type PtSlabRow,
   type LwfRateRow,
 } from "./statutory";
+import { loadOrgTree, payrollGroupMembers, type OrgTree } from "@/lib/org-tree";
+import { calendarForOrgUnit } from "./quota";
 
 /**
  * The payroll engine: gross to net.
@@ -144,6 +146,8 @@ type WageType = {
 /** What is loaded once per batch and shared by every employee in it. */
 type Context = {
   financialYear: string;
+  /** The org hierarchy, for resolving each employee's calendar and group. */
+  orgTree: OrgTree;
   /** Every calendar's holidays for the year, keyed by calendar code — an
    * employee's own calendar decides which set applies to them. */
   holidaysByCalendar: Map<string, Set<string>>;
@@ -167,7 +171,6 @@ const FALLBACK_PF_RATE: PfRate = {
 };
 const FALLBACK_ESI_RATE: EsiRate = { employeeRateBasisPoints: 75, employerRateBasisPoints: 325, wageCeilingPaise: 2_100_000 };
 
-const DEFAULT_CALENDAR = "NATIONAL";
 const holidaysFor = (ctx: Context, calendarCode: string): Set<string> => ctx.holidaysByCalendar.get(calendarCode) ?? new Set();
 
 type Dated = { valid_from: string; valid_to: string; created_at: string };
@@ -176,8 +179,8 @@ type Dated = { valid_from: string; valid_to: string; created_at: string };
 type Facts = {
   hireDate: string;
   terminationDate: string | null;
-  /** Which holidays are theirs, from their personnel area. */
-  calendarCode: string;
+  /** Where they sit in the tree — their holiday calendar is resolved from it. */
+  orgUnitCode: string | null;
   basic: (Dated & { amount_paise: number })[];
   bank: Dated[];
   recurring: {
@@ -245,16 +248,18 @@ async function loadContext(financialYear: string): Promise<Context> {
     if (!holidaysByCalendar.has(code)) holidaysByCalendar.set(code, new Set());
     holidaysByCalendar.get(code)!.add(String(h.date));
   }
-  const [slabs, constants, pfRate, esiRate, ptSlabs, lwfRates] = await Promise.all([
+  const [slabs, constants, pfRate, esiRate, ptSlabs, lwfRates, orgTree] = await Promise.all([
     slabsForYear(financialYear),
     constantsForYear(financialYear),
     pfRateFor(to),
     esiRateFor(to),
     loadPtSlabs(),
     loadLwfRates(),
+    loadOrgTree(),
   ]);
   return {
     financialYear,
+    orgTree,
     holidaysByCalendar,
     wageTypes: new Map(
       wageTypes.rows.map((r) => [
@@ -351,8 +356,7 @@ async function loadFacts(
         args: [e, financialYear],
       },
       {
-        sql: `SELECT a.calendar_code FROM pa_it0001_org_assignment o
-              JOIN om_personnel_area a ON a.code = o.area_code
+        sql: `SELECT o.org_unit_code FROM pa_it0001_org_assignment o
               WHERE o.employee_id = ? AND o.valid_from <= ? AND o.valid_to >= ?
               ORDER BY o.valid_from DESC LIMIT 1`,
         args: [e, to, to],
@@ -390,7 +394,7 @@ async function loadFacts(
   return {
     hireDate: String(emp.rows[0].hire_date),
     terminationDate: emp.rows[0].termination_date ? String(emp.rows[0].termination_date) : null,
-    calendarCode: calendar.rows[0] ? String(calendar.rows[0].calendar_code) : DEFAULT_CALENDAR,
+    orgUnitCode: calendar.rows[0] ? String(calendar.rows[0].org_unit_code) : null,
     basic: rows<Facts["basic"][number]>(basic).map((b) => ({ ...b, amount_paise: Number(b.amount_paise) })),
     bank: rows(bank),
     recurring: rows<Facts["recurring"][number]>(recurring).map((r) => ({
@@ -482,7 +486,7 @@ function regularPart(
   const windowTo = f.terminationDate && f.terminationDate < to ? f.terminationDate : to;
   if (windowTo < windowFrom) return { notEmployed: true };
 
-  const periodDates = workingDates(from, to, holidaysFor(ctx, f.calendarCode));
+  const periodDates = workingDates(from, to, holidaysFor(ctx, calendarForOrgUnit(ctx.orgTree, f.orgUnitCode)));
   const W = periodDates.length;
   if (W === 0) return { error: "The period has no working days." };
   const employed = periodDates.filter((d) => d >= windowFrom && d <= windowTo);
@@ -1170,13 +1174,13 @@ type RunRow = {
   year: number;
   month: number;
   period_status: string;
-  area_code: string;
+  node_code: string;
 };
 
 async function getRun(runId: number): Promise<RunRow | undefined> {
   const r = await rawClient().execute({
     sql: `SELECT run.id, run.period_id, run.run_type, run.status, run.planned_count,
-                 run.employee_count, p.year, p.month, p.status AS period_status, p.area_code
+                 run.employee_count, p.year, p.month, p.status AS period_status, p.node_code
           FROM py_payroll_run run JOIN py_payroll_period p ON p.id = run.period_id
           WHERE run.id = ?`,
     args: [runId],
@@ -1193,7 +1197,7 @@ async function getRun(runId: number): Promise<RunRow | undefined> {
     year: Number(row.year),
     month: Number(row.month),
     period_status: String(row.period_status),
-    area_code: String(row.area_code),
+    node_code: String(row.node_code),
   };
 }
 
@@ -1241,7 +1245,7 @@ export async function startRun(opts: {
   const client = rawClient();
 
   const periodRows = await client.execute({
-    sql: "SELECT id, area_code, year, month, status FROM py_payroll_period WHERE id = ?",
+    sql: "SELECT id, node_code, year, month, status FROM py_payroll_period WHERE id = ?",
     args: [periodId],
   });
   const period = periodRows.rows[0];
@@ -1263,20 +1267,28 @@ export async function startRun(opts: {
 
   let members: number[];
   if (runType === "Regular") {
-    // Everyone employed at any point in the month, assigned to this area on
-    // their last day in it — a joiner and a leaver both belong to the run.
-    const rows = await client.execute({
-      sql: `SELECT DISTINCT e.id FROM pa_employee e
-            JOIN pa_it0001_org_assignment o ON o.employee_id = e.id
-             AND o.area_code = ?1
-             AND o.valid_from <= min(?3, coalesce(e.termination_date, ?3))
-             AND o.valid_to >= min(?3, coalesce(e.termination_date, ?3))
-            WHERE e.hire_date <= ?3
-              AND (e.termination_date IS NULL OR e.termination_date >= ?2)
-            ORDER BY e.id`,
-      args: [String(period.area_code), from, to],
-    });
-    members = rows.rows.map((r) => Number(r.id));
+    // Everyone employed at any point in the month whose org unit answers to
+    // this period's grouping node on their last day in it — a joiner and a
+    // leaver both belong to the run. Membership is a tree question, so the
+    // org units are resolved first and matched here, the same batch-then-apply
+    // shape the rest of this engine uses.
+    const orgUnits = [...payrollGroupMembers(await loadOrgTree(), String(period.node_code))];
+    if (orgUnits.length === 0) {
+      members = [];
+    } else {
+      const rows = await client.execute({
+        sql: `SELECT DISTINCT e.id FROM pa_employee e
+              JOIN pa_it0001_org_assignment o ON o.employee_id = e.id
+               AND o.org_unit_code IN (${orgUnits.map(() => "?").join(", ")})
+               AND o.valid_from <= min(?, coalesce(e.termination_date, ?))
+               AND o.valid_to >= min(?, coalesce(e.termination_date, ?))
+              WHERE e.hire_date <= ?
+                AND (e.termination_date IS NULL OR e.termination_date >= ?)
+              ORDER BY e.id`,
+        args: [...orgUnits, to, to, to, to, to, from],
+      });
+      members = rows.rows.map((r) => Number(r.id));
+    }
   } else {
     members = [...new Set(opts.employeeIds!)];
   }

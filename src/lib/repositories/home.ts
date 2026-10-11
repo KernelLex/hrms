@@ -335,7 +335,7 @@ export async function hrHome(today: string): Promise<HrHome> {
   };
 }
 
-/** Periods are per personnel area; the home screen talks about months. */
+/** Periods are per payroll group; the home screen talks about months. */
 function dedupeMonths(rows: { year: number; month: number; status: string }[]) {
   const seen = new Map<string, { year: number; month: number; status: string }>();
   for (const r of rows) {

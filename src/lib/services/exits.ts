@@ -1,4 +1,5 @@
 import "server-only";
+import { loadOrgTree, nearestAncestorWithRole } from "@/lib/org-tree";
 import { rawClient } from "@/lib/db";
 import { now } from "@/db/schema";
 import { changeStatement, systemActor, type Actor as LogActor } from "@/lib/change-log";
@@ -356,17 +357,29 @@ export async function settleExit(logActor: LogActor, exitId: number): Promise<Re
   // The off-cycle run: salary to the last day, and every one-off payment just queued, together.
   // An off-cycle run needs a period already locked for running, the same as
   // any other off-cycle pay — the most recently locked or posted one.
-  const area = await one(
-    `SELECT pp.id AS period_id FROM py_payroll_period pp
-     JOIN pa_it0001_org_assignment oa ON oa.area_code = pp.area_code
-     WHERE oa.employee_id = ? AND oa.valid_from <= ? AND oa.valid_to >= ? AND pp.status <> 'Open'
-     ORDER BY pp.year DESC, pp.month DESC, pp.id DESC LIMIT 1`,
+  const assignment = await one(
+    `SELECT org_unit_code FROM pa_it0001_org_assignment
+     WHERE employee_id = ? AND valid_from <= ? AND valid_to >= ?
+     ORDER BY valid_from DESC LIMIT 1`,
     [employeeId, lastDay, lastDay],
   );
-  if (!area) return { error: "There is no payroll period ready to run for this employee's area yet, so the settlement cannot be paid until one is locked." };
+  const group = nearestAncestorWithRole(
+    await loadOrgTree(),
+    assignment ? String(assignment.org_unit_code) : null,
+    "isPayrollGroup",
+  );
+  const period = group
+    ? await one(
+        `SELECT id AS period_id FROM py_payroll_period
+         WHERE node_code = ? AND status <> 'Open'
+         ORDER BY year DESC, month DESC, id DESC LIMIT 1`,
+        [group.code],
+      )
+    : undefined;
+  if (!period) return { error: "There is no payroll period ready to run for this employee's payroll group yet, so the settlement cannot be paid until one is locked." };
 
   const progress = await runPayroll({
-    periodId: Number(area.period_id),
+    periodId: Number(period.period_id),
     runBy: logActor.name,
     runType: "Off-cycle",
     employeeIds: [employeeId],

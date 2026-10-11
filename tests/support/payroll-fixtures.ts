@@ -3,20 +3,26 @@ import { rawClient } from "@/lib/db";
 import { OPEN_ENDED } from "@/db/schema";
 
 /**
- * People and periods for payroll tests, each in a personnel area of its own,
- * so a test's runs contain exactly the people it created — the seeded
+ * People and periods for payroll tests, each in a payroll group of its own,
+ * so a test's runs contain exactly the people it created: the seeded
  * employees and other test files never land in them.
  */
 
 /** Unique across test files, which each run in their own worker. */
 const uid = () => randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase();
 
-export async function createArea(): Promise<string> {
+/**
+ * A payroll group of this test's own: an org unit at a level that carries the
+ * payroll-group and calendar roles, so people hired into it are the only
+ * people a run against it picks up.
+ */
+export async function createPayrollGroup(calendarCode = "NATIONAL"): Promise<string> {
   const code = `PT${uid()}`;
   await rawClient().execute({
-    sql: `INSERT INTO om_personnel_area (code, company_code, name, location, is_active)
-          VALUES (?, 'CO01', ?, 'Test', 1)`,
-    args: [code, `Payroll test area ${code}`],
+    sql: `INSERT INTO om_org_unit (code, name, parent_code, company_code, level_type_code,
+            calendar_code, valid_from, valid_to, is_active)
+          VALUES (?, ?, NULL, 'CO01', 'CENTER', ?, '2000-01-01', ?, 1)`,
+    args: [code, `Payroll test group ${code}`, calendarCode, OPEN_ENDED],
   });
   return code;
 }
@@ -24,12 +30,13 @@ export async function createArea(): Promise<string> {
 type PaySlice = { from: string; to?: string; amountRupees: number };
 
 /**
- * A payable employee: org assignment in the area, basic pay slices and a bank
+ * A payable employee: org assignment in the group, basic pay slices and a bank
  * account. `createdAt` backdates the records, so a test can control what a
  * later run treats as a change made after it.
  */
 export async function hireForPayroll(opts: {
-  area: string;
+  /** The payroll-group node to hire into; it is the employee's org unit. */
+  node: string;
   hireDate: string;
   terminationDate?: string;
   pay: PaySlice[];
@@ -52,10 +59,10 @@ export async function hireForPayroll(opts: {
 
   await client.execute({
     sql: `INSERT INTO pa_it0001_org_assignment
-            (employee_id, company_code, area_code, org_unit_code, position_code, cost_center,
+            (employee_id, company_code, org_unit_code, position_code, cost_center,
              valid_from, valid_to, seq, created_by, created_at)
-          VALUES (?, 'CO01', ?, 'OU0002', 'PS0003', 'CC-TEST', ?, ?, 1, 'test', ?)`,
-    args: [id, opts.area, opts.hireDate, OPEN_ENDED, createdAt],
+          VALUES (?, 'CO01', ?, 'PS0003', 'CC-TEST', ?, ?, 1, 'test', ?)`,
+    args: [id, opts.node, opts.hireDate, OPEN_ENDED, createdAt],
   });
   for (const p of opts.pay) await addPay(id, p, createdAt);
   await client.execute({
@@ -83,14 +90,14 @@ export async function addPay(employeeId: number, p: PaySlice, createdAt: string)
 
 /** A period, released for running unless told otherwise. */
 export async function createPeriod(
-  area: string,
+  node: string,
   year: number,
   month: number,
   status: "Open" | "Locked" | "Posted" = "Locked",
 ): Promise<number> {
   const r = await rawClient().execute({
-    sql: `INSERT INTO py_payroll_period (area_code, year, month, status) VALUES (?, ?, ?, ?) RETURNING id`,
-    args: [area, year, month, status],
+    sql: `INSERT INTO py_payroll_period (node_code, year, month, status) VALUES (?, ?, ?, ?) RETURNING id`,
+    args: [node, year, month, status],
   });
   return Number(r.rows[0].id);
 }

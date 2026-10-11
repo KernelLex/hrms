@@ -8,7 +8,7 @@ import { isoWeek } from "@/lib/jobs/handlers";
 import { POST as kick } from "@/app/api/jobs/kick/route";
 import { GET as tick } from "@/app/api/cron/tick/route";
 import { form } from "./support/fixtures";
-import { createArea, createPeriod, hireForPayroll } from "./support/payroll-fixtures";
+import { createPayrollGroup, createPeriod, hireForPayroll } from "./support/payroll-fixtures";
 import { createPerson } from "./support/people";
 
 /**
@@ -96,9 +96,9 @@ describe("the queue", () => {
 
 describe("payroll in the background", () => {
   it("finishes a run with nobody watching, and tells people when the month is posted", async () => {
-    const area = await createArea();
+    const area = await createPayrollGroup();
     const people = await Promise.all(
-      [1, 2, 3].map(() => hireForPayroll({ area, hireDate: "2025-01-01", pay: [{ from: "2025-01-01", amountRupees: 50_000 }] })),
+      [1, 2, 3].map(() => hireForPayroll({ node: area, hireDate: "2025-01-01", pay: [{ from: "2025-01-01", amountRupees: 50_000 }] })),
     );
     const periodId = await createPeriod(area, 2026, 3);
 

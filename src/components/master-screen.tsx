@@ -120,9 +120,15 @@ export function MasterScreen({
   const [removing, setRemoving] = React.useState<Row | null>(null);
 
   const open = creating || editing !== null;
+  // React 19 resets an uncontrolled form once its action returns, so a refused
+  // save would otherwise empty everything the person had typed. Keeping what
+  // was submitted and remounting the fields on it puts their work back.
+  const [submitted, setSubmitted] = React.useState<Record<string, string | boolean> | null>(null);
+  const [attempt, setAttempt] = React.useState(0);
   const closeForm = () => {
     setCreating(false);
     setEditing(null);
+    setSubmitted(null);
   };
 
   const [saveState, saveFormAction, saving] = useActionState(
@@ -132,6 +138,13 @@ export function MasterScreen({
         const wasEditing = form.get("originalCode") !== null && form.get("originalCode") !== "";
         closeForm();
         toast(wasEditing ? `${cap(entity)} updated` : `${cap(entity)} saved`);
+      } else {
+        setSubmitted(
+          Object.fromEntries(
+            fields.map((f) => [f.name, f.kind === "checkbox" ? form.get(f.name) !== null : String(form.get(f.name) ?? "")]),
+          ),
+        );
+        setAttempt((n) => n + 1);
       }
       return result;
     },
@@ -255,11 +268,11 @@ export function MasterScreen({
             <input type="hidden" name="originalCode" value={editing.id} />
           ) : null}
 
-          <FormGrid columns={2}>
+          <FormGrid key={attempt} columns={2}>
             {fields.map((f) => {
               const locked =
                 lockIdOnEdit && editing !== null && f.kind !== "checkbox" && f.name === idField;
-              const defaultValue = editing?.values[f.name];
+              const defaultValue = submitted ? submitted[f.name] : editing?.values[f.name];
 
               if (f.kind === "checkbox") {
                 return (
@@ -269,7 +282,7 @@ export function MasterScreen({
                       name={f.name}
                       label={f.label}
                       defaultChecked={
-                        editing ? Boolean(defaultValue) : f.name === "isActive"
+                        submitted || editing ? Boolean(defaultValue) : f.name === "isActive"
                       }
                     />
                   </div>

@@ -267,8 +267,9 @@ describe("an optional holiday", () => {
   });
 
   it("becomes a paid day off for the one person who takes it, and only up to the allowance", async () => {
-    // Put this employee's area on the calendar that has the optional holiday.
-    await rawClient().execute({ sql: "UPDATE om_personnel_area SET calendar_code = ? WHERE code = 'PA01'", args: [calendar] });
+    // Put the business center this employee sits under on the calendar that
+    // has the optional holiday; they inherit it by walking up the tree.
+    await rawClient().execute({ sql: "UPDATE om_org_unit SET calendar_code = ? WHERE code = 'PA01'", args: [calendar] });
     try {
       actAs(employee.session);
       expect((await setOptionalHoliday({}, form({ holidayId, take: 1 }))).ok).toBe(true);
@@ -289,7 +290,7 @@ describe("an optional holiday", () => {
       expect(over.error).toMatch(/already taken your 1 optional holiday/);
     } finally {
       actAs(null);
-      await rawClient().execute("UPDATE om_personnel_area SET calendar_code = 'KARNATAKA' WHERE code = 'PA01'");
+      await rawClient().execute("UPDATE om_org_unit SET calendar_code = 'KARNATAKA' WHERE code = 'PA01'");
     }
   });
 });

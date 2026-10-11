@@ -10,7 +10,7 @@ import { systemActor } from "@/lib/change-log";
 import { issueLetter } from "@/lib/services/letters";
 import { actAs, createPerson, giveQuota, type Person } from "./support/people";
 import { form } from "./support/fixtures";
-import { createArea, createPeriod } from "./support/payroll-fixtures";
+import { createPayrollGroup, createPeriod } from "./support/payroll-fixtures";
 
 /**
  * Exits and the full and final settlement: gratuity under the 240-day rule,
@@ -54,15 +54,15 @@ async function givePay(employeeId: number, amountRupees: number): Promise<void> 
 }
 
 /**
- * A person who can sign in and resign, moved into a personnel area of their
- * own with a period already locked for `lastDay`'s month — an off-cycle
+ * A person who can sign in and resign, moved into a payroll group of their
+ * own with a period already locked for `lastDay`'s month: an off-cycle
  * settlement run needs one locked, the same as any other off-cycle pay, and
- * a fresh area keeps this test's run from touching any other test's people.
+ * a fresh group keeps this test's run from touching any other test's people.
  */
 async function payableEmployee(lastDay: string): Promise<Person> {
   const employee = await createPerson({ reportsTo: manager.position, roles: ["EMPLOYEE"] });
-  const area = await createArea();
-  await rawClient().execute({ sql: "UPDATE pa_it0001_org_assignment SET area_code = ? WHERE employee_id = ?", args: [area, employee.employeeId] });
+  const area = await createPayrollGroup();
+  await rawClient().execute({ sql: "UPDATE pa_it0001_org_assignment SET org_unit_code = ? WHERE employee_id = ?", args: [area, employee.employeeId] });
   await createPeriod(area, Number(lastDay.slice(0, 4)), Number(lastDay.slice(5, 7)));
   // Payroll refuses to calculate anyone without bank details (PY-03) — createPerson does not set them up.
   await rawClient().execute({

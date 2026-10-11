@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, randomBytes } from "node:crypto";
 import type { InStatement } from "@libsql/client";
 import { rawClient } from "@/lib/db";
+import { loadOrgTree, costCentreLevelTypes, type OrgTree } from "@/lib/org-tree";
 import { todayInIndia } from "@/lib/dates";
 import type { Scope } from "./scopes";
 
@@ -23,7 +24,7 @@ export const EVENT_TYPES = {
   "employee.hired": { scope: "employees:read", description: "Someone was hired — on the screen, through recruitment or through the API. `data` is the employee." },
   "employee.updated": { scope: "employees:read", description: "Any of an employee's dated records changed. `data` is the employee as of today." },
   "employee.status_changed": { scope: "employees:read", description: "An employee went on leave, came back, or was terminated. `data` is the employee." },
-  "org.changed": { scope: "org:read", description: "A company, personnel area, sub-area, job or department was created, changed or removed. `data` says which." },
+  "org.changed": { scope: "org:read", description: "A company, job or org unit at any level was created, changed or removed. `data.kind` says which level." },
   "position.changed": { scope: "org:read", description: "A position or its reporting line changed. `data` names the position." },
   "cost_centre.changed": { scope: "org:read", description: "A cost centre was created or changed. `data` is the cost centre." },
   "leave.requested": { scope: "time:read", description: "Someone asked for leave. `data` is the request." },
@@ -97,14 +98,28 @@ type Derived = { type: EventType; subject: string; key: string };
 
 const ORG_KINDS: Record<string, string> = {
   om_company: "company",
-  om_personnel_area: "personnel_area",
-  om_personnel_sub_area: "personnel_sub_area",
+  om_job_family: "job_family",
   om_job: "job",
-  om_org_unit: "department",
+  om_level_type: "level_type",
 };
 
+/**
+ * The level of an org unit a change touched: from the tree, or — for a node
+ * the change deleted, which is no longer in the tree — from the logged row.
+ */
+function levelOf(c: ChangeRow, tree: OrgTree): string | null {
+  const node = tree.get(c.entity_id);
+  if (node) return node.levelTypeCode;
+  const row = (c.before ?? c.after ?? {}) as Record<string, unknown>;
+  const level = row.level_type_code ?? row.levelTypeCode;
+  return typeof level === "string" ? level : null;
+}
+
+/** The org facts `eventFor` needs, loaded once per batch rather than per row. */
+export type OrgContext = { tree: OrgTree; costCentreLevels: ReadonlySet<string> };
+
 /** Which event a change-log entry is, if any. */
-export function eventFor(c: ChangeRow): Derived | null {
+export function eventFor(c: ChangeRow, org: OrgContext): Derived | null {
   const after = c.after ?? {};
   const emp = (type: EventType, id: number | string) => ({ type, subject: `employees/${id}`, key: `${type}:${id}` });
   if (c.entity === "pa_employee") {
@@ -171,6 +186,16 @@ export function eventFor(c: ChangeRow): Derived | null {
     return { type: "regularisation.decided", subject: `regularisations/${c.entity_id}`, key: `reg:${c.entity_id}` };
   }
   if (c.entity.startsWith("pa_it") && c.subject_employee_id) return emp("employee.updated", c.subject_employee_id);
+  if (c.entity === "om_org_unit") {
+    // One table holds every level, so what an org unit *is* comes from its
+    // level — and a level HR flagged as a cost centre is what the ERP reads
+    // under its own, older event type.
+    const level = levelOf(c, org.tree);
+    if (level !== null && org.costCentreLevels.has(level)) {
+      return { type: "cost_centre.changed", subject: `cost-centres/${c.entity_id}`, key: `cc:${c.entity_id}` };
+    }
+    return { type: "org.changed", subject: `org/${level ?? "org_unit"}/${c.entity_id}`, key: `org:${c.entity}:${c.entity_id}` };
+  }
   if (c.entity in ORG_KINDS) {
     return { type: "org.changed", subject: `org/${ORG_KINDS[c.entity]}/${c.entity_id}`, key: `org:${c.entity}:${c.entity_id}` };
   }
@@ -179,7 +204,6 @@ export function eventFor(c: ChangeRow): Derived | null {
     const code = String((c.after ?? c.before ?? {}).position_code ?? "");
     return code ? { type: "position.changed", subject: `positions/${code}`, key: `pos:${code}` } : null;
   }
-  if (c.entity === "om_cost_centre") return { type: "cost_centre.changed", subject: `cost-centres/${c.entity_id}`, key: `cc:${c.entity_id}` };
   if (c.entity === "pt_leave_request") {
     const status = String(after.status ?? "");
     const type: EventType | null =
@@ -253,8 +277,10 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
     case "position.changed":
       return { code: id, action: change.entity === "om_position" ? change.action : "update" };
     case "cost_centre.changed": {
-      const r = await one("SELECT * FROM om_cost_centre WHERE code = ?", [id]);
-      return r ? { code: String(r.code), name: String(r.name), company: r.company_code ?? null, is_active: Number(r.is_active) === 1, updated_at: String(r.updated_at) } : null;
+      const r = await one("SELECT * FROM om_org_unit WHERE code = ?", [id]);
+      return r
+        ? { code: String(r.code), name: String(r.name), company: r.company_code ?? null, is_active: Number(r.is_active) === 1, updated_at: change.at }
+        : { code: id, action: change.action };
     }
     case "leave.requested":
     case "leave.approved":
@@ -296,7 +322,7 @@ async function dataFor(type: EventType, subject: string, change: ChangeRow): Pro
     }
     case "payroll.period.posted": {
       const r = await one("SELECT * FROM py_payroll_period WHERE id = ?", [Number(id)]);
-      return r ? { id: Number(r.id), personnel_area: String(r.area_code), year: Number(r.year), month: Number(r.month), pay_date: r.pay_date ?? null, posted_at: r.posted_at ?? null } : null;
+      return r ? { id: Number(r.id), payroll_group: String(r.node_code), year: Number(r.year), month: Number(r.month), pay_date: r.pay_date ?? null, posted_at: r.posted_at ?? null } : null;
     }
     case "gl.posting.created": {
       const r = await one("SELECT * FROM py_gl_posting WHERE id = ?", [Number(id)]);
@@ -673,9 +699,13 @@ export async function deriveEvents(limit = 500): Promise<number> {
 
   // Several entries for one thing in one pass — a time slice closed and its
   // successor created — are one event. A hire is not also an update.
+  // The tree once for the whole batch: what level a changed org unit is, and
+  // therefore which event it becomes, is a lookup, not a query per row.
+  const [tree, costCentreLevels] = await Promise.all([loadOrgTree(), costCentreLevelTypes()]);
+  const org: OrgContext = { tree, costCentreLevels };
   const grouped = new Map<string, { derived: Derived; change: ChangeRow }>();
   for (const c of changes) {
-    const d = eventFor(c);
+    const d = eventFor(c, org);
     if (!d) continue;
     if (d.type === "employee.updated" && grouped.has(`employee.hired:${d.subject.split("/")[1]}`)) continue;
     grouped.set(d.key, { derived: d, change: c });

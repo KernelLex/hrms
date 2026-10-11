@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { paEmployee } from "./personnel";
-import { omPersonnelArea } from "./org";
+import { omOrgUnit } from "./org";
 
 /**
  * Payroll.
@@ -26,7 +26,7 @@ export type PeriodStatus = (typeof PERIOD_STATUS)[number];
 export const WAGE_KIND = ["Earning", "Deduction", "EmployerContribution"] as const;
 
 /**
- * A regular run pays the month for everyone in the personnel area. An
+ * A regular run pays the month for everyone in the payroll group. An
  * off-cycle run pays selected people outside it — a bonus, a correction, a
  * final settlement — and can run after the period is posted.
  */
@@ -60,9 +60,14 @@ export const pyPayrollPeriod = sqliteTable(
   "py_payroll_period",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    areaCode: text("area_code")
+    /**
+     * The node payroll groups by: a node whose level type is a payroll group.
+     * An employee is in this period when that node is the nearest such
+     * ancestor of their own org unit.
+     */
+    nodeCode: text("node_code")
       .notNull()
-      .references(() => omPersonnelArea.code),
+      .references(() => omOrgUnit.code),
     year: integer("year").notNull(),
     month: integer("month").notNull(),
     payDate: text("pay_date"),
@@ -73,7 +78,7 @@ export const pyPayrollPeriod = sqliteTable(
     /** On posting, email each person their payslip as a protected PDF. */
     emailPayslips: integer("email_payslips", { mode: "boolean" }).notNull().default(true),
   },
-  (t) => [uniqueIndex("ux_period").on(t.areaCode, t.year, t.month)],
+  (t) => [uniqueIndex("ux_period").on(t.nodeCode, t.year, t.month)],
 );
 
 /* -------------------------------------------- IT0014 recurring payments */

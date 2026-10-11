@@ -664,8 +664,8 @@ export async function deleteHolidayCalendar(
 ): Promise<ActionState> {
   const session = await requirePermission("time.manage");
   const code = str(form.get("code"));
-  const inUse = await rawClient().execute({ sql: "SELECT 1 FROM om_personnel_area WHERE calendar_code = ? LIMIT 1", args: [code] });
-  if (inUse.rows.length > 0) return fail("A personnel area is still on this calendar. Move it to another calendar first.");
+  const inUse = await rawClient().execute({ sql: "SELECT 1 FROM om_org_unit WHERE calendar_code = ? LIMIT 1", args: [code] });
+  if (inUse.rows.length > 0) return fail("An org unit is still on this calendar. Move it to another calendar first.");
   const before = await db.query.ptHolidayCalendar.findFirst({ where: eq(ptHolidayCalendar.code, code) });
   await db.delete(ptHolidayCalendar).where(eq(ptHolidayCalendar.code, code));
   if (before) await recordDelete(actorOf(session), "pt_holiday_calendar", code, before);
@@ -680,7 +680,7 @@ const LeavePolicyInput = z.object({
   name: z.string().trim().min(1, "Enter a name."),
   quotaTypeCode: z.string().min(1, "Choose a quota type."),
   appliesToGrade: z.string().nullable(),
-  appliesToAreaCode: z.string().nullable(),
+  appliesToNodeCode: z.string().nullable(),
   entitlementHalfDaysPerYear: z.number().int().min(0, "Enter the yearly entitlement, in days or half days."),
   accrualFrequency: z.enum(ACCRUAL_FREQUENCIES),
   proRataForJoiners: z.boolean(),
@@ -702,7 +702,7 @@ export async function saveLeavePolicy(
     name: str(form.get("name")),
     quotaTypeCode: str(form.get("quotaTypeCode")),
     appliesToGrade: opt(form.get("appliesToGrade")),
-    appliesToAreaCode: opt(form.get("appliesToAreaCode")),
+    appliesToNodeCode: opt(form.get("appliesToNodeCode")),
     entitlementHalfDaysPerYear: daysToUnits(num(form.get("entitlementDays"))),
     accrualFrequency: str(form.get("accrualFrequency")),
     proRataForJoiners: bool(form.get("proRataForJoiners")),

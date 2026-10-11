@@ -3,6 +3,7 @@ import type { InStatement } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { now } from "@/db/schema";
 import { changeStatement, type Actor } from "@/lib/change-log";
+import { loadOrgTree, ancestryOf } from "@/lib/org-tree";
 import {
   calendarDaysBetween,
   calendarFor,
@@ -62,7 +63,7 @@ export async function accrueForPeriod(
   const yearEnd = `${year}-12-31`;
   const only = opts.employeeIds?.length ? opts.employeeIds : null;
 
-  const [policiesR, employeesR, factsR, postedR, yearlyGrantedR] = await Promise.all([
+  const [policiesR, employeesR, tree, factsR, postedR, yearlyGrantedR] = await Promise.all([
     rawClient().execute({ sql: "SELECT * FROM pt_leave_policy WHERE is_active = 1", args: [] }),
     rawClient().execute({
       sql: `SELECT id, hire_date FROM pa_employee
@@ -70,8 +71,9 @@ export async function accrueForPeriod(
             ${only ? `AND id IN (${only.map(() => "?").join(", ")})` : ""}`,
       args: only ? [to, from, ...only] : [to, from],
     }),
+    loadOrgTree(),
     rawClient().execute({
-      sql: `SELECT o.employee_id, o.area_code, p.pay_scale_group FROM pa_it0001_org_assignment o
+      sql: `SELECT o.employee_id, o.org_unit_code, p.pay_scale_group FROM pa_it0001_org_assignment o
             LEFT JOIN pa_it0008_basic_pay p ON p.employee_id = o.employee_id AND p.valid_from <= ?1 AND p.valid_to >= ?1
             WHERE o.valid_from <= ?1 AND o.valid_to >= ?1`,
       args: [to],
@@ -96,10 +98,10 @@ export async function accrueForPeriod(
     if (!byQuotaType.has(policy.quotaTypeCode)) byQuotaType.set(policy.quotaTypeCode, []);
     byQuotaType.get(policy.quotaTypeCode)!.push(policy);
   }
-  const factsOf = new Map<number, { areaCode: string | null; grade: string | null }>();
+  const factsOf = new Map<number, { orgUnitCode: string | null; grade: string | null }>();
   for (const r of factsR.rows) {
     factsOf.set(Number(r.employee_id), {
-      areaCode: r.area_code === null ? null : String(r.area_code),
+      orgUnitCode: r.org_unit_code === null ? null : String(r.org_unit_code),
       grade: r.pay_scale_group === null ? null : String(r.pay_scale_group),
     });
   }
@@ -110,10 +112,10 @@ export async function accrueForPeriod(
   for (const e of employeesR.rows as unknown as { id: number; hire_date: string }[]) {
     const employeeId = Number(e.id);
     const hireDate = e.hire_date;
-    const facts = factsOf.get(employeeId) ?? { areaCode: null, grade: null };
+    const facts = factsOf.get(employeeId) ?? { orgUnitCode: null, grade: null };
 
     for (const [quotaTypeCode, candidates] of byQuotaType) {
-      const policy = matchPolicy(candidates, facts.grade, facts.areaCode);
+      const policy = matchPolicy(candidates, facts.grade, ancestryOf(tree, facts.orgUnitCode).map((n) => n.code));
       if (!policy) continue;
 
       if (policy.accrualFrequency === "Monthly") {
@@ -193,7 +195,7 @@ export async function runYearEnd(
 ): Promise<{ processed: number }> {
   const { year, createdBy, actor } = opts;
   const only = opts.employeeIds?.length ? opts.employeeIds : null;
-  const [balancesR, policiesR, factsR, postedR] = await Promise.all([
+  const [balancesR, policiesR, factsR, postedR, tree] = await Promise.all([
     rawClient().execute({
       sql: `SELECT employee_id, quota_type_code, entitled_half_days, used_half_days FROM pt_it2006_absence_quota
             WHERE year = ? ${only ? `AND employee_id IN (${only.map(() => "?").join(", ")})` : ""}`,
@@ -201,7 +203,7 @@ export async function runYearEnd(
     }),
     rawClient().execute({ sql: "SELECT * FROM pt_leave_policy WHERE is_active = 1", args: [] }),
     rawClient().execute({
-      sql: `SELECT o.employee_id, o.area_code, p.pay_scale_group FROM pa_it0001_org_assignment o
+      sql: `SELECT o.employee_id, o.org_unit_code, p.pay_scale_group FROM pa_it0001_org_assignment o
             LEFT JOIN pa_it0008_basic_pay p ON p.employee_id = o.employee_id AND p.valid_from <= ?1 AND p.valid_to >= ?1
             WHERE o.valid_from <= ?1 AND o.valid_to >= ?1`,
       args: [`${year}-12-31`],
@@ -210,6 +212,7 @@ export async function runYearEnd(
       sql: "SELECT employee_id, quota_type_code, ref_id FROM pt_quota_ledger WHERE ref_type = 'pt_leave_policy' AND year = ?",
       args: [year],
     }),
+    loadOrgTree(),
   ]);
 
   const byQuotaType = new Map<string, LeavePolicyRow[]>();
@@ -218,10 +221,10 @@ export async function runYearEnd(
     if (!byQuotaType.has(policy.quotaTypeCode)) byQuotaType.set(policy.quotaTypeCode, []);
     byQuotaType.get(policy.quotaTypeCode)!.push(policy);
   }
-  const factsOf = new Map<number, { areaCode: string | null; grade: string | null }>();
+  const factsOf = new Map<number, { orgUnitCode: string | null; grade: string | null }>();
   for (const r of factsR.rows) {
     factsOf.set(Number(r.employee_id), {
-      areaCode: r.area_code === null ? null : String(r.area_code),
+      orgUnitCode: r.org_unit_code === null ? null : String(r.org_unit_code),
       grade: r.pay_scale_group === null ? null : String(r.pay_scale_group),
     });
   }
@@ -234,8 +237,8 @@ export async function runYearEnd(
     const remaining = Number(b.entitled_half_days) - Number(b.used_half_days);
     if (remaining <= 0) continue;
 
-    const facts = factsOf.get(employeeId) ?? { areaCode: null, grade: null };
-    const policy = matchPolicy(byQuotaType.get(quotaTypeCode) ?? [], facts.grade, facts.areaCode);
+    const facts = factsOf.get(employeeId) ?? { orgUnitCode: null, grade: null };
+    const policy = matchPolicy(byQuotaType.get(quotaTypeCode) ?? [], facts.grade, ancestryOf(tree, facts.orgUnitCode).map((n) => n.code));
     if (!policy) continue;
     if (opts.asOf !== undefined && opts.asOf < policy.lapseOn) continue;
 

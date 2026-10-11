@@ -20,7 +20,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/payroll/gl-jour
   const [posting, lines] = await client.batch(
     [
       {
-        sql: `SELECT p.posting_date, run.id AS run_id, run.run_type, per.year, per.month, per.area_code
+        sql: `SELECT p.posting_date, run.id AS run_id, run.run_type, per.year, per.month, per.node_code
               FROM py_gl_posting p
               JOIN py_payroll_run run ON run.id = p.run_id
               JOIN py_payroll_period per ON per.id = run.period_id
@@ -42,7 +42,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/payroll/gl-jour
   logAccess(session, { subjectEmployeeId: null, resource: "GL journal", resourceId: postingId });
 
   const header: Cell[] = ["GL account", "Description", "Cost centre", "Debit", "Credit"];
-  const name = `gl-journal-${period}-${p.area_code}-run${p.run_id}.csv`.toLowerCase();
+  const name = `gl-journal-${period}-${p.node_code}-run${p.run_id}.csv`.toLowerCase();
   return csvResponse(
     toCsv([
       header,

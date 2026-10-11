@@ -38,7 +38,7 @@ export async function uploadEmployeeDocument(
   const employee = await db.query.paEmployee.findFirst({ where: eq(paEmployee.id, employeeId) });
   if (!employee) return { error: "That employee no longer exists." };
   if (!(await inScope(session, employeeId))) {
-    return { error: "That employee is outside the companies and areas your role covers." };
+    return { error: "That employee is outside the org units your role covers." };
   }
   if (!(EMPLOYEE_DOCUMENT_KINDS as readonly string[]).includes(kind)) {
     return { error: "Choose what kind of document this is." };
@@ -74,7 +74,7 @@ export async function removeEmployeeDocument(
   });
   if (!doc) return { error: "That document has already been removed." };
   if (!(await inScope(session, doc.ownerId))) {
-    return { error: "That employee is outside the companies and areas your role covers." };
+    return { error: "That employee is outside the org units your role covers." };
   }
   await deleteDocument(doc);
   await recordDeleted(actor, "app_document", [documentSummary(doc)]);

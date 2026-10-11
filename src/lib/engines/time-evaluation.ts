@@ -1,6 +1,8 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
+import { loadOrgTree } from "@/lib/org-tree";
+import { calendarForOrgUnit } from "./quota";
 import { ptTimeEvaluation, now } from "@/db/schema";
 
 /**
@@ -11,10 +13,10 @@ import { ptTimeEvaluation, now } from "@/db/schema";
  * unpaid days and overtime. Payroll computes its own unpaid days from the same
  * absences, date by date, so the two always agree.
  *
- * Working days come from each employee's own holiday calendar, by their
- * personnel area at the end of the period — a plant in Maharashtra and the
- * head office in Karnataka can have a different working-day count for the
- * same month. The whole period is still read in a handful of statements,
+ * Working days come from each employee's own holiday calendar, found by
+ * walking up the org tree from their department at the end of the period — a
+ * plant in Maharashtra and the head office in Karnataka can have a different
+ * working-day count for the same month. The whole period is still read in a handful of statements,
  * however many calendars are in play, and written back in one upsert.
  */
 
@@ -65,8 +67,7 @@ export async function evaluatePeriod(opts: {
   const [calendars, holidays, employees, absences, attendance] = await rawClient().batch(
     [
       {
-        sql: `SELECT o.employee_id, a.calendar_code FROM pa_it0001_org_assignment o
-              JOIN om_personnel_area a ON a.code = o.area_code
+        sql: `SELECT o.employee_id, o.org_unit_code FROM pa_it0001_org_assignment o
               WHERE o.valid_from <= ? AND o.valid_to >= ? ${only ? `AND o.employee_id IN (${only.map(() => "?").join(", ")})` : ""}`,
         args: [to, to, ...ids],
       },
@@ -97,7 +98,10 @@ export async function evaluatePeriod(opts: {
     "read",
   );
 
-  const calendarOf = new Map(calendars.rows.map((r) => [Number(r.employee_id), String(r.calendar_code)]));
+  const tree = await loadOrgTree();
+  const calendarOf = new Map(
+    calendars.rows.map((r) => [Number(r.employee_id), calendarForOrgUnit(tree, r.org_unit_code === null ? null : String(r.org_unit_code))]),
+  );
   const holidaysByCalendar = new Map<string, Set<string>>();
   for (const h of holidays.rows) {
     const code = String(h.calendar_code);
