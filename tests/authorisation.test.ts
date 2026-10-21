@@ -109,6 +109,7 @@ const MATRIX: Record<string, Record<string, Rule>> = {
   careers: { applyForJob: "public", respondToOffer: "public" },
   "core-hr": {
     hireEmployee: ["employee.edit"], // and pay.view: see below
+    addExistingEmployeeAction: ["employee.edit"], // and pay.view: like hireEmployee
     saveInfotypeSlice: ["employee.edit"],
     deleteInfotypeSlice: ["employee.edit"],
     saveRepeatingInfotype: ["employee.edit"],

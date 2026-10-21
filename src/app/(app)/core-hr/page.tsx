@@ -93,10 +93,16 @@ export default async function EmployeesPage(props: {
                     Mass update
                   </ButtonLink>
                   {can(session, "pay.view") ? (
-                    <ButtonLink href="/core-hr/hire" variant="primary">
-                      <UserPlus />
-                      Hire employee
-                    </ButtonLink>
+                    <>
+                      <ButtonLink href="/core-hr/add-existing">
+                        <UserPlus />
+                        Add existing
+                      </ButtonLink>
+                      <ButtonLink href="/core-hr/hire" variant="primary">
+                        <UserPlus />
+                        Hire employee
+                      </ButtonLink>
+                    </>
                   ) : null}
                 </>
               ) : null}

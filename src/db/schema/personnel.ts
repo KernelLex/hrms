@@ -43,6 +43,11 @@ export const paEmployee = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     /** The number people quote: EMP1001. */
     employeeNumber: text("employee_number").notNull().unique(),
+    /**
+     * What they were called in the system this one replaced, kept so a
+     * migrated record can still be traced back. SAP holds it on IT0032.
+     */
+    previousPersonnelNumber: text("previous_personnel_number"),
     hireDate: text("hire_date").notNull(),
     employmentStatus: text("employment_status").notNull().default("Active"),
     terminationDate: text("termination_date"),

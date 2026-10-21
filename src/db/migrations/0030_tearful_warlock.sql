@@ -1,0 +1,1 @@
+ALTER TABLE `pa_employee` ADD `previous_personnel_number` text;

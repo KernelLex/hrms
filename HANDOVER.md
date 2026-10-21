@@ -1565,6 +1565,7 @@ Kept to what belongs in the HR module of an ERP for an Indian company. Features 
 | Letters from templates | Appointment, experience and relieving letters filled from the record and stored as documents. The offer letter (phase 22) is merged separately, from the CTC breakdown rather than the template store — one letter, one shape, nothing yet asking for a second. | 14, 20 | built |
 | Headcount requests | A manager asks for a new position; approved through HR and finance, it opens vacant, ready for recruitment to open a requisition against. | 15 | built |
 | Bulk import | Load positions, employees and opening balances from a spreadsheet, with a check before anything is written. | 15 | built |
+| Employees who already work here | Added one at a time or by spreadsheet, keeping their own number and joining date, with bank and statutory details and no induction. | — | built |
 | A drawn org chart | The hierarchy as boxes and lines, not only an indented list. | 15 | built |
 | Policies by grade | Different entitlements for different grades or locations. | 16 | built |
 | Regional holiday calendars | Holidays differ by state; today there is one national list. | 16 | built |
@@ -1765,6 +1766,18 @@ Phase 18 closed the gaps this section used to list: employer PF, EPS, EDLI and t
 ## 11. History
 
 What each phase delivered, newest first, and where the build differed from its plan. When a phase in §9 is finished, it moves here.
+
+### People who already work here — 21 Oct 2026
+
+Client feedback: "we should have employee creation already without hiring, since we can go and install this to an already existing company where the employees already exist." Half of it was there — `writeEmployee` in the importer has always skipped the onboarding checklist and probation review — but it was reachable only through the upload wizard, it hard-coded currency, pay scale, hours and employment percentage, and it wrote no bank, statutory or email record, so an imported employee could not actually be paid. Migration 0030 carries one new column.
+
+- **One service, two ways in.** `addExistingEmployee()` sits beside `hire()` in `src/lib/services/people.ts`, and both now write through the same private `writeEmployeeRecords()`. What differs is handed in: whether the number is generated or supplied, which records to write, and whether an induction follows. The importer calls the service rather than repeating its SQL, so a spreadsheet and the screen can no longer drift apart.
+- **What makes someone payable, filed at the same time.** IT0009 bank details, IT0011 statutory (PAN, UAN, ESI number, professional tax state) and IT0105 work email are written when given — none of which `hire()` writes, because a fresh joiner files them in their first week and someone who has worked here for six years has not.
+- **Their own number and their own date.** The employee number is supplied and must be free; the joining date is theirs, and refused if it is in the future (that is a hire, not a migration). `pa_employee.previous_personnel_number` records what the old system called them, which is SAP's IT0032 `PNALT` and the only trace that a record pre-dates this system.
+- **A seat each, still.** A position is required and must be vacant: one position holds one person, and the org-structure import already loads positions first. The screen says so, and points at the import, when nothing is vacant.
+- **The form keeps what was typed.** Found in the browser, not by a test: after a refusal every uncontrolled field came back blank, so correcting a mistyped PAN silently dropped the bank account and the employee was created unpayable. Fixed the way phase "Client feedback, round one" fixed it for requisitions — the action echoes every submitted field back through `ActionState` and the form reads its defaults from those. There is now a test for it, because the failure mode is silent until payday.
+- **The API too**: `POST /employees` takes `already_employed: true` with `employee_number`, plus optional `bank`, `statutory`, `work_email`, `previous_personnel_number`, `weekly_hours` and `employment_percent` — so the client's ERP can push their existing staff through the same service. Sending `employee_number` without the flag is refused rather than ignored, since a hire is numbered here.
+- **The importer's columns** grew to match: `previous_personnel_number`, `marital_status`, `nationality`, `work_email`, `bank_name`, `account_number`, `ifsc`, `pan`, `uan`, `esi_number`, `professional_tax_state`, `currency`, `pay_scale_type`, `weekly_hours`, `employment_percent` — every one optional, each hard-coded value becoming its default. A bank account must arrive whole (both a name and a number), and a PAN or UAN that is not one is refused at the dry run, before anything is written.
 
 ### The reference design's own rules — 11 Oct 2026
 

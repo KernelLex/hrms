@@ -1,6 +1,7 @@
 import "server-only";
 import { rawClient } from "@/lib/db";
 import { OPEN_ENDED, now } from "@/db/schema";
+import { todayInIndia } from "@/lib/dates";
 import { changeStatement, recordChanges, type Actor } from "@/lib/change-log";
 import { saveTimeSlice, readAsOf, SLICED_TABLES } from "@/lib/engines/timeslice";
 import { startOnboarding } from "./checklist";
@@ -30,6 +31,55 @@ export type HireData = {
   workScheduleCode: string;
 };
 
+/**
+ * Someone who already works here, being written down for the first time:
+ * their own number, the day they actually joined, and the records that make
+ * them payable from day one. Everything beyond `HireData` is optional
+ * because a migration arrives with whatever the old system held.
+ */
+export type ExistingEmployeeData = HireData & {
+  /** Theirs, not ours — the number their payslips already carry. */
+  employeeNumber: string;
+  previousPersonnelNumber: string | null;
+  maritalStatus: string | null;
+  nationality: string | null;
+  payScaleType: string;
+  weeklyHours: number;
+  employmentPercent: number;
+  bank: { bankName: string; accountNumber: string; ifsc: string | null; holderName: string | null } | null;
+  statutory: { pan: string | null; uan: string | null; esiNumber: string | null; professionalTaxState: string | null } | null;
+  workEmail: string | null;
+};
+
+/** What differs between a fresh hire and someone already on the payroll. */
+type WriteOptions = {
+  employeeNumber: string;
+  previousPersonnelNumber: string | null;
+  maritalStatus: string | null;
+  nationality: string | null;
+  payScaleType: string;
+  weeklyHours: number;
+  employmentPercent: number;
+  bank: ExistingEmployeeData["bank"];
+  statutory: ExistingEmployeeData["statutory"];
+  workEmail: string | null;
+  /** A fresh hire gets a checklist and a probation review; a migrated one does not. */
+  onboarding: boolean;
+};
+
+const FRESH_HIRE = {
+  previousPersonnelNumber: null,
+  maritalStatus: null,
+  nationality: null,
+  payScaleType: "Monthly salaried",
+  weeklyHours: 40,
+  employmentPercent: 100,
+  bank: null,
+  statutory: null,
+  workEmail: null,
+  onboarding: true,
+} as const;
+
 const one = async (sql: string, args: (string | number | null)[]) =>
   (await rawClient().execute({ sql, args })).rows[0] as Record<string, unknown> | undefined;
 
@@ -37,7 +87,8 @@ const one = async (sql: string, args: (string | number | null)[]) =>
  * The hire action, equivalent to SAP's PA40: the employee and the chain of
  * records payroll needs, and the position marked filled — all or nothing.
  */
-export async function hire(actor: Actor, v: HireData, createdBy: string): Promise<Result<{ employeeId: number; employeeNumber: string }>> {
+/** The checks both ways in share: the seat is real and free, and so is everything it points at. */
+async function checkPlacement(v: HireData): Promise<Result<null>> {
   if (!(v.amountPaise > 0)) return { error: "Enter a basic salary above zero." };
   const [position, unit, company, schedule] = await Promise.all([
     one("SELECT * FROM om_position WHERE code = ?", [v.positionCode]),
@@ -52,6 +103,12 @@ export async function hire(actor: Actor, v: HireData, createdBy: string): Promis
   if (!unit) return { error: "That department no longer exists." };
   if (!company) return { error: "That company does not exist." };
   if (!schedule) return { error: "That work schedule does not exist." };
+  return { ok: true, value: null };
+}
+
+export async function hire(actor: Actor, v: HireData, createdBy: string): Promise<Result<{ employeeId: number; employeeNumber: string }>> {
+  const placed = await checkPlacement(v);
+  if (!placed.ok) return placed;
 
   // EMP1003, EMP1004, ... continuing from whatever exists. Ordered by the
   // number itself, not the text — "EMP2" must outrank "EMP1000", and a
@@ -64,14 +121,29 @@ export async function hire(actor: Actor, v: HireData, createdBy: string): Promis
   const lastNumber = last ? Number(String(last.n).replace(/\D/g, "")) : 1000;
   const employeeNumber = `EMP${lastNumber + 1}`;
 
+  return writeEmployeeRecords(actor, v, createdBy, { ...FRESH_HIRE, employeeNumber });
+}
+
+/**
+ * Writes the employee and their dated records in one transaction, or none of
+ * them. The only difference between a hire and a migration is what is handed
+ * in here — which records to write, and whether an induction follows.
+ */
+async function writeEmployeeRecords(
+  actor: Actor,
+  v: HireData,
+  createdBy: string,
+  o: WriteOptions,
+): Promise<Result<{ employeeId: number; employeeNumber: string }>> {
+  const employeeNumber = o.employeeNumber;
   const createdAt = now();
   const tx = await rawClient().transaction("write");
   let employeeId: number;
   try {
     const inserted = await tx.execute({
-      sql: `INSERT INTO pa_employee (employee_number, hire_date, employment_status, created_at)
-            VALUES (?, ?, 'Active', ?) RETURNING id`,
-      args: [employeeNumber, v.effectiveDate, createdAt],
+      sql: `INSERT INTO pa_employee (employee_number, previous_personnel_number, hire_date, employment_status, created_at)
+            VALUES (?, ?, ?, 'Active', ?) RETURNING id`,
+      args: [employeeNumber, o.previousPersonnelNumber, v.effectiveDate, createdAt],
     });
     employeeId = Number(inserted.rows[0].id);
     const common = [employeeId, v.effectiveDate, OPEN_ENDED, 1, createdBy, createdAt];
@@ -91,20 +163,48 @@ export async function hire(actor: Actor, v: HireData, createdBy: string): Promis
       sql: `INSERT INTO pa_it0002_personal_data (employee_id, valid_from, valid_to, seq, created_by, created_at,
               first_name, last_name, date_of_birth, gender, marital_status, nationality)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [...common, v.firstName, v.lastName, v.dateOfBirth, v.gender, null, null],
+      args: [...common, v.firstName, v.lastName, v.dateOfBirth, v.gender, o.maritalStatus, o.nationality],
     });
     await tx.execute({
       sql: `INSERT INTO pa_it0007_planned_working_time (employee_id, valid_from, valid_to, seq, created_by, created_at,
               work_schedule_code, weekly_hours, employment_percent)
             VALUES (?,?,?,?,?,?,?,?,?)`,
-      args: [...common, v.workScheduleCode, 40, 100],
+      args: [...common, v.workScheduleCode, o.weeklyHours, o.employmentPercent],
     });
     await tx.execute({
       sql: `INSERT INTO pa_it0008_basic_pay (employee_id, valid_from, valid_to, seq, created_by, created_at,
               pay_scale_type, pay_scale_area, pay_scale_group, amount_paise, currency)
             VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [...common, "Monthly salaried", null, v.payScaleGroup, v.amountPaise, v.currency],
+      args: [...common, o.payScaleType, null, v.payScaleGroup, v.amountPaise, v.currency],
     });
+
+    // Only a migration brings these: a fresh hire files them afterwards, but
+    // someone already on the payroll has to be payable from the first run.
+    if (o.bank) {
+      await tx.execute({
+        sql: `INSERT INTO pa_it0009_bank_details (employee_id, valid_from, valid_to, seq, created_by, created_at,
+                bank_name, account_number, ifsc, holder_name)
+              VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        args: [...common, o.bank.bankName, o.bank.accountNumber, o.bank.ifsc, o.bank.holderName],
+      });
+    }
+    if (o.statutory) {
+      await tx.execute({
+        sql: `INSERT INTO pa_it0011_statutory_details (employee_id, valid_from, valid_to, seq, created_by, created_at,
+                uan, esi_number, professional_tax_state, pan, vpf_basis_points)
+              VALUES (?,?,?,?,?,?,?,?,?,?,0)`,
+        args: [...common, o.statutory.uan, o.statutory.esiNumber, o.statutory.professionalTaxState, o.statutory.pan],
+      });
+    }
+    if (o.workEmail) {
+      await tx.execute({
+        sql: `INSERT INTO pa_it0105_communication (employee_id, valid_from, valid_to, seq, created_by, created_at,
+                comm_type, value)
+              VALUES (?,?,?,?,?,?,'Email (official)',?)`,
+        args: [...common, o.workEmail],
+      });
+    }
+
     await tx.execute({ sql: "UPDATE om_position SET is_vacant = 0 WHERE code = ?", args: [v.positionCode] });
 
     const logged = [
@@ -115,6 +215,7 @@ export async function hire(actor: Actor, v: HireData, createdBy: string): Promis
         action: "create",
         after: {
           employeeNumber,
+          previousPersonnelNumber: o.previousPersonnelNumber,
           actionType: v.actionType,
           hireDate: v.effectiveDate,
           firstName: v.firstName,
@@ -138,20 +239,59 @@ export async function hire(actor: Actor, v: HireData, createdBy: string): Promis
       }),
     ];
     for (const st of logged) if (st) await tx.execute(st);
-    await startOnboarding(tx, actor, {
-      employeeId,
-      positionCode: v.positionCode,
-      effectiveDate: v.effectiveDate,
-      createdBy,
-    });
+    if (o.onboarding) {
+      await startOnboarding(tx, actor, {
+        employeeId,
+        positionCode: v.positionCode,
+        effectiveDate: v.effectiveDate,
+        createdBy,
+      });
+    }
     await tx.commit();
   } catch (err) {
     await tx.rollback();
-    return { error: err instanceof Error ? `The hire could not be completed: ${err.message}` : "The hire could not be completed." };
+    return { error: err instanceof Error ? `The record could not be written: ${err.message}` : "The record could not be written." };
   } finally {
     tx.close();
   }
   return { ok: true, value: { employeeId, employeeNumber } };
+}
+
+/**
+ * Someone who already works here, written down for the first time: no
+ * checklist, no probation review and no letter, because they joined long
+ * before this system did and their induction is not ours to run. Their own
+ * employee number and joining date are kept exactly as given.
+ */
+export async function addExistingEmployee(
+  actor: Actor,
+  v: ExistingEmployeeData,
+  createdBy: string,
+): Promise<Result<{ employeeId: number; employeeNumber: string }>> {
+  const employeeNumber = v.employeeNumber.trim().toUpperCase();
+  if (!employeeNumber) return { error: "Enter the employee number they already have." };
+  if (v.effectiveDate > todayInIndia()) {
+    return { error: "Someone who already works here cannot have joined in the future. Use the hire action for a future start." };
+  }
+  const taken = await one("SELECT id FROM pa_employee WHERE employee_number = ?", [employeeNumber]);
+  if (taken) return { error: `${employeeNumber} is already on record.`, code: "conflict" };
+
+  const placed = await checkPlacement(v);
+  if (!placed.ok) return placed;
+
+  return writeEmployeeRecords(actor, v, createdBy, {
+    employeeNumber,
+    previousPersonnelNumber: v.previousPersonnelNumber,
+    maritalStatus: v.maritalStatus,
+    nationality: v.nationality,
+    payScaleType: v.payScaleType,
+    weeklyHours: v.weeklyHours,
+    employmentPercent: v.employmentPercent,
+    bank: v.bank,
+    statutory: v.statutory,
+    workEmail: v.workEmail,
+    onboarding: false,
+  });
 }
 
 /** The fields another system may be given ownership of, and how each is written. */

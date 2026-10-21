@@ -21,9 +21,9 @@ import {
 import { saveTimeSlice, deleteTimeSlice, SLICED_TABLES } from "@/lib/engines/timeslice";
 import { actorOf, audited, recordCreate, recordDelete } from "@/lib/change-log";
 import { toPaise } from "@/lib/money";
-import { hire } from "@/lib/services/people";
+import { addExistingEmployee, hire } from "@/lib/services/people";
 
-export type ActionState = { error?: string; ok?: boolean; employeeId?: number };
+export type ActionState = { error?: string; ok?: boolean; employeeId?: number; values?: Record<string, string> };
 
 const OK: ActionState = { ok: true };
 const fail = (error: string): ActionState => ({ error });
@@ -109,6 +109,147 @@ export async function hireEmployee(
   );
   if (!hired.ok) return fail(hired.error);
   const employeeId = hired.value.employeeId;
+
+  revalidateEmployee(employeeId);
+  revalidatePath("/org", "layout");
+  return { ok: true, employeeId };
+}
+
+/* ------------------------------- CH-01b someone who already works here */
+
+/** Every field the form posts, so a refusal can hand all of them back. */
+const EXISTING_EMPLOYEE_FIELDS = [
+  "employeeNumber",
+  "previousPersonnelNumber",
+  "effectiveDate",
+  "companyCode",
+  "orgUnitCode",
+  "positionCode",
+  "costCenter",
+  "firstName",
+  "lastName",
+  "dateOfBirth",
+  "gender",
+  "maritalStatus",
+  "nationality",
+  "workEmail",
+  "payScaleGroup",
+  "amount",
+  "currency",
+  "workScheduleCode",
+  "weeklyHours",
+  "employmentPercent",
+  "bankName",
+  "accountNumber",
+  "ifsc",
+  "pan",
+  "uan",
+  "esiNumber",
+  "professionalTaxState",
+] as const;
+
+const ExistingInput = HireInput.extend({
+  employeeNumber: z.string().min(1, "Enter the employee number they already have."),
+  previousPersonnelNumber: z.string().nullable(),
+  maritalStatus: z.string().nullable(),
+  nationality: z.string().nullable(),
+  payScaleType: z.string().min(1),
+  weeklyHours: z.number().int().min(1, "Weekly hours must be above zero.").max(100, "Weekly hours cannot exceed 100."),
+  employmentPercent: z.number().int().min(1, "Employment percentage must be above zero.").max(100, "Employment percentage cannot exceed 100."),
+  bankName: z.string().nullable(),
+  accountNumber: z.string().nullable(),
+  ifsc: z.string().nullable(),
+  pan: z
+    .string()
+    .nullable()
+    .refine((v) => v === null || /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(v), "A PAN is five letters, four digits and a letter."),
+  uan: z.string().nullable().refine((v) => v === null || /^[0-9]{12}$/.test(v), "A UAN is 12 digits."),
+  esiNumber: z.string().nullable(),
+  professionalTaxState: z.string().nullable(),
+  workEmail: z.string().nullable(),
+});
+
+/**
+ * The same chain as a hire, for someone already on the payroll when this
+ * system arrives: their own number, the day they actually joined, and the
+ * bank and statutory records that let the first run pay them. No checklist,
+ * no probation review — they were inducted long ago.
+ */
+export async function addExistingEmployeeAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("employee.edit", "pay.view");
+
+  // Every refusal below carries the form back: this one is long, and losing
+  // a bank account to a mistyped PAN would be silent until payday.
+  const typed: Record<string, string> = {};
+  for (const field of EXISTING_EMPLOYEE_FIELDS) typed[field] = str(form.get(field));
+  const keep = (error: string): ActionState => ({ error, values: typed });
+
+  const parsed = ExistingInput.safeParse({
+    employeeNumber: str(form.get("employeeNumber")).toUpperCase(),
+    previousPersonnelNumber: opt(form.get("previousPersonnelNumber")),
+    actionType: "Hire",
+    effectiveDate: str(form.get("effectiveDate")),
+    reason: opt(form.get("reason")) ?? "Already employed",
+    companyCode: str(form.get("companyCode")),
+    areaCode: null,
+    orgUnitCode: str(form.get("orgUnitCode")),
+    positionCode: str(form.get("positionCode")),
+    costCenter: opt(form.get("costCenter")),
+    firstName: str(form.get("firstName")),
+    lastName: str(form.get("lastName")),
+    dateOfBirth: opt(form.get("dateOfBirth")),
+    gender: opt(form.get("gender")),
+    maritalStatus: opt(form.get("maritalStatus")),
+    nationality: opt(form.get("nationality")),
+    payScaleGroup: opt(form.get("payScaleGroup")),
+    amount: num(form.get("amount")),
+    currency: str(form.get("currency")) || "INR",
+    payScaleType: str(form.get("payScaleType")) || "Monthly salaried",
+    workScheduleCode: str(form.get("workScheduleCode")) || "WS01",
+    weeklyHours: num(form.get("weeklyHours")) || 40,
+    employmentPercent: num(form.get("employmentPercent")) || 100,
+    bankName: opt(form.get("bankName")),
+    accountNumber: opt(form.get("accountNumber")),
+    ifsc: opt(form.get("ifsc")),
+    pan: opt(form.get("pan")),
+    uan: opt(form.get("uan")),
+    esiNumber: opt(form.get("esiNumber")),
+    professionalTaxState: opt(form.get("professionalTaxState")),
+    workEmail: opt(form.get("workEmail")),
+  });
+  if (!parsed.success) return keep(firstIssue(parsed.error));
+  const v = parsed.data;
+
+  if (Boolean(v.bankName) !== Boolean(v.accountNumber)) {
+    return keep("A bank account needs both a bank name and an account number, or neither.");
+  }
+
+  const added = await addExistingEmployee(
+    actorOf(session),
+    {
+      ...v,
+      amountPaise: toPaise(v.amount),
+      bank:
+        v.bankName && v.accountNumber
+          ? { bankName: v.bankName, accountNumber: v.accountNumber, ifsc: v.ifsc, holderName: null }
+          : null,
+      statutory:
+        v.pan || v.uan || v.esiNumber || v.professionalTaxState
+          ? {
+              pan: v.pan,
+              uan: v.uan,
+              esiNumber: v.esiNumber,
+              professionalTaxState: v.professionalTaxState ? v.professionalTaxState.toUpperCase() : null,
+            }
+          : null,
+    },
+    session.username,
+  );
+  if (!added.ok) return keep(added.error);
+  const employeeId = added.value.employeeId;
 
   revalidateEmployee(employeeId);
   revalidatePath("/org", "layout");

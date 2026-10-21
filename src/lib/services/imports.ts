@@ -2,13 +2,14 @@ import "server-only";
 import type { InValue } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { OPEN_ENDED, now } from "@/db/schema";
-import { changeStatement, recordChanges, type Actor } from "@/lib/change-log";
+import { recordChanges, type Actor } from "@/lib/change-log";
 import { financialYearOf } from "@/lib/engines/tax";
 import { toCsv } from "@/lib/csv";
 import { toPaise } from "@/lib/money";
 import { todayInIndia } from "@/lib/dates";
 import { GENDERS } from "@/lib/corrections-values";
 import { enqueueJob } from "@/lib/jobs/queue";
+import { addExistingEmployee } from "./people";
 import type { Result } from "./result";
 
 /**
@@ -79,6 +80,21 @@ const COLUMNS: Record<ImportKind, { name: string; required: boolean; hint: strin
     { name: "cost_centre", required: false, hint: "CC-IT-01" },
     { name: "pay_scale_group", required: false, hint: "L3" },
     { name: "basic_pay", required: true, hint: "68000" },
+    { name: "previous_personnel_number", required: false, hint: "Their number in the system you are leaving" },
+    { name: "marital_status", required: false, hint: "Married" },
+    { name: "nationality", required: false, hint: "Indian" },
+    { name: "work_email", required: false, hint: "meera.nair@acme.example" },
+    { name: "bank_name", required: false, hint: "State Bank of India" },
+    { name: "account_number", required: false, hint: "30123456789" },
+    { name: "ifsc", required: false, hint: "SBIN0001234" },
+    { name: "pan", required: false, hint: "ABCPR1234K" },
+    { name: "uan", required: false, hint: "100123456789" },
+    { name: "esi_number", required: false, hint: "Leave empty above the wage ceiling" },
+    { name: "professional_tax_state", required: false, hint: "KARNATAKA" },
+    { name: "currency", required: false, hint: "INR" },
+    { name: "pay_scale_type", required: false, hint: "Monthly salaried" },
+    { name: "weekly_hours", required: false, hint: "40" },
+    { name: "employment_percent", required: false, hint: "100" },
     { name: "work_schedule_code", required: true, hint: "WS01" },
   ],
   opening_balances: [
@@ -250,6 +266,16 @@ async function checkEmployee(row: Row, cache: Cache): Promise<RowVerdict> {
   const pay = numberOf(str(row, "basic_pay"));
   if (!(pay !== null && pay > 0)) messages.push("A basic salary above zero is needed, in rupees a month.");
 
+  const bankName = str(row, "bank_name");
+  const accountNumber = str(row, "account_number");
+  if (Boolean(bankName) !== Boolean(accountNumber)) {
+    messages.push("A bank account needs both a bank name and an account number, or neither.");
+  }
+  const pan = str(row, "pan");
+  if (pan && !/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(pan)) messages.push(`${pan} is not a PAN.`);
+  const uan = str(row, "uan");
+  if (uan && !/^[0-9]{12}$/.test(uan)) messages.push("A UAN is 12 digits.");
+
   const schedule = str(row, "work_schedule_code");
   if (!schedule) messages.push("A work schedule code is needed.");
   else if (!(await cachedOne(cache, "SELECT code FROM pt_work_schedule_rule WHERE code = ?", [schedule]))) {
@@ -260,97 +286,64 @@ async function checkEmployee(row: Row, cache: Cache): Promise<RowVerdict> {
 }
 
 /**
- * One employee and the dated records payroll needs, in one transaction —
- * the same chain the hire action writes, without the onboarding checklist
- * and probation review: an imported employee joined long before today, and
- * their induction is not this system's to run.
+ * One employee and the dated records payroll needs, through the same service
+ * the "add existing employee" screen uses — so a spreadsheet and a form write
+ * exactly the same thing, including the bank and statutory records that make
+ * someone payable from the first run. No onboarding checklist and no
+ * probation review: an imported employee joined long before today, and their
+ * induction is not this system's to run.
  */
 async function writeEmployee(row: Row, actor: Actor, createdBy: string): Promise<RowVerdict> {
   const verdict = await checkEmployee(row, new Map());
   if (verdict.outcome !== "ok") return verdict;
 
   const number = str(row, "employee_number").toUpperCase();
-  const hireDate = str(row, "hire_date");
-  const position = str(row, "position_code").toUpperCase();
-  const amountPaise = toPaise(numberOf(str(row, "basic_pay"))!);
-  const createdAt = now();
+  const bankName = str(row, "bank_name");
+  const accountNumber = str(row, "account_number");
+  const pan = str(row, "pan");
+  const uan = str(row, "uan");
+  const esiNumber = str(row, "esi_number");
+  const ptState = str(row, "professional_tax_state");
+  const whole = (name: string, fallback: number) => {
+    const n = numberOf(str(row, name));
+    return n === null ? fallback : Math.round(n);
+  };
 
-  const tx = await rawClient().transaction("write");
-  try {
-    const inserted = await tx.execute({
-      sql: `INSERT INTO pa_employee (employee_number, hire_date, employment_status, created_at)
-            VALUES (?, ?, 'Active', ?) RETURNING id`,
-      args: [number, hireDate, createdAt],
-    });
-    const employeeId = Number(inserted.rows[0].id);
-    const common = [employeeId, hireDate, OPEN_ENDED, 1, createdBy, createdAt];
-
-    await tx.execute({
-      sql: `INSERT INTO pa_it0000_action (employee_id, valid_from, valid_to, seq, created_by, created_at, action_type, reason)
-            VALUES (?,?,?,?,?,?,'Hire','Imported')`,
-      args: common,
-    });
-    await tx.execute({
-      sql: `INSERT INTO pa_it0001_org_assignment (employee_id, valid_from, valid_to, seq, created_by, created_at,
-              company_code, org_unit_code, position_code, cost_center)
-            VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      args: [...common, str(row, "company_code"), str(row, "org_unit_code"), position, str(row, "cost_centre") || null],
-    });
-    await tx.execute({
-      sql: `INSERT INTO pa_it0002_personal_data (employee_id, valid_from, valid_to, seq, created_by, created_at,
-              first_name, last_name, date_of_birth, gender, marital_status, nationality)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      args: [...common, str(row, "first_name"), str(row, "last_name"), str(row, "date_of_birth") || null, str(row, "gender") || null, null, null],
-    });
-    await tx.execute({
-      sql: `INSERT INTO pa_it0007_planned_working_time (employee_id, valid_from, valid_to, seq, created_by, created_at,
-              work_schedule_code, weekly_hours, employment_percent)
-            VALUES (?,?,?,?,?,?,?,40,100)`,
-      args: [...common, str(row, "work_schedule_code")],
-    });
-    await tx.execute({
-      sql: `INSERT INTO pa_it0008_basic_pay (employee_id, valid_from, valid_to, seq, created_by, created_at,
-              pay_scale_type, pay_scale_area, pay_scale_group, amount_paise, currency)
-            VALUES (?,?,?,?,?,?,'Monthly salaried',NULL,?,?,'INR')`,
-      args: [...common, str(row, "pay_scale_group") || null, amountPaise],
-    });
-    await tx.execute({ sql: "UPDATE om_position SET is_vacant = 0 WHERE code = ?", args: [position] });
-
-    const logged = [
-      changeStatement(actor, {
-        entity: "pa_employee",
-        entityId: employeeId,
-        subjectEmployeeId: employeeId,
-        action: "create",
-        after: {
-          employeeNumber: number,
-          hireDate,
-          firstName: str(row, "first_name"),
-          lastName: str(row, "last_name"),
-          companyCode: str(row, "company_code"),
-          orgUnitCode: str(row, "org_unit_code"),
-          positionCode: position,
-          amountPaise,
-        },
-        reason: "Imported",
-      }),
-      changeStatement(actor, {
-        entity: "om_position",
-        entityId: position,
-        action: "update",
-        before: { isVacant: true },
-        after: { isVacant: false },
-        reason: `Filled by ${number}`,
-      }),
-    ];
-    for (const st of logged) if (st) await tx.execute(st);
-    await tx.commit();
-  } catch (err) {
-    await tx.rollback();
-    return { key: number, outcome: "error", messages: [err instanceof Error ? err.message : "The row could not be written."] };
-  } finally {
-    tx.close();
-  }
+  const written = await addExistingEmployee(
+    actor,
+    {
+      employeeNumber: number,
+      previousPersonnelNumber: str(row, "previous_personnel_number") || null,
+      actionType: "Hire",
+      effectiveDate: str(row, "hire_date"),
+      reason: "Imported",
+      companyCode: str(row, "company_code"),
+      orgUnitCode: str(row, "org_unit_code"),
+      positionCode: str(row, "position_code").toUpperCase(),
+      costCenter: str(row, "cost_centre") || null,
+      firstName: str(row, "first_name"),
+      lastName: str(row, "last_name"),
+      dateOfBirth: str(row, "date_of_birth") || null,
+      gender: str(row, "gender") || null,
+      maritalStatus: str(row, "marital_status") || null,
+      nationality: str(row, "nationality") || null,
+      payScaleGroup: str(row, "pay_scale_group") || null,
+      amountPaise: toPaise(numberOf(str(row, "basic_pay"))!),
+      currency: str(row, "currency").toUpperCase() || "INR",
+      payScaleType: str(row, "pay_scale_type") || "Monthly salaried",
+      workScheduleCode: str(row, "work_schedule_code"),
+      weeklyHours: whole("weekly_hours", 40),
+      employmentPercent: whole("employment_percent", 100),
+      bank: bankName && accountNumber ? { bankName, accountNumber, ifsc: str(row, "ifsc") || null, holderName: null } : null,
+      statutory:
+        pan || uan || esiNumber || ptState
+          ? { pan: pan || null, uan: uan || null, esiNumber: esiNumber || null, professionalTaxState: ptState.toUpperCase() || null }
+          : null,
+      workEmail: str(row, "work_email") || null,
+    },
+    createdBy,
+  );
+  if (!written.ok) return { key: number, outcome: "error", messages: [written.error] };
   return { key: number, outcome: "ok", messages: [] };
 }
 

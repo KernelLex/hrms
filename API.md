@@ -1152,7 +1152,7 @@ GET /api/v1/employees/3/history?record=org_assignment
 
 #### POST /employees
 
-<a id="post-employees"></a>**Hire someone.** The hire action, with exactly the checks HR's screen applies: the employee, their action, org assignment, personal data, working time and basic pay, and the position marked filled — all or nothing. Send an Idempotency-Key so a retry cannot hire twice.
+<a id="post-employees"></a>**Hire someone.** The hire action, with exactly the checks HR's screen applies: the employee, their action, org assignment, personal data, working time and basic pay, and the position marked filled — all or nothing. Send an Idempotency-Key so a retry cannot hire twice. For people who already work here when this system arrives, send `already_employed: true` with their own `employee_number`: the same records are written, plus the bank and statutory details, and no onboarding or probation is started.
 
 Needs `employees:hire`. Send an `Idempotency-Key`. Answers 201.
 
@@ -1174,6 +1174,16 @@ Needs `employees:hire`. Send an `Idempotency-Key`. Answers 201.
 | `basic_pay` | Money | yes |  |
 | `work_schedule` | string |  | Default `"WS01"`. |
 | `external_ids` | object |  |  |
+| `already_employed` | boolean |  | True for someone who already works here when this system arrives: their own `employee_number` is kept, `effective_date` is the day they actually joined, and no onboarding checklist or probation review is created. Default `false`. |
+| `employee_number` | string, or null |  | Required with `already_employed`; refused without it, since a hire is numbered here. |
+| `previous_personnel_number` | string, or null |  |  |
+| `marital_status` | string, or null |  |  |
+| `nationality` | string, or null |  |  |
+| `work_email` | string, or null |  |  |
+| `weekly_hours` | integer |  | Default `40`. |
+| `employment_percent` | integer |  | Default `100`. |
+| `bank` | object, or null |  | Filed as IT0009, so the first payroll run can pay them. |
+| `statutory` | object, or null |  | Filed as IT0011. |
 
 ```http
 POST /api/v1/employees

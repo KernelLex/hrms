@@ -27,6 +27,7 @@ const ALL_SIGNED_IN: Permission[] = [];
 export const ACTIONS: Command[] = [
   { label: "See who changed what", href: "/change-log", icon: "History", anyOf: ["audit.view"], keywords: "audit history trail" },
   { label: "Hire an employee", href: "/core-hr/hire", icon: "UserPlus", anyOf: ["employee.edit"], keywords: "new joiner onboard" },
+  { label: "Add an existing employee", href: "/core-hr/add-existing", icon: "UserPlus", anyOf: ["employee.edit"], keywords: "migrate existing already works here" },
   { label: "Run payroll", href: "/payroll/run", icon: "Banknote", anyOf: ["payroll.run"], keywords: "salary pay" },
   { label: "Record an absence", href: "/time/absences", icon: "CalendarDays", anyOf: ["time.manage"], keywords: "leave sick" },
   { label: "Open a requisition", href: "/recruitment/requisitions/new", icon: "Briefcase", anyOf: ["recruitment.manage"], keywords: "vacancy job opening post role" },

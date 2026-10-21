@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { InValue } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { todayInIndia } from "@/lib/dates";
-import { hire, updateEmployeeFields, EMPLOYEE_FIELDS, type EmployeeField } from "@/lib/services/people";
+import { addExistingEmployee, hire, updateEmployeeFields, EMPLOYEE_FIELDS, type EmployeeField } from "@/lib/services/people";
 import { externalIdsFor, findByExternalId, ownerOf, setExternalId } from "@/lib/services/integration";
 import { loadOrgTree, nearestAncestorWithRole } from "@/lib/org-tree";
 import { IsoDate, Money, DEFAULT_LIMIT, PageQuery, decodeCursor, etagOf, money, page, pageSchema, pickFields, toPaiseExact, until } from "../format";
@@ -246,6 +246,44 @@ const HireBody = z
     basic_pay: Money,
     work_schedule: z.string().default("WS01"),
     external_ids: z.record(z.string(), z.string()).optional(),
+    already_employed: z
+      .boolean()
+      .default(false)
+      .meta({
+        description:
+          "True for someone who already works here when this system arrives: their own `employee_number` is kept, `effective_date` is the day they actually joined, and no onboarding checklist or probation review is created.",
+      }),
+    employee_number: z
+      .string()
+      .nullable()
+      .default(null)
+      .meta({ description: "Required with `already_employed`; refused without it, since a hire is numbered here." }),
+    previous_personnel_number: z.string().nullable().default(null),
+    marital_status: z.string().nullable().default(null),
+    nationality: z.string().nullable().default(null),
+    work_email: z.string().email().nullable().default(null),
+    weekly_hours: z.number().int().min(1).max(100).default(40),
+    employment_percent: z.number().int().min(1).max(100).default(100),
+    bank: z
+      .object({
+        bank_name: z.string().min(1),
+        account_number: z.string().min(1),
+        ifsc: z.string().nullable().default(null),
+        holder_name: z.string().nullable().default(null),
+      })
+      .nullable()
+      .default(null)
+      .meta({ description: "Filed as IT0009, so the first payroll run can pay them." }),
+    statutory: z
+      .object({
+        pan: z.string().nullable().default(null),
+        uan: z.string().nullable().default(null),
+        esi_number: z.string().nullable().default(null),
+        professional_tax_state: z.string().nullable().default(null),
+      })
+      .nullable()
+      .default(null)
+      .meta({ description: "Filed as IT0011." }),
   })
   .meta({ id: "HireRequest" });
 
@@ -421,7 +459,7 @@ export const employeeEndpoints: Endpoint[] = [
     tag: "People",
     summary: "Hire someone",
     description:
-      "The hire action, with exactly the checks HR's screen applies: the employee, their action, org assignment, personal data, working time and basic pay, and the position marked filled — all or nothing. Send an Idempotency-Key so a retry cannot hire twice.",
+      "The hire action, with exactly the checks HR's screen applies: the employee, their action, org assignment, personal data, working time and basic pay, and the position marked filled — all or nothing. Send an Idempotency-Key so a retry cannot hire twice. For people who already work here when this system arrives, send `already_employed: true` with their own `employee_number`: the same records are written, plus the bank and statutory details, and no onboarding or probation is started.",
     scopes: ["employees:hire"],
     body: HireBody,
     response: EmployeeSchema,
@@ -446,27 +484,62 @@ export const employeeEndpoints: Endpoint[] = [
       if (ctx.client.companies && !ctx.client.companies.includes(b.company)) {
         throw invalid(`This client may not hire into ${b.company}.`);
       }
-      const hired = await hire(
-        ctx.actor,
-        {
-          actionType: b.action_type,
-          effectiveDate: b.effective_date,
-          reason: b.reason,
-          companyCode: b.company,
-          orgUnitCode: b.department,
-          positionCode: b.position,
-          costCenter: b.cost_centre,
-          firstName: b.first_name,
-          lastName: b.last_name,
-          dateOfBirth: b.date_of_birth,
-          gender: b.gender,
-          payScaleGroup: b.pay_scale_group,
-          amountPaise: toPaiseExact(b.basic_pay),
-          currency: b.basic_pay.currency,
-          workScheduleCode: b.work_schedule,
-        },
-        `${ctx.client.name} (API)`,
-      );
+      if (!b.already_employed && b.employee_number !== null) {
+        throw invalid("employee_number is set here, not by the caller. Send already_employed: true to keep a number they already have.");
+      }
+      if (b.already_employed && !b.employee_number) {
+        throw invalid("already_employed needs the employee_number they already have.");
+      }
+      const common = {
+        actionType: b.action_type,
+        effectiveDate: b.effective_date,
+        reason: b.reason,
+        companyCode: b.company,
+        orgUnitCode: b.department,
+        positionCode: b.position,
+        costCenter: b.cost_centre,
+        firstName: b.first_name,
+        lastName: b.last_name,
+        dateOfBirth: b.date_of_birth,
+        gender: b.gender,
+        payScaleGroup: b.pay_scale_group,
+        amountPaise: toPaiseExact(b.basic_pay),
+        currency: b.basic_pay.currency,
+        workScheduleCode: b.work_schedule,
+      };
+      const hired = b.already_employed
+        ? await addExistingEmployee(
+            ctx.actor,
+            {
+              ...common,
+              employeeNumber: b.employee_number!,
+              previousPersonnelNumber: b.previous_personnel_number,
+              maritalStatus: b.marital_status,
+              nationality: b.nationality,
+              payScaleType: "Monthly salaried",
+              weeklyHours: b.weekly_hours,
+              employmentPercent: b.employment_percent,
+              workEmail: b.work_email,
+              bank: b.bank
+                ? {
+                    bankName: b.bank.bank_name,
+                    accountNumber: b.bank.account_number,
+                    ifsc: b.bank.ifsc,
+                    holderName: b.bank.holder_name,
+                  }
+                : null,
+              statutory: b.statutory
+                ? {
+                    pan: b.statutory.pan,
+                    uan: b.statutory.uan,
+                    esiNumber: b.statutory.esi_number,
+                    professionalTaxState: b.statutory.professional_tax_state,
+                  }
+                : null,
+            },
+            `${ctx.client.name} (API)`,
+          )
+        : await hire(ctx.actor, common, `${ctx.client.name} (API)`);
       if (!hired.ok) throw hired.code === "conflict" ? new ApiError(409, "conflict", hired.error) : invalid(hired.error);
       for (const [system, externalId] of Object.entries(b.external_ids ?? {})) {
         await setExternalId(ctx.actor, system, "employee", String(hired.value.employeeId), externalId);

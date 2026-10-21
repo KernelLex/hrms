@@ -73,7 +73,13 @@ The modules below are not separate tools bolted together — the same hire, the 
 - Reporting lines between positions, and an **org chart** drawn as boxes and lines you can search, collapse, pan and zoom — each box labelled with its own level — with a plain list alongside it that shows **headcount and vacancies for every node**, counting everything beneath it.
 - Vacant positions, ready for hiring.
 - **Headcount requests**: a manager asks for a new position, with its budget; approved by their manager, HR and finance, it opens vacant and ready to hire against.
+- **People who already work here.** Installing into a company that already has staff does not mean pretending to hire everyone. Add them one at a time, or load the whole company from a spreadsheet: they keep their own employee number and the date they actually joined, their bank and statutory details are filed at the same time so the first payroll run can pay them, and nobody gets an onboarding checklist or a probation review for a job they have held for years.
 - **Bulk import**: load positions, employees with their history, and opening balances — what someone earned, paid in tax and had left in leave before switching to this system — from a spreadsheet. Every row is checked before anything is written, and importing the same file twice changes nothing.
+
+**How an existing company is loaded, in order:**
+1. **Org structure** — the levels, then the units, then the positions. One position holds one person, so there is a seat for everyone before anyone arrives.
+2. **People** — the spreadsheet of employees, or the Add existing employee screen one at a time. Every row is checked before anything is written.
+3. **Opening balances** — what each person earned and paid in tax before the switch, and the leave they have left. Without these, the first payroll run deducts the wrong tax for the rest of the year.
 
 **How the org structure is set up:**
 1. Decide your levels under **Org levels** — their names, what may sit under what, and which of them payroll, holiday calendars and cost booking attach to.
