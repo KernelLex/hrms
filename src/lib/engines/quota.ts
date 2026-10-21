@@ -1,8 +1,8 @@
 import "server-only";
 import type { InStatement } from "@libsql/client";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, count, eq, gte, lte } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
-import { ptHoliday, ptAbsenceQuota, ptQuotaType, ptAbsenceType, now } from "@/db/schema";
+import { ptHoliday, ptHolidayYear, ptAbsenceQuota, ptQuotaType, ptAbsenceType, now } from "@/db/schema";
 import { changeStatement, type Actor } from "@/lib/change-log";
 import { loadOrgTree, ancestryOf, nearestAncestorWithRole, type OrgTree } from "@/lib/org-tree";
 import type { LedgerEntryType } from "@/db/schema";
@@ -94,6 +94,38 @@ export async function calendarFor(employeeId: number, asOf?: string): Promise<st
 export function calendarForOrgUnit(tree: OrgTree, orgUnitCode: string | null): string {
   const node = nearestAncestorWithRole(tree, orgUnitCode, "isCalendarLevel");
   return node?.calendarCode ?? DEFAULT_CALENDAR;
+}
+
+/**
+ * What one calendar gives one person in a year, and how much of it they
+ * choose for themselves.
+ *
+ * The cap counts both kinds together, so the optional allowance is the cap
+ * less the fixed days already published — never stored, because publishing
+ * one more fixed holiday has to take one off everybody's choice the moment
+ * it lands. The published list may be longer than the cap; the allowance
+ * never goes below zero, and fixed days are never taken away.
+ */
+export async function holidayAllowanceFor(
+  calendarCode: string,
+  year: number,
+): Promise<{ total: number; mandatory: number; optional: number; isPublished: boolean } | null> {
+  const [row] = await db
+    .select()
+    .from(ptHolidayYear)
+    .where(and(eq(ptHolidayYear.calendarCode, calendarCode), eq(ptHolidayYear.year, year)));
+  if (!row) return null;
+  const [counted] = await db
+    .select({ n: count() })
+    .from(ptHoliday)
+    .where(and(eq(ptHoliday.calendarCode, calendarCode), eq(ptHoliday.year, year), eq(ptHoliday.isOptional, false)));
+  const mandatory = Number(counted.n);
+  return {
+    total: row.totalAllowance,
+    mandatory,
+    optional: Math.max(0, row.totalAllowance - mandatory),
+    isPublished: row.isPublished,
+  };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey, foreignKey } from "drizzle-orm/sqlite-core";
 import { paEmployee } from "./personnel";
 import { intClient } from "./integration";
 
@@ -153,14 +153,37 @@ export const ptLeaveRequest = sqliteTable(
 export const ptHolidayCalendar = sqliteTable("pt_holiday_calendar", {
   code: text("code").primaryKey(),
   name: text("name").notNull(),
-  /**
-   * How many of this calendar's optional holidays one person may take in a
-   * year. Zero — the default — means none, so marking a holiday optional
-   * does nothing until HR says how many people get.
-   */
-  optionalAllowance: integer("optional_allowance").notNull().default(0),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
 });
+
+/** What a calendar gives in a year, if nothing says otherwise. */
+export const DEFAULT_HOLIDAY_ALLOWANCE = 12;
+
+/**
+ * One calendar's year: the list is published a year at a time, and the cap
+ * belongs to the year rather than to the calendar, because it is a figure
+ * HR agrees annually.
+ *
+ * `totalAllowance` counts **both kinds together** — how many days off one
+ * person gets from this calendar in this year. How many optional days they
+ * may choose is therefore derived, never stored: the cap less the fixed
+ * holidays already published. Publishing 10 fixed days under a cap of 12
+ * leaves two to choose; the list itself may be far longer than the cap.
+ */
+export const ptHolidayYear = sqliteTable(
+  "pt_holiday_year",
+  {
+    calendarCode: text("calendar_code")
+      .notNull()
+      .references(() => ptHolidayCalendar.code),
+    year: integer("year").notNull(),
+    totalAllowance: integer("total_allowance").notNull().default(DEFAULT_HOLIDAY_ALLOWANCE),
+    /** Until it is published, the year is HR's draft and nobody can choose from it. */
+    isPublished: integer("is_published", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.calendarCode, t.year] })],
+);
 
 export const ptHoliday = sqliteTable(
   "pt_holiday",
@@ -179,8 +202,20 @@ export const ptHoliday = sqliteTable(
      * payroll, time evaluation and the team calendar need no special case.
      */
     isOptional: integer("is_optional", { mode: "boolean" }).notNull().default(false),
+    /**
+     * Taken from the date, and held as a column so a holiday cannot exist
+     * before its year does: the pair points at `pt_holiday_year`.
+     */
+    year: integer("year").notNull(),
   },
-  (t) => [uniqueIndex("ux_holiday_date_calendar").on(t.date, t.calendarCode)],
+  (t) => [
+    uniqueIndex("ux_holiday_date_calendar").on(t.date, t.calendarCode),
+    index("ix_holiday_year").on(t.calendarCode, t.year),
+    foreignKey({
+      columns: [t.calendarCode, t.year],
+      foreignColumns: [ptHolidayYear.calendarCode, ptHolidayYear.year],
+    }),
+  ],
 );
 
 /** The absence type an optional holiday someone has taken is recorded as. */

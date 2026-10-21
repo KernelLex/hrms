@@ -140,7 +140,9 @@ If you reorganise later — a new region, a vertical split in two — you move u
 - **Leave policies by grade and location**: how much a year, earned monthly or all at once, a joiner's first year pro-rated automatically, a cap on what carries into the new year, and what lapses.
 - Balances down to half days, with a running ledger behind each one — "why do I have what I have" — and a forecast of what a balance will be on a future date.
 - **State holiday calendars**: give each location its own public holidays, and leave, payroll and time evaluation all use the right one automatically.
-- **Optional holidays**: mark the festivals you leave to each person and say how many they may take. One of these is an ordinary working day until an employee chooses it; chosen, it is a paid day off for them alone and costs them no leave.
+- **A holiday list per year, with one allowance.** Publish each calendar a year at a time and say how many days off that year gives — 12 by default. Mark each day fixed or optional. The fixed days come off the allowance first, so what is left is how many of the optional ones each person may choose, worked out for you and never typed in: publish a tenth fixed day and everybody's choice drops from three to two the same moment. The list you offer can be far longer than the allowance.
+- **Optional holidays**: the festivals you leave to each person. One of these is an ordinary working day until an employee chooses it; chosen, it is a paid day off for them alone and costs them no leave.
+- **Next year in one click**: copy a year forward and the same names land on the same dates, ready for you to move the ones that follow a lunar calendar. A year stays a draft, invisible to everyone, until you publish it.
 - Leave requests that follow the approval route you set — by default the employee's manager, with HR added for longer leave — including the sandwich rule, where a policy asks for it.
 - **Compensatory off**, earned by working a holiday or a weekend and spent like leave, and **leave encashment**, paid through the next payroll run at the going daily rate.
 - Unpaid leave flows into payroll as a deduction automatically.

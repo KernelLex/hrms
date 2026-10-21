@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { rawClient } from "@/lib/db";
 import { saveInfotypeSlice, deleteInfotypeSlice, setEmploymentStatus } from "@/app/actions/core-hr";
-import { saveHoliday } from "@/app/actions/time";
+import { saveHoliday, saveHolidayYear } from "@/app/actions/time";
 import { diff } from "@/lib/change-log";
 import { describeChange, formatValue } from "@/lib/change-format";
 import { listChanges } from "@/lib/repositories/change-log";
@@ -87,6 +87,8 @@ describe("recording changes", () => {
   });
 
   it("logs master data that belongs to nobody in particular", async () => {
+    // A holiday belongs to a year, so the year is opened first.
+    await saveHolidayYear({}, form({ calendarCode: "NATIONAL", year: 2031, totalAllowance: 12, isPublished: "on" }));
     await saveHoliday({}, form({ date: "2031-01-26", name: "Republic Day", calendarCode: "NATIONAL" }));
     const { rows } = await listChanges({ entity: "pt_holiday" }, 10);
     expect(rows[0].after).toMatchObject({ date: "2031-01-26", name: "Republic Day" });

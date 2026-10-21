@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, rawClient } from "@/lib/db";
 import { can, requireAccess, requireAnyPermission, requirePermission } from "@/lib/access";
@@ -12,6 +12,8 @@ import {
   ptLeaveRequest,
   ptHoliday,
   ptHolidayCalendar,
+  ptHolidayYear,
+  DEFAULT_HOLIDAY_ALLOWANCE,
   ptLeavePolicy,
   ptWorkScheduleRule,
   ACCRUAL_FREQUENCIES,
@@ -23,6 +25,7 @@ import {
   postLedger,
   daysToUnits,
   calendarFor,
+  holidayAllowanceFor,
   holidaysBetween,
   isWeekend,
 } from "@/lib/engines/quota";
@@ -509,19 +512,27 @@ export async function saveHoliday(
   // chooses it, so it stays a working day for everyone else.
   const isOptional = form.get("isOptional") === "on" || form.get("isOptional") === "1" || form.get("isOptional") === "true";
 
+  // The list is published a year at a time, so the year has to exist first —
+  // it is what carries the cap these days count against.
+  const year = Number(date.slice(0, 4));
+  const holidayYear = await db.query.ptHolidayYear.findFirst({
+    where: and(eq(ptHolidayYear.calendarCode, calendarCode), eq(ptHolidayYear.year, year)),
+  });
+  if (!holidayYear) return fail(`${calendarCode} has no ${year} yet. Open the year first, then add its days.`);
+
   if (original) {
     await audited(
       actorOf(session),
       { entity: "pt_holiday", entityId: Number(original) },
       () => db.query.ptHoliday.findFirst({ where: eq(ptHoliday.id, Number(original)) }),
-      () => db.update(ptHoliday).set({ date, name, calendarCode, isOptional }).where(eq(ptHoliday.id, Number(original))),
+      () => db.update(ptHoliday).set({ date, name, calendarCode, isOptional, year }).where(eq(ptHoliday.id, Number(original))),
     );
   } else {
     const existing = await db.query.ptHoliday.findFirst({
       where: and(eq(ptHoliday.date, date), eq(ptHoliday.calendarCode, calendarCode)),
     });
     if (existing) return fail(`That calendar already has a holiday on ${date}.`);
-    const [created] = await db.insert(ptHoliday).values({ date, name, calendarCode, isOptional }).returning();
+    const [created] = await db.insert(ptHoliday).values({ date, name, calendarCode, isOptional, year }).returning();
     await recordCreate(actorOf(session), "pt_holiday", created.id, created);
   }
 
@@ -586,18 +597,26 @@ export async function setOptionalHoliday(_prev: ActionState, form: FormData): Pr
   if (existing.rows.length > 0) return fail("You have already taken that day.");
   if (holiday.date < todayInIndia()) return fail("That day has passed. An optional holiday is chosen before it falls.");
 
-  const calendar = await db.query.ptHolidayCalendar.findFirst({ where: eq(ptHolidayCalendar.code, calendarCode) });
-  const allowance = calendar?.optionalAllowance ?? 0;
-  if (allowance <= 0) return fail("Your calendar has no optional holidays to take.");
-
   const year = holiday.date.slice(0, 4);
+  const allowance = await holidayAllowanceFor(calendarCode, Number(year));
+  if (!allowance) return fail(`Your calendar has no ${year} published yet.`);
+  if (!allowance.isPublished) return fail(`${year} is still a draft on your calendar, so its days cannot be chosen yet.`);
+  if (allowance.optional <= 0) {
+    return fail(
+      `${year} gives ${allowance.total} day${allowance.total === 1 ? "" : "s"} off, and all of them are fixed holidays, so there is none left to choose.`,
+    );
+  }
+
   const taken = await rawClient().execute({
     sql: `SELECT COUNT(*) AS n FROM pt_it2001_absence
           WHERE employee_id = ? AND absence_type_code = ? AND substr(start_date, 1, 4) = ?`,
     args: [employeeId, OPTIONAL_HOLIDAY_ABSENCE_CODE, year],
   });
-  if (Number(taken.rows[0].n) >= allowance) {
-    return fail(`You have already taken your ${allowance} optional holiday${allowance === 1 ? "" : "s"} for ${year}.`);
+  if (Number(taken.rows[0].n) >= allowance.optional) {
+    const days = `${allowance.total} day${allowance.total === 1 ? "" : "s"} off`;
+    return fail(
+      `${year} gives ${days}, ${allowance.mandatory} of them fixed, so you may choose ${allowance.optional} — and you have taken ${taken.rows[0].n}.`,
+    );
   }
 
   const saved = await recordAbsence(actorOf(session), {
@@ -625,17 +644,11 @@ export async function saveHolidayCalendar(
     .object({
       code: z.string().trim().min(1, "Enter a code.").max(20).regex(/^[A-Za-z0-9_-]+$/, "A code may use only letters, numbers, hyphens and underscores."),
       name: z.string().trim().min(1, "Enter a name."),
-      optionalAllowance: z
-        .number("Enter how many optional holidays someone may take, or 0 for none.")
-        .int("That is a whole number of days.")
-        .min(0)
-        .max(50),
       isActive: z.boolean(),
     })
     .safeParse({
       code: str(form.get("code")).toUpperCase(),
       name: str(form.get("name")),
-      optionalAllowance: Number(str(form.get("optionalAllowance")) || "0"),
       isActive: bool(form.get("isActive")),
     });
   if (!parsed.success) return fail(firstIssue(parsed.error));
@@ -666,11 +679,149 @@ export async function deleteHolidayCalendar(
   const code = str(form.get("code"));
   const inUse = await rawClient().execute({ sql: "SELECT 1 FROM om_org_unit WHERE calendar_code = ? LIMIT 1", args: [code] });
   if (inUse.rows.length > 0) return fail("An org unit is still on this calendar. Move it to another calendar first.");
+  const years = await rawClient().execute({ sql: "SELECT COUNT(*) AS n FROM pt_holiday_year WHERE calendar_code = ?", args: [code] });
+  if (Number(years.rows[0].n) > 0) {
+    return fail(`${code} still has ${years.rows[0].n} year${Number(years.rows[0].n) === 1 ? "" : "s"} published. Remove them first.`);
+  }
   const before = await db.query.ptHolidayCalendar.findFirst({ where: eq(ptHolidayCalendar.code, code) });
   await db.delete(ptHolidayCalendar).where(eq(ptHolidayCalendar.code, code));
   if (before) await recordDelete(actorOf(session), "pt_holiday_calendar", code, before);
   revalidateTime();
   return OK;
+}
+
+/* ---------------------------------------------------------- holiday years */
+
+/**
+ * A calendar's year: the cap on days off, and whether the list is published.
+ * The cap counts fixed and chosen days together, which is what makes the
+ * optional allowance derived rather than another number to keep in step.
+ */
+export async function saveHolidayYear(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("time.manage");
+  const parsed = z
+    .object({
+      calendarCode: z.string().trim().min(1, "Choose a calendar."),
+      year: z.number("Enter a year.").int("Enter a year.").min(2000, "That year is too far back.").max(2100, "That year is too far ahead."),
+      totalAllowance: z
+        .number("Enter how many days off this year gives.")
+        .int("That is a whole number of days.")
+        .min(0, "A year cannot give fewer than no days.")
+        .max(60, "That is more days off than a year can reasonably give."),
+      isPublished: z.boolean(),
+    })
+    .safeParse({
+      calendarCode: str(form.get("calendarCode")),
+      year: Number(str(form.get("year"))),
+      totalAllowance: Number(str(form.get("totalAllowance")) || String(DEFAULT_HOLIDAY_ALLOWANCE)),
+      isPublished: bool(form.get("isPublished")),
+    });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+  const v = parsed.data;
+
+  const calendar = await db.query.ptHolidayCalendar.findFirst({ where: eq(ptHolidayCalendar.code, v.calendarCode) });
+  if (!calendar) return fail(`There is no calendar ${v.calendarCode}.`);
+
+  const existing = await db.query.ptHolidayYear.findFirst({
+    where: and(eq(ptHolidayYear.calendarCode, v.calendarCode), eq(ptHolidayYear.year, v.year)),
+  });
+  if (existing) {
+    await audited(
+      actorOf(session),
+      { entity: "pt_holiday_year", entityId: `${v.calendarCode}:${v.year}` },
+      () =>
+        db.query.ptHolidayYear.findFirst({
+          where: and(eq(ptHolidayYear.calendarCode, v.calendarCode), eq(ptHolidayYear.year, v.year)),
+        }),
+      () =>
+        db
+          .update(ptHolidayYear)
+          .set({ totalAllowance: v.totalAllowance, isPublished: v.isPublished })
+          .where(and(eq(ptHolidayYear.calendarCode, v.calendarCode), eq(ptHolidayYear.year, v.year))),
+    );
+  } else {
+    const [created] = await db.insert(ptHolidayYear).values({ ...v, createdAt: now() }).returning();
+    await recordCreate(actorOf(session), "pt_holiday_year", `${v.calendarCode}:${v.year}`, created);
+  }
+
+  revalidateTime();
+  return OK;
+}
+
+export async function deleteHolidayYear(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("time.manage");
+  const calendarCode = str(form.get("calendarCode"));
+  const year = Number(str(form.get("year")));
+
+  const holidays = await db
+    .select({ n: count() })
+    .from(ptHoliday)
+    .where(and(eq(ptHoliday.calendarCode, calendarCode), eq(ptHoliday.year, year)));
+  if (holidays[0].n > 0) {
+    return fail(`${year} still has ${holidays[0].n} day${holidays[0].n === 1 ? "" : "s"} on it. Remove them first.`);
+  }
+
+  const before = await db.query.ptHolidayYear.findFirst({
+    where: and(eq(ptHolidayYear.calendarCode, calendarCode), eq(ptHolidayYear.year, year)),
+  });
+  await db.delete(ptHolidayYear).where(and(eq(ptHolidayYear.calendarCode, calendarCode), eq(ptHolidayYear.year, year)));
+  if (before) await recordDelete(actorOf(session), "pt_holiday_year", `${calendarCode}:${year}`, before);
+  revalidateTime();
+  return OK;
+}
+
+/**
+ * Last year's list again, a year later — the same names on the same dates,
+ * which is where most of a year's calendar comes from. Dates that moved and
+ * festivals that follow a lunar calendar are then corrected by hand. Days
+ * already on the new year are left alone, so running it twice adds nothing.
+ */
+export async function copyHolidayYear(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await requirePermission("time.manage");
+  const calendarCode = str(form.get("calendarCode"));
+  const from = Number(str(form.get("fromYear")));
+  const to = Number(str(form.get("year")));
+  if (!calendarCode) return fail("Choose a calendar.");
+  if (!Number.isInteger(from) || !Number.isInteger(to)) return fail("Choose which year to copy from.");
+  if (from === to) return fail("That is the same year.");
+
+  const target = await db.query.ptHolidayYear.findFirst({
+    where: and(eq(ptHolidayYear.calendarCode, calendarCode), eq(ptHolidayYear.year, to)),
+  });
+  if (!target) return fail(`${calendarCode} has no ${to} yet. Open the year first.`);
+
+  const source = await db
+    .select()
+    .from(ptHoliday)
+    .where(and(eq(ptHoliday.calendarCode, calendarCode), eq(ptHoliday.year, from)));
+  if (source.length === 0) return fail(`${calendarCode} has nothing in ${from} to copy.`);
+
+  let copied = 0;
+  for (const h of source) {
+    const date = `${to}${h.date.slice(4)}`;
+    const clash = await db.query.ptHoliday.findFirst({
+      where: and(eq(ptHoliday.date, date), eq(ptHoliday.calendarCode, calendarCode)),
+    });
+    if (clash) continue;
+    const [created] = await db
+      .insert(ptHoliday)
+      .values({ date, name: h.name, calendarCode, isOptional: h.isOptional, year: to })
+      .returning();
+    await recordCreate(actorOf(session), "pt_holiday", created.id, created);
+    copied += 1;
+  }
+
+  revalidateTime();
+  return copied === 0 ? fail(`${to} already has every day ${from} had.`) : OK;
 }
 
 /* -------------------------------------------------------- leave policies */

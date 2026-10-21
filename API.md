@@ -2627,6 +2627,8 @@ Needs `time:read`. Answers 200.
 | `date` | string | yes | A date, YYYY-MM-DD. |
 | `name` | string | yes |  |
 | `calendar` | string | yes |  |
+| `year` | integer | yes |  |
+| `is_optional` | boolean | yes | An optional holiday is an ordinary working day until an employee chooses it. |
 
 ```json
 {
@@ -2635,7 +2637,9 @@ Needs `time:read`. Answers 200.
       "id": 3,
       "date": "<date>",
       "name": "<name>",
-      "calendar": "<calendar>"
+      "calendar": "<calendar>",
+      "year": 1,
+      "is_optional": true
     }
   ],
   "next_cursor": "1042"
@@ -2942,7 +2946,7 @@ Needs `time:read`. Answers 200.
 
 #### GET /holiday-calendars
 
-<a id="get-holiday-calendars"></a>**List holiday calendars.** The named holiday lists org units sit on — see /holidays?calendar= for one calendar's own dates.
+<a id="get-holiday-calendars"></a>**List holiday calendars.** The named holiday lists org units sit on. Each carries its published years: `total_allowance` is what a year gives one person across both kinds, and `optional_allowance` is what is left for them to choose once the fixed days are counted. The dates themselves are at /holidays?calendar=&year=.
 
 Needs `time:read`. Answers 200.
 
@@ -2957,6 +2961,7 @@ Needs `time:read`. Answers 200.
 | `code` | string | yes |  |
 | `name` | string | yes |  |
 | `is_active` | boolean | yes |  |
+| `years` | array of HolidayYear | yes | What each published year gives, newest last. |
 
 ```json
 {
@@ -2964,7 +2969,16 @@ Needs `time:read`. Answers 200.
     {
       "code": "<code>",
       "name": "<name>",
-      "is_active": true
+      "is_active": true,
+      "years": [
+        {
+          "year": 1,
+          "total_allowance": 1,
+          "mandatory": 1,
+          "optional_allowance": 1,
+          "is_published": true
+        }
+      ]
     }
   ],
   "next_cursor": "1042"

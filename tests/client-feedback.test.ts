@@ -5,7 +5,7 @@ import { createApplication, makeOffer, recordInterviewFeedback, saveRequisition,
 import { submitExit, withdrawExit, revokeExit } from "@/app/actions/exits";
 import { submitClaim } from "@/app/actions/loans-claims";
 import { nominate } from "@/app/actions/training";
-import { setOptionalHoliday, saveHoliday, saveHolidayCalendar } from "@/app/actions/time";
+import { setOptionalHoliday, saveHoliday, saveHolidayCalendar, saveHolidayYear } from "@/app/actions/time";
 import { punchNow } from "@/app/actions/attendance";
 import { decideApproval } from "@/app/actions/approvals";
 import { requestFor } from "@/lib/workflow/engine";
@@ -256,7 +256,12 @@ describe("an optional holiday", () => {
   const date = `${new Date().getUTCFullYear()}-12-24`;
 
   it("is a working day for everyone until someone takes it", async () => {
-    expect((await saveHolidayCalendar({}, form({ code: calendar, name: "Client feedback calendar", optionalAllowance: 1, isActive: "on" }))).ok).toBe(true);
+    expect((await saveHolidayCalendar({}, form({ code: calendar, name: "Client feedback calendar", isActive: "on" }))).ok).toBe(true);
+    // A holiday belongs to a year now, and the year carries the allowance:
+    // one day off in all, none of it fixed, so exactly one may be chosen.
+    expect(
+      (await saveHolidayYear({}, form({ calendarCode: calendar, year: new Date().getUTCFullYear(), totalAllowance: 1, isPublished: "on" }))).ok,
+    ).toBe(true);
     expect((await saveHoliday({}, form({ date, name: "An optional festival", calendarCode: calendar, isOptional: "on" }))).ok).toBe(true);
     holidayId = Number((await one("SELECT id FROM pt_holiday WHERE calendar_code = ? AND date = ?", [calendar, date]))!.id);
 
@@ -287,7 +292,7 @@ describe("an optional holiday", () => {
       const secondId = Number((await one("SELECT id FROM pt_holiday WHERE calendar_code = ? AND date = ?", [calendar, `${new Date().getUTCFullYear()}-12-26`]))!.id);
       actAs(employee.session);
       const over = await setOptionalHoliday({}, form({ holidayId: secondId, take: 1 }));
-      expect(over.error).toMatch(/already taken your 1 optional holiday/);
+      expect(over.error).toMatch(/so you may choose 1 .*you have taken 1/);
     } finally {
       actAs(null);
       await rawClient().execute("UPDATE om_org_unit SET calendar_code = 'KARNATAKA' WHERE code = 'PA01'");

@@ -1,6 +1,7 @@
 import "server-only";
 import { rawClient } from "@/lib/db";
 import { financialYearOf } from "@/lib/engines/tax";
+import { calendarFor } from "@/lib/engines/quota";
 import { formatDate, formatTime } from "@/lib/dates";
 
 /**
@@ -44,10 +45,19 @@ const EMPLOYEE_NAME = `
       WHERE p.employee_id = e.id AND p.valid_from <= ?1 AND p.valid_to >= ?1 LIMIT 1),
     e.employee_number)`;
 
-export async function holidaysBetween(from: string, to: string): Promise<UpcomingEvent[]> {
+/**
+ * Coming holidays. Optional ones are left out: they are ordinary working
+ * days until somebody chooses one, and a day chosen shows as their own
+ * absence rather than as a company holiday. With a calendar, only that
+ * calendar's days — otherwise every calendar's, which is what HR wants to
+ * see across the whole organisation.
+ */
+export async function holidaysBetween(from: string, to: string, calendarCode?: string): Promise<UpcomingEvent[]> {
   const rows = await all<{ date: string; name: string }>(
-    `SELECT date, name FROM pt_holiday WHERE date BETWEEN ? AND ? ORDER BY date`,
-    [from, to],
+    `SELECT date, name FROM pt_holiday
+     WHERE date BETWEEN ? AND ? AND is_optional = 0 ${calendarCode ? "AND calendar_code = ?" : ""}
+     ORDER BY date`,
+    calendarCode ? [from, to, calendarCode] : [from, to],
   );
   return rows.map((r) => ({ date: r.date, kind: "holiday", title: r.name, detail: "Public holiday" }));
 }
@@ -417,7 +427,7 @@ export async function selfHome(employeeId: number, today: string): Promise<SelfH
          ORDER BY financial_year DESC LIMIT 1`,
         [employeeId],
       ),
-      holidaysBetween(today, horizon),
+      holidaysBetween(today, horizon, await calendarFor(employeeId, today)),
       leaveBetween(today, today, horizon, [employeeId]),
     ]);
 

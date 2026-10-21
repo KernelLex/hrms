@@ -3,7 +3,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ptLeaveRequest, ptAbsenceType, OPTIONAL_HOLIDAY_ABSENCE_CODE } from "@/db/schema";
 import { rawClient } from "@/lib/db";
-import { balancesFor, calendarFor, formatDays, ledgerFor } from "@/lib/engines/quota";
+import { balancesFor, calendarFor, formatDays, holidayAllowanceFor, ledgerFor } from "@/lib/engines/quota";
 import { compOffBalance, forecastBalance } from "@/lib/engines/leave-policy";
 import {
   Card,
@@ -85,22 +85,25 @@ export default async function MyLeavePage() {
   // own type, so there is no second place to look).
   const today = todayInIndia();
   const calendarCode = await calendarFor(employeeId, today);
-  const [optionalRows, takenRows, calendarRow] = await Promise.all([
+  const [optionalRows, takenRows, allowance] = await Promise.all([
     rawClient().execute({
-      sql: `SELECT id, date, name FROM pt_holiday
-            WHERE calendar_code = ? AND is_optional = 1 AND substr(date, 1, 4) = ?
-            ORDER BY date`,
-      args: [calendarCode, String(year)],
+      sql: `SELECT h.id, h.date, h.name FROM pt_holiday h
+            JOIN pt_holiday_year y ON y.calendar_code = h.calendar_code AND y.year = h.year
+            WHERE h.calendar_code = ? AND h.is_optional = 1 AND h.year = ? AND y.is_published = 1
+            ORDER BY h.date`,
+      args: [calendarCode, year],
     }),
     rawClient().execute({
       sql: `SELECT start_date FROM pt_it2001_absence
             WHERE employee_id = ? AND absence_type_code = ? AND substr(start_date, 1, 4) = ?`,
       args: [employeeId, OPTIONAL_HOLIDAY_ABSENCE_CODE, String(year)],
     }),
-    rawClient().execute({ sql: "SELECT optional_allowance FROM pt_holiday_calendar WHERE code = ?", args: [calendarCode] }),
+    holidayAllowanceFor(calendarCode, year),
   ]);
   const takenDates = new Set(takenRows.rows.map((r) => String(r.start_date)));
-  const optionalAllowance = Number(calendarRow.rows[0]?.optional_allowance ?? 0);
+  // The cap covers fixed and chosen days together, so what is left to choose
+  // is the cap less the fixed days already published.
+  const optionalAllowance = allowance?.optional ?? 0;
   const optionalHolidays = optionalRows.rows.map((r) => ({
     id: Number(r.id),
     date: String(r.date),
@@ -168,9 +171,10 @@ export default async function MyLeavePage() {
             <div className="px-6 pt-5 pb-3">
               <h2 className="text-[15px] font-semibold text-ink">Optional holidays</h2>
               <p className="mt-1 text-[13px] text-muted">
-                Festivals the company leaves to you. You may take{" "}
-                {optionalAllowance === 0 ? "none this year" : `${optionalAllowance} of these in ${year}`}, and you have taken{" "}
-                {takenDates.size}. A day you take is paid and costs you no leave; the rest are ordinary working days.
+                Festivals the company leaves to you. {year} gives {allowance?.total ?? 0} days off in all,{" "}
+                {allowance?.mandatory ?? 0} of them fixed, so you may choose{" "}
+                {optionalAllowance === 0 ? "none of these" : `${optionalAllowance}`} — and you have taken {takenDates.size}. A day
+                you take is paid and costs you no leave; the rest are ordinary working days.
               </p>
             </div>
             <Table>

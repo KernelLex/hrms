@@ -53,7 +53,10 @@ export async function teamCalendar(opts: {
   const client = rawClient();
   const [holidays, people, count] = await client.batch(
     [
-      { sql: "SELECT date, name FROM pt_holiday WHERE date BETWEEN ? AND ?", args: [from, to] },
+      // Optional holidays are left out: they are working days until someone
+      // chooses one, and a chosen day shows as that person's own absence.
+      // (Every calendar's fixed days are shown, since a team can span them.)
+      { sql: "SELECT date, name FROM pt_holiday WHERE is_optional = 0 AND date BETWEEN ? AND ?", args: [from, to] },
       {
         sql: `SELECT e.id, e.employee_number, e.hire_date, e.termination_date,
                      COALESCE(p.first_name || ' ' || p.last_name, e.employee_number) AS name

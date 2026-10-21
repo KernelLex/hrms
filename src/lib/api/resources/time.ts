@@ -26,7 +26,31 @@ export function visibleEmployees(ctx: ApiContext, employeeColumn: string) {
   };
 }
 
-const Holiday = z.object({ id: z.number().int(), date: IsoDate, name: z.string(), calendar: z.string() }).meta({ id: "Holiday" });
+const Holiday = z
+  .object({
+    id: z.number().int(),
+    date: IsoDate,
+    name: z.string(),
+    calendar: z.string(),
+    year: z.number().int(),
+    is_optional: z
+      .boolean()
+      .meta({ description: "An optional holiday is an ordinary working day until an employee chooses it." }),
+  })
+  .meta({ id: "Holiday" });
+
+const HolidayYear = z
+  .object({
+    year: z.number().int(),
+    total_allowance: z.number().int().meta({ description: "Days off this year gives one person, fixed and chosen together." }),
+    mandatory: z.number().int().meta({ description: "Fixed days published for the year." }),
+    optional_allowance: z
+      .number()
+      .int()
+      .meta({ description: "Derived: the allowance less the fixed days, so how many optional ones each person may choose." }),
+    is_published: z.boolean(),
+  })
+  .meta({ id: "HolidayYear" });
 export const Absence = z
   .object({
     id: z.number().int(),
@@ -80,7 +104,14 @@ const LeaveLedgerEntry = z
     created_at: z.string(),
   })
   .meta({ id: "LeaveLedgerEntry" });
-const HolidayCalendar = z.object({ code: z.string(), name: z.string(), is_active: z.boolean() }).meta({ id: "HolidayCalendar" });
+const HolidayCalendar = z
+  .object({
+    code: z.string(),
+    name: z.string(),
+    is_active: z.boolean(),
+    years: z.array(HolidayYear).meta({ description: "What each published year gives, newest last." }),
+  })
+  .meta({ id: "HolidayCalendar" });
 const LeavePolicy = z
   .object({
     code: z.string(),
@@ -133,13 +164,15 @@ export const timeEndpoints: Endpoint[] = [
     response: pageSchema(Holiday),
     handler: (ctx) => {
       const q = ctx.query as { year?: number; calendar?: string };
-      const where = [q.year ? "substr(date, 1, 4) = ?" : null, q.calendar ? "calendar_code = ?" : null].filter((w): w is string => w !== null);
-      const args = [q.year ? String(q.year) : null, q.calendar ?? null].filter((a): a is string => a !== null);
+      const where = [q.year ? "year = ?" : null, q.calendar ? "calendar_code = ?" : null].filter((w): w is string => w !== null);
+      const args = [q.year ?? null, q.calendar ?? null].filter((a): a is string | number => a !== null);
       return idPage(ctx, `SELECT * FROM pt_holiday WHERE ${where.length ? where.join(" AND ") : "1 = 1"}`, args, (r) => ({
         id: Number(r.id),
         date: String(r.date),
         name: String(r.name),
         calendar: String(r.calendar_code),
+        year: Number(r.year),
+        is_optional: Number(r.is_optional) === 1,
       }));
     },
   },
@@ -358,11 +391,40 @@ export const timeEndpoints: Endpoint[] = [
     path: "/holiday-calendars",
     tag: "Time",
     summary: "List holiday calendars",
-    description: "The named holiday lists org units sit on — see /holidays?calendar= for one calendar's own dates.",
+    description:
+      "The named holiday lists org units sit on. Each carries its published years: `total_allowance` is what a year gives one person across both kinds, and `optional_allowance` is what is left for them to choose once the fixed days are counted. The dates themselves are at /holidays?calendar=&year=.",
     scopes: ["time:read"],
     schema: HolidayCalendar,
-    sql: () => ({ sql: "SELECT * FROM pt_holiday_calendar WHERE is_active = 1", args: [] }),
-    map: (r) => ({ code: String(r.code), name: String(r.name), is_active: Number(r.is_active) === 1 }),
+    sql: () => ({
+      sql: `SELECT c.code, c.name, c.is_active,
+                   (SELECT group_concat(y.year || ':' || y.total_allowance || ':' || y.is_published || ':' ||
+                      (SELECT COUNT(*) FROM pt_holiday h
+                        WHERE h.calendar_code = y.calendar_code AND h.year = y.year AND h.is_optional = 0), ',')
+                    FROM pt_holiday_year y WHERE y.calendar_code = c.code ORDER BY y.year) AS years
+            FROM pt_holiday_calendar c WHERE c.is_active = 1`,
+      args: [],
+    }),
+    map: (r) => ({
+      code: String(r.code),
+      name: String(r.name),
+      is_active: Number(r.is_active) === 1,
+      // year:allowance:published:mandatory, packed by the query above so one
+      // read answers "what does this calendar give, and in which years".
+      years: String(r.years ?? "")
+        .split(",")
+        .filter(Boolean)
+        .map((part) => {
+          const [year, total, published, mandatory] = part.split(":").map(Number);
+          return {
+            year,
+            total_allowance: total,
+            mandatory,
+            optional_allowance: Math.max(0, total - mandatory),
+            is_published: published === 1,
+          };
+        })
+        .sort((a, b) => a.year - b.year),
+    }),
   }),
   {
     method: "POST",

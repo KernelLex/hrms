@@ -49,12 +49,27 @@ export async function seedTime(db: Db): Promise<string[]> {
   await db
     .insert(s.ptHolidayCalendar)
     .values([
-      // Two optional holidays each, so the choice is real: a festival the
-      // company leaves to the employee is a working day until they take it.
-      { code: "NATIONAL", name: "National", optionalAllowance: 2, isActive: true },
-      { code: "KARNATAKA", name: "Karnataka", optionalAllowance: 2, isActive: true },
-      { code: "MAHARASHTRA", name: "Maharashtra", optionalAllowance: 2, isActive: true },
+      { code: "NATIONAL", name: "National", isActive: true },
+      { code: "KARNATAKA", name: "Karnataka", isActive: true },
+      { code: "MAHARASHTRA", name: "Maharashtra", isActive: true },
     ])
+    .onConflictDoNothing();
+
+  // Each calendar's year, with the cap that covers fixed and chosen days
+  // together. Five fixed days under a cap of 12 leaves seven to choose from
+  // the three optional festivals below — the list is deliberately shorter
+  // than the allowance here, which is the other way a real year runs out.
+  await db
+    .insert(s.ptHolidayYear)
+    .values(
+      ["NATIONAL", "KARNATAKA", "MAHARASHTRA"].map((calendarCode) => ({
+        calendarCode,
+        year,
+        totalAllowance: 12,
+        isPublished: true,
+        createdAt: new Date().toISOString(),
+      })),
+    )
     .onConflictDoNothing();
 
   // Each calendar lists every holiday its area observes, national ones
@@ -66,8 +81,8 @@ export async function seedTime(db: Db): Promise<string[]> {
     { date: `${year}-10-02`, name: "Gandhi Jayanti" },
     { date: `${year}-12-25`, name: "Christmas Day" },
   ];
-  // Festivals the company leaves to each person: three on every calendar,
-  // of which anyone may take two.
+  // Festivals the company leaves to each person, any of which may be taken
+  // while the year's cap has room.
   const OPTIONAL_HOLIDAYS = [
     { date: `${year}-03-25`, name: "Holi" },
     { date: `${year}-04-14`, name: "Tamil New Year" },
@@ -76,13 +91,13 @@ export async function seedTime(db: Db): Promise<string[]> {
   await db
     .insert(s.ptHoliday)
     .values([
-      ...NATIONAL_HOLIDAYS.map((h) => ({ ...h, calendarCode: "NATIONAL" })),
-      ...NATIONAL_HOLIDAYS.map((h) => ({ ...h, calendarCode: "KARNATAKA" })),
-      ...NATIONAL_HOLIDAYS.map((h) => ({ ...h, calendarCode: "MAHARASHTRA" })),
-      { date: `${year}-11-01`, name: "Kannada Rajyotsava", calendarCode: "KARNATAKA" },
-      { date: `${year}-05-01`, name: "Maharashtra Day", calendarCode: "MAHARASHTRA" },
+      ...NATIONAL_HOLIDAYS.map((h) => ({ ...h, calendarCode: "NATIONAL", year })),
+      ...NATIONAL_HOLIDAYS.map((h) => ({ ...h, calendarCode: "KARNATAKA", year })),
+      ...NATIONAL_HOLIDAYS.map((h) => ({ ...h, calendarCode: "MAHARASHTRA", year })),
+      { date: `${year}-11-01`, name: "Kannada Rajyotsava", calendarCode: "KARNATAKA", year },
+      { date: `${year}-05-01`, name: "Maharashtra Day", calendarCode: "MAHARASHTRA", year },
       ...OPTIONAL_HOLIDAYS.flatMap((h) =>
-        ["NATIONAL", "KARNATAKA", "MAHARASHTRA"].map((calendarCode) => ({ ...h, calendarCode, isOptional: true })),
+        ["NATIONAL", "KARNATAKA", "MAHARASHTRA"].map((calendarCode) => ({ ...h, calendarCode, isOptional: true, year })),
       ),
     ])
     .onConflictDoNothing();
@@ -205,7 +220,7 @@ export async function seedTime(db: Db): Promise<string[]> {
   }
 
   notes.push("  3 quota types, 7 absence types, 3 attendance types");
-  notes.push("  3 holiday calendars (National, Karnataka, Maharashtra), 14 holidays and 3 optional ones each (take any 2); the head office and the factory each on their own");
+  notes.push(`  3 holiday calendars (National, Karnataka, Maharashtra), each with ${year} published at 12 days: 5 fixed and 3 optional to choose from; the head office and the factory each on their own`);
   notes.push("  3 leave policies (annual, sick, casual), each seeded as its own ledger entry");
   notes.push(`  entitlement for ${employees.length} employees in ${year}`);
   notes.push("  1 pending leave request awaiting a manager");
