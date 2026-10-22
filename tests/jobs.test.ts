@@ -29,6 +29,26 @@ async function drain(rounds = 20) {
   }
 }
 
+/**
+ * Works the queue until one named job has itself been tried.
+ *
+ * A pass of `processJobs` spends its budget on deriving events and on
+ * whatever is due ahead of this job, so on a database every test file
+ * shares, one pass can finish without ever reaching it — which looks
+ * exactly like a job that ran and did nothing. Waiting on its own attempt
+ * count rather than on a pass returning makes the assertion about the
+ * retry, not about how busy the queue happened to be.
+ */
+async function attempt(dedupeKey: string, rounds = 10) {
+  const before = Number((await job(dedupeKey)).attempts);
+  for (let i = 0; i < rounds; i++) {
+    await processJobs(5_000);
+    const row = await job(dedupeKey);
+    if (Number(row.attempts) > before) return row;
+  }
+  throw new Error(`${dedupeKey} was never claimed in ${rounds} passes`);
+}
+
 describe("the queue", () => {
   it("keeps one job per key", async () => {
     const key = `test.dedupe:${crypto.randomUUID()}`;
@@ -40,18 +60,18 @@ describe("the queue", () => {
 
   it("retries a failing job with a growing gap, then gives up", async () => {
     const key = `test.fail:${crypto.randomUUID()}`;
+    // Clear what is already due, so the retry is reached in the first pass.
+    await drain();
     await enqueueJob("test.no-such-handler", null, { dedupeKey: key, maxAttempts: 2 });
 
-    await processJobs(2_000);
-    let row = await job(key);
+    let row = await attempt(key);
     expect(row.status).toBe("queued");
     expect(String(row.last_error)).toMatch(/No handler/);
     expect(new Date(String(row.run_after)).getTime()).toBeGreaterThan(Date.now() + 20_000);
 
     // Due again now.
     await rawClient().execute({ sql: "UPDATE app_job SET run_after = ? WHERE dedupe_key = ?", args: [new Date(0).toISOString(), key] });
-    await processJobs(2_000);
-    row = await job(key);
+    row = await attempt(key);
     expect(row.status).toBe("failed");
     expect(Number(row.attempts)).toBe(2);
   });

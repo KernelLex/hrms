@@ -107,7 +107,7 @@ The value is in the seams:
 | Engines | Time-slice, quota, leave policy, payroll, tax, time evaluation, attendance, statutory, loans, exits; plus the job runner, the approval engine and the import engine |
 | Permissions | 37, in ten groups; 3 built-in roles, and Recruiter and Finance as examples of roles HR can create |
 | Integration API | 75 endpoints under `/api/v1`, 40 event types, 18 scopes. The guide for integrators is `API.md`; the live reference is `/developers`. |
-| Automated tests | **436** in 47 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario — a couple of timing-sensitive ones (job retry backoff, a rate-limit window) occasionally flake under full-suite load and pass alone; none of them are recruitment's, performance's or analytics' |
+| Automated tests | **436** in 47 files (`npm test`), including an authorisation matrix over every Server Function and route, contract tests over every API endpoint, and the mock ERP's whole scenario — the job retry backoff test no longer waits on a pass of the queue but on the job's own attempt count, which is what used to flake under full-suite load; a rate-limit window remains timing-sensitive |
 | UI audit | **Clean** (`npm run audit:ui`): every screen, as four people at 1280 and 375 pixels |
 | CI | Typecheck, lint, tests, production build, UI audit and the mock ERP over HTTP on every push |
 | Pending on others | Cloudflare R2 (not enabled on the account), email delivery (no provider chosen), and the rest of phase 25 |
