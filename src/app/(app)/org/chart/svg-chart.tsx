@@ -311,10 +311,9 @@ export function OrgChartSvg({ units, positions }: { units: ChartUnit[]; position
               const isMatch = matchIds.has(p.node.id);
               return (
                 <g key={p.node.id} transform={`translate(${p.x} ${p.y})`}>
-                  <title>
-                    {p.node.title} ({p.node.code})
-                    {p.node.isVacant ? " — vacant" : ""}
-                  </title>
+                  {/* One string, not several children: a <title> with an array of
+                      children fails hydration and re-renders the whole chart. */}
+                  <title>{`${p.node.title} (${p.node.code})${p.node.isVacant ? " — vacant" : ""}`}</title>
                   <rect
                     width={BOX_W}
                     height={BOX_H}
