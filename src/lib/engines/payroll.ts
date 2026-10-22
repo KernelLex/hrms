@@ -2,7 +2,8 @@ import "server-only";
 import type { InStatement } from "@libsql/client";
 import { rawClient } from "@/lib/db";
 import { now, type RunType, type TaxRegime } from "@/db/schema";
-import { annualTaxFor, financialYearOf, slabsForYear, constantsForYear, effectiveDeclarationAmounts, type Slab, type TaxConstants } from "./tax";
+import { annualTaxFor, financialYearOf, slabsForYear, constantsForYear, effectiveDeclaredLines, type Slab, type TaxConstants } from "./tax";
+import { componentsFor, linesFor, rollUp } from "@/lib/services/tax-components";
 import {
   pfRateFor,
   esiRateFor,
@@ -325,9 +326,7 @@ async function loadFacts(
         args: [e, from, to],
       },
       {
-        sql: `SELECT regime, section_80c_paise, section_80d_paise, hra_exemption_paise,
-                     other_income_paise
-              FROM tds_employee_declaration WHERE employee_id = ? AND financial_year = ?`,
+        sql: `SELECT id, regime FROM tds_employee_declaration WHERE employee_id = ? AND financial_year = ?`,
         args: [e, financialYear],
       },
       {
@@ -356,7 +355,7 @@ async function loadFacts(
         args: [e, financialYear],
       },
       {
-        sql: `SELECT o.org_unit_code FROM pa_it0001_org_assignment o
+        sql: `SELECT o.org_unit_code, o.company_code FROM pa_it0001_org_assignment o
               WHERE o.employee_id = ? AND o.valid_from <= ? AND o.valid_to >= ?
               ORDER BY o.valid_from DESC LIMIT 1`,
         args: [e, to, to],
@@ -374,13 +373,17 @@ async function loadFacts(
   const [emp, basic, bank, recurring, absences, oneOffs, declaration, history, lines, openingBalance, calendar, statutoryDetails] = rs;
   if (emp.rows.length === 0) return null;
   const d = declaration.rows[0];
-  // Capped to what was verified once a proof window has closed for this
-  // year — open, or no window set yet, and the declared figures stand.
-  const effective = await effectiveDeclarationAmounts(employeeId, financialYear, {
-    section80CPaise: Number(d?.section_80c_paise ?? 0),
-    section80DPaise: Number(d?.section_80d_paise ?? 0),
-    hraExemptionPaise: Number(d?.hra_exemption_paise ?? 0),
-  });
+  // What they declared, line by line, capped to what proof actually backed
+  // once the window has closed — open, or no window set yet, and the
+  // declared figures stand. The lines then sum by kind into the two figures
+  // the computation has always taken, so what may be declared is data.
+  const orgUnit = calendar.rows[0];
+  const companyCode = orgUnit ? String(orgUnit.company_code ?? "") : "";
+  const components = await componentsFor(companyCode || null);
+  const needsProof = new Set(components.filter((c) => c.requiresProof).map((c) => c.code));
+  const declaredLines = d ? await linesFor(Number(d.id)) : [];
+  const effectiveLines = await effectiveDeclaredLines(employeeId, financialYear, declaredLines, (code) => needsProof.has(code));
+  const declared = rollUp(effectiveLines, components);
   const rows = <T>(r: (typeof rs)[number]) => r.rows as unknown as T[];
 
   const allAbsences = rows<{
@@ -411,9 +414,9 @@ async function loadFacts(
     })),
     declaration: {
       regime: ((d?.regime as TaxRegime | undefined) ?? "New") as TaxRegime,
-      section10ExemptPaise: effective.hraExemptionPaise,
-      chapterViaPaise: effective.section80CPaise + effective.section80DPaise,
-      otherIncomePaise: Number(d?.other_income_paise ?? 0),
+      section10ExemptPaise: declared.section10ExemptPaise,
+      chapterViaPaise: declared.chapterViaPaise,
+      otherIncomePaise: declared.otherIncomePaise,
     },
     history: rows<Facts["history"][number]>(history).map((h) => ({
       ...h,

@@ -17,6 +17,12 @@ export const tdsProofWindow = sqliteTable("tds_proof_window", {
   createdAt: text("created_at").notNull(),
 });
 
+/**
+ * What a proof may be filed against is the component catalogue now
+ * (`tx_component.requires_proof`), not a list in code. These three are kept
+ * only as the seeded default for India, so an existing tenant's proofs
+ * still resolve.
+ */
 export const PROOF_SECTIONS = ["80C", "80D", "HRA"] as const;
 export type ProofSection = (typeof PROOF_SECTIONS)[number];
 export const PROOF_STATUSES = ["Pending", "Verified", "Rejected"] as const;
@@ -56,6 +62,13 @@ export const tdsRent = sqliteTable(
     landlordName: text("landlord_name").notNull(),
     /** Required once annual rent crosses ₹1 lakh. */
     landlordPan: text("landlord_pan"),
+    /** "Rented", "Own house" or "Company leased" — only rented earns the exemption. */
+    accommodationType: text("accommodation_type").notNull().default("Rented"),
+    /**
+     * Whether the city they live in is one of the four the law treats as a
+     * metro, which decides 50% or 40% of basic. Defaulted from
+     * `tx_city_category` against their address, and overridable by HR.
+     */
     isMetro: integer("is_metro", { mode: "boolean" }).notNull().default(false),
     updatedAt: text("updated_at").notNull(),
   },

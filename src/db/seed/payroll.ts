@@ -53,6 +53,38 @@ export async function seedPayroll(db: Db): Promise<string[]> {
     ])
     .onConflictDoNothing();
 
+  // What an employee may declare, as data. The kind is what the computation
+  // reads; nothing matches a section by name. HRA is marked computed, so its
+  // figure comes from rent, salary and city rather than from a text box.
+  await db
+    .insert(s.txComponent)
+    .values([
+      { country: "India", code: "80C", name: "LIC, PPF, ELSS and the rest of 80C", kind: "chapter_via", capPaise: 1_50_000_00, requiresProof: true, isDerived: false, sortOrder: 10, isActive: true },
+      { country: "India", code: "80CCD1B", name: "National Pension System, over and above 80C", kind: "chapter_via", capPaise: 50_000_00, requiresProof: true, isDerived: false, sortOrder: 20, isActive: true },
+      { country: "India", code: "80D", name: "Medical insurance premium", kind: "chapter_via", capPaise: 25_000_00, requiresProof: true, isDerived: false, sortOrder: 30, isActive: true },
+      { country: "India", code: "80E", name: "Interest on an education loan", kind: "chapter_via", capPaise: null, requiresProof: true, isDerived: false, sortOrder: 40, isActive: true },
+      { country: "India", code: "80G", name: "Donations", kind: "chapter_via", capPaise: null, requiresProof: true, isDerived: false, sortOrder: 50, isActive: true },
+      { country: "India", code: "24B", name: "Interest on a housing loan", kind: "chapter_via", capPaise: 2_00_000_00, requiresProof: true, isDerived: false, sortOrder: 60, isActive: true },
+      { country: "India", code: "HRA", name: "House rent allowance, under section 10(13A)", kind: "section_10", capPaise: null, requiresProof: true, isDerived: true, sortOrder: 70, isActive: true },
+      { country: "India", code: "LTA", name: "Leave travel allowance", kind: "section_10", capPaise: null, requiresProof: true, isDerived: false, sortOrder: 80, isActive: true },
+      { country: "India", code: "OTHER_INCOME", name: "Income from other sources", kind: "other_income", capPaise: null, requiresProof: false, isDerived: false, sortOrder: 90, isActive: true },
+    ])
+    .onConflictDoNothing();
+
+  // The four the law names. Anywhere else is 40% of basic rather than 50%.
+  await db
+    .insert(s.txCityCategory)
+    .values([
+      { country: "India", city: "DELHI", category: "METRO" },
+      { country: "India", city: "MUMBAI", category: "METRO" },
+      { country: "India", city: "KOLKATA", category: "METRO" },
+      { country: "India", city: "CHENNAI", category: "METRO" },
+      { country: "India", city: "BENGALURU", category: "NON_METRO" },
+      { country: "India", city: "HYDERABAD", category: "NON_METRO" },
+      { country: "India", city: "PUNE", category: "NON_METRO" },
+    ])
+    .onConflictDoNothing();
+
   const fy = "2025-26";
   const existingSlabs = await db.select().from(s.tdsTaxSlab);
   if (existingSlabs.length === 0) {
@@ -124,6 +156,7 @@ export async function seedPayroll(db: Db): Promise<string[]> {
   }
 
   notes.push("  21 wage types, 3 TDS sections");
+  notes.push("  9 declaration components for India (80C, 80D, 24(b), HRA computed from rent, and the rest), and 7 cities categorised for HRA");
   notes.push(`  tax slabs for ${fy}${currentFy !== fy ? ` and ${currentFy}` : ""}, both regimes`);
   notes.push(`  open payroll period for ${groups.length} payroll groups`);
   return notes;

@@ -49,10 +49,11 @@ export const tdsEmployeeDeclaration = sqliteTable(
       .references(() => paEmployee.id, { onDelete: "cascade" }),
     financialYear: text("financial_year").notNull(),
     regime: text("regime").notNull().default("New"),
-    section80CPaise: integer("section_80c_paise").notNull().default(0),
-    section80DPaise: integer("section_80d_paise").notNull().default(0),
-    hraExemptionPaise: integer("hra_exemption_paise").notNull().default(0),
-    otherIncomePaise: integer("other_income_paise").notNull().default(0),
+    /**
+     * What was declared lives in `tds_declaration_line`, one row per
+     * component, because what may be declared is the country's catalogue
+     * rather than a fixed set of columns.
+     */
     status: text("status").notNull().default("Declared"),
     updatedAt: text("updated_at").notNull(),
   },

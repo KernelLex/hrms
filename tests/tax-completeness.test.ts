@@ -4,7 +4,7 @@ import {
   hraExemption,
   section89Relief,
   compareRegimes,
-  effectiveDeclarationAmounts,
+  effectiveDeclaredLines,
 } from "@/lib/engines/tax";
 import { generate24QAnnexure1, generate24QAnnexure2 } from "@/lib/engines/tax-returns";
 import { createPerson } from "./support/people";
@@ -110,14 +110,19 @@ describe("the 24Q file", () => {
 describe("a proof window", () => {
   it("leaves the declared figures alone while open, or before one is set", async () => {
     const employee = await createPerson();
-    const raw = { section80CPaise: rupees(1_50_000), section80DPaise: rupees(25_000), hraExemptionPaise: rupees(1_00_000) };
-    expect(await effectiveDeclarationAmounts(employee.employeeId, "2099-00", raw)).toEqual(raw); // no window at all for this year
+    const declared = [
+      { componentCode: "80C", declaredPaise: rupees(1_50_000) },
+      { componentCode: "80D", declaredPaise: rupees(25_000) },
+      { componentCode: "HRA", declaredPaise: rupees(1_00_000) },
+    ];
+    const needsProof = () => true;
+    expect(await effectiveDeclaredLines(employee.employeeId, "2099-00", declared, needsProof)).toEqual(declared); // no window at all for this year
 
     await rawClient().execute({
       sql: "INSERT INTO tds_proof_window (financial_year, opens_at, closes_at, created_by, created_at) VALUES ('2099-00', '2099-04-01', '2099-12-31', 'test', ?)",
       args: [new Date().toISOString()],
     });
-    expect(await effectiveDeclarationAmounts(employee.employeeId, "2099-00", raw)).toEqual(raw); // window open (far in the future)
+    expect(await effectiveDeclaredLines(employee.employeeId, "2099-00", declared, needsProof)).toEqual(declared); // window open (far in the future)
   });
 
   it("caps an unverified amount down to what was actually verified, once closed", async () => {
@@ -137,11 +142,20 @@ describe("a proof window", () => {
       args: [employee.employeeId, financialYear, rupees(90_000), new Date().toISOString()],
     });
 
-    const raw = { section80CPaise: rupees(1_50_000), section80DPaise: rupees(25_000), hraExemptionPaise: rupees(1_00_000) };
-    const effective = await effectiveDeclarationAmounts(employee.employeeId, financialYear, raw);
-    expect(effective.section80CPaise).toBe(rupees(60_000)); // only the verified ₹60,000, not the declared ₹1,50,000 or the unverified ₹90,000
-    expect(effective.section80DPaise).toBe(0); // nothing verified at all
-    expect(effective.hraExemptionPaise).toBe(0);
+    const declared = [
+      { componentCode: "80C", declaredPaise: rupees(1_50_000) },
+      { componentCode: "80D", declaredPaise: rupees(25_000) },
+      { componentCode: "HRA", declaredPaise: rupees(1_00_000) },
+    ];
+    const effective = await effectiveDeclaredLines(employee.employeeId, financialYear, declared, () => true);
+    const amountFor = (code: string) => effective.find((l) => l.componentCode === code)?.declaredPaise;
+    expect(amountFor("80C")).toBe(rupees(60_000)); // only the verified ₹60,000, not the declared ₹1,50,000 or the unverified ₹90,000
+    expect(amountFor("80D")).toBe(0); // nothing verified at all
+    expect(amountFor("HRA")).toBe(0);
+
+    // A component that asks for no proof is left exactly as declared.
+    const untouched = await effectiveDeclaredLines(employee.employeeId, financialYear, declared, (code) => code !== "80D");
+    expect(untouched.find((l) => l.componentCode === "80D")?.declaredPaise).toBe(rupees(25_000));
   });
 
   it("never lets verified proof exceed what was actually declared", async () => {
@@ -156,7 +170,12 @@ describe("a proof window", () => {
       sql: "INSERT INTO tds_proof (employee_id, financial_year, section, amount_paise, status, submitted_at) VALUES (?, ?, '80C', ?, 'Verified', ?)",
       args: [employee.employeeId, financialYear, rupees(2_00_000), new Date().toISOString()],
     });
-    const effective = await effectiveDeclarationAmounts(employee.employeeId, financialYear, { section80CPaise: rupees(1_50_000), section80DPaise: 0, hraExemptionPaise: 0 });
-    expect(effective.section80CPaise).toBe(rupees(1_50_000));
+    const effective = await effectiveDeclaredLines(
+      employee.employeeId,
+      financialYear,
+      [{ componentCode: "80C", declaredPaise: rupees(1_50_000) }],
+      () => true,
+    );
+    expect(effective[0].declaredPaise).toBe(rupees(1_50_000));
   });
 });

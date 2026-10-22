@@ -49,3 +49,6 @@ Thumbs.db
 
 # local development database, a seeded copy for testing changes
 .local/
+
+# brag skill output
+brag-output/

@@ -7,7 +7,16 @@ import { Button, Card, CardHeader } from "@/components/ui";
 import { Field, Input, Select, Checkbox, FormGrid, FormError } from "@/components/inputs";
 import { useToast } from "@/components/toast";
 
-export function RentForm({ financialYear, rent }: { financialYear: string; rent?: { monthlyRent: string; landlordName: string; landlordPan: string; isMetro: boolean } }) {
+export function RentForm({
+  financialYear,
+  rent,
+  exemption,
+}: {
+  financialYear: string;
+  rent?: { monthlyRent: string; landlordName: string; landlordPan: string; isMetro: boolean; accommodationType: string };
+  /** What the three-way minimum makes of it, in rupees, or null with no rent on record. */
+  exemption?: string | null;
+}) {
   const toast = useToast();
   const [state, action, pending] = useActionState(
     async (prev: ActionState, form: FormData): Promise<ActionState> => {
@@ -20,7 +29,16 @@ export function RentForm({ financialYear, rent }: { financialYear: string; rent?
 
   return (
     <Card>
-      <CardHeader title="Rent, for the HRA exemption" description="The exemption is worked out as the least of three: actual HRA, rent less 10% of basic, and 50% or 40% of basic." />
+      <CardHeader
+        title="Rent, for the HRA exemption"
+        description="The exemption is worked out as the least of three: the HRA you actually receive, your rent over 10% of basic, and half of basic in a metro or two fifths elsewhere. You do not type the figure — this is where it comes from."
+      />
+      {exemption ? (
+        <div className="mx-6 mb-4 rounded-xl bg-canvas px-4 py-3">
+          <div className="text-[13px] text-muted">Your HRA exemption for {financialYear}</div>
+          <div className="tabular mt-0.5 text-[22px] leading-tight font-semibold tracking-[-0.02em] text-ink">{exemption}</div>
+        </div>
+      ) : null}
       <form action={action} className="px-6 pb-5">
         <input type="hidden" name="financialYear" value={financialYear} />
         <FormGrid columns={3}>
@@ -33,8 +51,15 @@ export function RentForm({ financialYear, rent }: { financialYear: string; rent?
           <Field label="Landlord's PAN" htmlFor="landlordPan" hint="Required once annual rent is over ₹1,00,000.">
             <Input id="landlordPan" name="landlordPan" defaultValue={rent?.landlordPan} />
           </Field>
-          <Field label="City" htmlFor="isMetro">
-            <Checkbox id="isMetro" name="isMetro" defaultChecked={rent?.isMetro} label="A metro city (Delhi, Mumbai, Kolkata or Chennai)" />
+          <Field label="Accommodation" htmlFor="accommodationType">
+            <Select id="accommodationType" name="accommodationType" defaultValue={rent?.accommodationType ?? "Rented"}>
+              <option>Rented</option>
+              <option>Own house</option>
+              <option>Company leased</option>
+            </Select>
+          </Field>
+          <Field label="City" htmlFor="isMetro" hint="Set from your address; correct it if it is wrong.">
+            <Checkbox id="isMetro" name="isMetro" defaultChecked={rent?.isMetro} label="A metro city — half of basic rather than two fifths" />
           </Field>
         </FormGrid>
         {state.error ? (
@@ -53,13 +78,7 @@ export function RentForm({ financialYear, rent }: { financialYear: string; rent?
   );
 }
 
-const SECTIONS = [
-  { value: "80C", label: "Section 80C" },
-  { value: "80D", label: "Section 80D" },
-  { value: "HRA", label: "HRA" },
-];
-
-export function ProofForm({ financialYear }: { financialYear: string }) {
+export function ProofForm({ financialYear, sections }: { financialYear: string; sections: { value: string; label: string }[] }) {
   const toast = useToast();
   const [state, action, pending] = useActionState(
     async (prev: ActionState, form: FormData): Promise<ActionState> => {
@@ -81,7 +100,7 @@ export function ProofForm({ financialYear }: { financialYear: string }) {
               <option value="" disabled>
                 Choose one
               </option>
-              {SECTIONS.map((s) => (
+              {sections.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
                 </option>

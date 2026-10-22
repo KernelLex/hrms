@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import {
   tdsDeductionRegister,
   tdsEmployeeDeclaration,
+  tdsDeclarationLine,
   tdsForm16,
   pyPayrollPeriod,
   pyPayrollRun,
@@ -110,18 +111,17 @@ describe("register and Form 16", () => {
       });
     }
 
-    // The old regime, so declared exemptions are actually applied.
-    await db.insert(tdsEmployeeDeclaration).values({
-      employeeId,
-      financialYear: FY,
-      regime: "Old",
-      section80CPaise: 15_000_00,
-      section80DPaise: 2_500_00,
-      hraExemptionPaise: 14_400_00,
-      otherIncomePaise: 0,
-      status: "Verified",
-      updatedAt: new Date().toISOString(),
-    });
+    // The old regime, so declared exemptions are actually applied. The same
+    // figures as before the catalogue, now as lines against it.
+    const [declaration] = await db
+      .insert(tdsEmployeeDeclaration)
+      .values({ employeeId, financialYear: FY, regime: "Old", status: "Verified", updatedAt: new Date().toISOString() })
+      .returning();
+    await db.insert(tdsDeclarationLine).values([
+      { declarationId: declaration.id, componentCode: "80C", declaredPaise: 15_000_00 },
+      { declarationId: declaration.id, componentCode: "80D", declaredPaise: 2_500_00 },
+      { declarationId: declaration.id, componentCode: "HRA", declaredPaise: 14_400_00 },
+    ]);
   });
 
   it("runs the financial year April to March", () => {

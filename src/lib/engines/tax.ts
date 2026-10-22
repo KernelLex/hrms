@@ -222,19 +222,22 @@ export async function compareRegimes(opts: {
  * monthly deductions and the certificate cannot use different rules.
  */
 /**
- * What a declaration's own three figures are capped to once a proof window
- * has closed: no more than what was actually verified for each section —
- * never more than what was declared, only less, if proof fell short. Still
- * the raw declared figures while a window is open, or before one is even
- * set for the year, exactly as before this phase.
+ * What each declared line is capped to once a proof window has closed: no
+ * more than what was actually verified against that component — never more
+ * than was declared, only less, if proof fell short. Still the raw declared
+ * figures while a window is open, or before one is even set for the year.
+ *
+ * Which components need proof is the catalogue's to say, so this no longer
+ * names a section: a line whose component asks for none is left alone.
  */
-export async function effectiveDeclarationAmounts(
+export async function effectiveDeclaredLines(
   employeeId: number,
   financialYear: string,
-  raw: { section80CPaise: number; section80DPaise: number; hraExemptionPaise: number },
-): Promise<{ section80CPaise: number; section80DPaise: number; hraExemptionPaise: number }> {
+  lines: { componentCode: string; declaredPaise: number }[],
+  needsProof: (componentCode: string) => boolean,
+): Promise<{ componentCode: string; declaredPaise: number }[]> {
   const window = await db.query.tdsProofWindow.findFirst({ where: eq(tdsProofWindow.financialYear, financialYear) });
-  if (!window || window.closesAt > todayInIndia()) return raw;
+  if (!window || window.closesAt > todayInIndia()) return lines;
 
   const verified = await db
     .select({ section: tdsProof.section, total: tdsProof.amountPaise })
@@ -242,11 +245,11 @@ export async function effectiveDeclarationAmounts(
     .where(and(eq(tdsProof.employeeId, employeeId), eq(tdsProof.financialYear, financialYear), eq(tdsProof.status, "Verified")));
   const verifiedFor = (section: string) => verified.filter((v) => v.section === section).reduce((s, v) => s + v.total, 0);
 
-  return {
-    section80CPaise: Math.min(raw.section80CPaise, verifiedFor("80C")),
-    section80DPaise: Math.min(raw.section80DPaise, verifiedFor("80D")),
-    hraExemptionPaise: Math.min(raw.hraExemptionPaise, verifiedFor("HRA")),
-  };
+  return lines.map((line) =>
+    needsProof(line.componentCode)
+      ? { ...line, declaredPaise: Math.min(line.declaredPaise, verifiedFor(line.componentCode)) }
+      : line,
+  );
 }
 
 /**

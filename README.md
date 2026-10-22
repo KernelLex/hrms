@@ -209,9 +209,10 @@ If you reorganise later — a new region, a vertical split in two — you move u
 ### Tax and Form 16
 
 - Tax sections and slabs for each year and both regimes.
+- **What may be declared is yours to define**, per country, and each company says which of them it offers and at what ceiling — never above the country's own. Add a section and it is on everybody's declaration the same day; switch one off for one company and it leaves that company's form alone.
 - Employee declarations, with tax deducted evenly across the year.
 - **A comparison of both regimes**, on your own declared figures, right on the declaration — the same arithmetic your monthly tax actually uses.
-- **HRA worked out from your rent**: tell us the rent, the landlord and the city, and the exemption is computed for you — the least of three, as the law sets it out — instead of a figure you type in yourself.
+- **HRA worked out from your rent**: tell us the rent, the landlord and the city, and the exemption is computed for you — the least of three, as the law sets it out — instead of a figure you type in yourself. **Which cities count as metros is a list you keep**, so Delhi and Bengaluru give different answers on identical pay and rent, and somebody who owns their home gets nothing whatever rent they enter.
 - **Proof, verified**: HR opens a window for each year; file a receipt against what you declared, and HR verifies or rejects it. After the window closes, only what was verified still reduces your tax.
 - The quarterly register of tax deducted and deposited, with a **24Q** file for each quarter.
 - **Form 16**, Part A and Part B, which reconcile with each other, including the new regime's marginal relief under section 87A — with **Form 12BA** alongside it for perquisites, and **Section 89 relief** worked out for arrears that belong to an earlier year.

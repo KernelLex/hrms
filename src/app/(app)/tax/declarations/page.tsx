@@ -11,15 +11,16 @@ import { todayInIndia } from "@/lib/dates";
 import { Status, TwoLine, Notice, Card, CardHeader, Table, Th, Tr, Td } from "@/components/ui";
 import { TaxTabs } from "../tabs";
 import { RentForm, ProofForm } from "./extras";
+import { companyOf, componentsFor, hraExemptionFor, linesFor, rollUp } from "@/lib/services/tax-components";
 import { Pagination, pageFrom } from "@/components/pagination";
 
 const COLUMNS: Column[] = [
   { key: "employee", label: "Employee" },
   { key: "year", label: "Year" },
   { key: "regime", label: "Regime" },
-  { key: "s80c", label: "80C", numeric: true },
-  { key: "s80d", label: "80D", numeric: true },
-  { key: "hra", label: "HRA exemption", numeric: true },
+  { key: "exempt", label: "Section 10", numeric: true },
+  { key: "chapter", label: "Chapter VI-A", numeric: true },
+  { key: "declared", label: "Declared" },
   { key: "status", label: "Status" },
 ];
 
@@ -47,6 +48,19 @@ export default async function DeclarationsPage(props: {
     db.selectDistinct({ fy: tdsTaxSlab.financialYear }).from(tdsTaxSlab),
   ]);
 
+  // What may be declared is the company's catalogue. HR sees the catalogue of
+  // the company the first listed employee belongs to; an employee sees their
+  // own. Both read it the same way, so neither can drift from what is saved.
+  const forCompany = isHr
+    ? (await companyOf(rows[0]?.employeeId ?? -1, todayInIndia())) ?? (employees[0] ? await companyOf(employees[0].id, todayInIndia()) : null)
+    : session.employeeId
+      ? await companyOf(session.employeeId, todayInIndia())
+      : null;
+  const components = await componentsFor(forCompany);
+  const linesByDeclaration = new Map<number, Awaited<ReturnType<typeof linesFor>>>(
+    await Promise.all(rows.map(async (r) => [r.id, await linesFor(r.id)] as const)),
+  );
+
   const currentYear = financialYearOf(todayInIndia());
   const [currentDeclaration, basicPayRow, rentRow] = !isHr && session.employeeId
     ? await Promise.all([
@@ -60,13 +74,15 @@ export default async function DeclarationsPage(props: {
     : [undefined, undefined, undefined];
   const basicPaise = basicPayRow?.rows[0] ? Number(basicPayRow.rows[0].amount_paise) : 0;
   const rent = rentRow?.rows[0];
+  const hraPaise = !isHr && session.employeeId ? await hraExemptionFor(session.employeeId, currentYear, todayInIndia()) : 0;
+  const currentRollUp = rollUp(currentDeclaration ? (linesByDeclaration.get(currentDeclaration.id) ?? await linesFor(currentDeclaration.id)) : [], components);
   const comparison = basicPaise
     ? await compareRegimes({
         grossSalaryPaise: basicPaise * 12 * 2, // a rough projection: basic is roughly half of gross under a typical structure
         financialYear: currentYear,
-        chapterViaPaise: (currentDeclaration?.section80CPaise ?? 0) + (currentDeclaration?.section80DPaise ?? 0),
-        section10ExemptPaise: currentDeclaration?.hraExemptionPaise ?? 0,
-        otherIncomePaise: currentDeclaration?.otherIncomePaise ?? 0,
+        chapterViaPaise: currentRollUp.chapterViaPaise,
+        section10ExemptPaise: currentRollUp.section10ExemptPaise,
+        otherIncomePaise: currentRollUp.otherIncomePaise,
       })
     : null;
 
@@ -108,10 +124,17 @@ export default async function DeclarationsPage(props: {
       ],
       hint: "Under the new regime the amounts below are stored but not applied.",
     },
-    { kind: "text", name: "section80C", label: "Section 80C", placeholder: "150000", hint: "PF, LIC, ELSS. Capped at ₹1,50,000." },
-    { kind: "text", name: "section80D", label: "Section 80D", placeholder: "25000", hint: "Medical insurance. Capped at ₹25,000." },
-    { kind: "text", name: "hraExemption", label: "HRA exemption", placeholder: "144000" },
-    { kind: "text", name: "otherIncome", label: "Other income", placeholder: "0" },
+    ...components
+      .filter((c) => !c.isDerived)
+      .map(
+        (c): FieldDef => ({
+          kind: "text",
+          name: `component.${c.code}`,
+          label: `${c.code} — ${c.name}`,
+          placeholder: "0",
+          hint: c.capPaise === null ? undefined : `Capped at ${formatINR(c.capPaise)}.`,
+        }),
+      ),
     ...(isHr
       ? ([
           {
@@ -159,7 +182,10 @@ export default async function DeclarationsPage(props: {
             ? "Record what an employee has declared for the year."
             : "Declare your investments so the right tax is deducted."
         }
-        rows={rows.map((r) => ({
+        rows={rows.map((r) => {
+          const lines = linesByDeclaration.get(r.id) ?? [];
+          const totals = rollUp(lines, components);
+          return {
           id: String(r.id),
           describe: `${name.get(r.employeeId) ?? "Employee"}, ${r.financialYear}`,
           cells: {
@@ -169,24 +195,28 @@ export default async function DeclarationsPage(props: {
             year: <span className="tabular">{r.financialYear}</span>,
             regime: <span className="text-secondary">{r.regime}</span>,
             // Under the new regime these are stored but not applied.
-            s80c:
+            exempt:
               r.regime === "Old"
-                ? r.section80CPaise > 0
-                  ? formatINR(r.section80CPaise)
+                ? totals.section10ExemptPaise > 0
+                  ? formatINR(totals.section10ExemptPaise)
                   : dash
                 : <span className="text-muted">n/a</span>,
-            s80d:
+            chapter:
               r.regime === "Old"
-                ? r.section80DPaise > 0
-                  ? formatINR(r.section80DPaise)
+                ? totals.chapterViaPaise > 0
+                  ? formatINR(totals.chapterViaPaise)
                   : dash
                 : <span className="text-muted">n/a</span>,
-            hra:
-              r.regime === "Old"
-                ? r.hraExemptionPaise > 0
-                  ? formatINR(r.hraExemptionPaise)
-                  : dash
-                : <span className="text-muted">n/a</span>,
+            declared: (
+              <span className="text-secondary">
+                {lines.filter((l) => l.declaredPaise > 0).length === 0
+                  ? dash
+                  : lines
+                      .filter((l) => l.declaredPaise > 0)
+                      .map((l) => l.componentCode)
+                      .join(", ")}
+              </span>
+            ),
             status: (
               <Status
                 tone={
@@ -201,13 +231,13 @@ export default async function DeclarationsPage(props: {
             employeeId: String(r.employeeId),
             financialYear: r.financialYear,
             regime: r.regime,
-            section80C: r.section80CPaise ? String(toRupees(r.section80CPaise)) : "",
-            section80D: r.section80DPaise ? String(toRupees(r.section80DPaise)) : "",
-            hraExemption: r.hraExemptionPaise ? String(toRupees(r.hraExemptionPaise)) : "",
-            otherIncome: r.otherIncomePaise ? String(toRupees(r.otherIncomePaise)) : "",
+            ...Object.fromEntries(
+              lines.map((l) => [`component.${l.componentCode}`, l.declaredPaise ? String(toRupees(l.declaredPaise)) : ""]),
+            ),
             status: r.status,
           },
-        }))}
+          };
+        })}
       />
 
       {!isHr && comparison ? (
@@ -246,11 +276,21 @@ export default async function DeclarationsPage(props: {
             financialYear={currentYear}
             rent={
               rent
-                ? { monthlyRent: String(toRupees(Number(rent.monthly_rent_paise))), landlordName: String(rent.landlord_name), landlordPan: rent.landlord_pan ? String(rent.landlord_pan) : "", isMetro: Number(rent.is_metro) === 1 }
+                ? {
+                    monthlyRent: String(toRupees(Number(rent.monthly_rent_paise))),
+                    landlordName: String(rent.landlord_name),
+                    landlordPan: rent.landlord_pan ? String(rent.landlord_pan) : "",
+                    isMetro: Number(rent.is_metro) === 1,
+                    accommodationType: String(rent.accommodation_type ?? "Rented"),
+                  }
                 : undefined
             }
+            exemption={hraPaise > 0 ? formatINR(hraPaise) : null}
           />
-          <ProofForm financialYear={currentYear} />
+          <ProofForm
+            financialYear={currentYear}
+            sections={components.filter((c) => c.requiresProof).map((c) => ({ value: c.code, label: `${c.code} — ${c.name}` }))}
+          />
         </div>
       ) : null}
     </>

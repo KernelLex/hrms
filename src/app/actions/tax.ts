@@ -1,5 +1,6 @@
 "use server";
 
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { db, rawClient } from "@/lib/db";
@@ -8,6 +9,12 @@ import { actorOf, audited, recordChanges, recordCreated, recordDeleted, subjectO
 import {
   tdsSectionMaster,
   tdsEmployeeDeclaration,
+  tdsDeclarationLine,
+  txComponent,
+  txCompanyComponent,
+  txCityCategory,
+  COMPONENT_KINDS,
+  CITY_CATEGORIES,
   tdsDeductionRegister,
   tdsForm16,
   tdsProofWindow,
@@ -20,15 +27,18 @@ import {
   now,
   type TaxRegime,
 } from "@/db/schema";
-import { computeAnnualTax, effectiveDeclarationAmounts, section89Relief } from "@/lib/engines/tax";
+import { computeAnnualTax, effectiveDeclaredLines, section89Relief } from "@/lib/engines/tax";
+import { companyOf, componentsFor, hraExemptionFor, linesFor, rollUp } from "@/lib/services/tax-components";
 import { storeDocument, UploadError, DOCUMENT_TYPES } from "@/lib/storage";
 import { documentSummary } from "@/lib/document-kinds";
-import { toPaise } from "@/lib/money";
+import { formatINR, toPaise } from "@/lib/money";
 
 export type ActionState = { error?: string; ok?: boolean };
 
 const OK: ActionState = { ok: true };
 const fail = (error: string): ActionState => ({ error });
+/** Turns a zod failure into the first message, which is what the form shows. */
+const firstIssue = (err: z.ZodError): string => err.issues[0]?.message ?? "Check the form and try again.";
 const str = (v: FormDataEntryValue | null) => (typeof v === "string" ? v.trim() : "");
 const opt = (v: FormDataEntryValue | null) => {
   const s = str(v);
@@ -148,25 +158,32 @@ export async function saveDeclaration(
   }
 
   const regime = str(form.get("regime")) === "Old" ? "Old" : "New";
-  const section80C = money(form.get("section80C"));
-  const section80D = money(form.get("section80D"));
 
-  // 80C is capped at ₹1,50,000 and 80D at ₹25,000 for a non-senior taxpayer.
-  if (section80C > 15_000_000) {
-    return fail("Section 80C is capped at ₹1,50,000.");
-  }
-  if (section80D > 2_500_000) {
-    return fail("Section 80D is capped at ₹25,000 here.");
+  // What may be declared is the company's catalogue, so each figure is read
+  // and capped against its own component rather than against a literal.
+  const asOf = `${financialYear.slice(0, 4)}-04-01`;
+  const companyCode = await companyOf(employeeId, asOf);
+  if (!companyCode) return fail("That employee has no company on record, so there is no tax catalogue to declare against.");
+  const components = await componentsFor(companyCode);
+
+  const declared: { componentCode: string; declaredPaise: number }[] = [];
+  for (const component of components) {
+    if (component.isDerived) {
+      // HRA and its like are worked out from what the law says, not typed.
+      declared.push({ componentCode: component.code, declaredPaise: await derivedAmount(component.code, employeeId, financialYear, asOf) });
+      continue;
+    }
+    const amount = money(form.get(`component.${component.code}`));
+    if (component.capPaise !== null && amount > component.capPaise) {
+      return fail(`${component.name} is capped at ${formatINR(component.capPaise)}.`);
+    }
+    declared.push({ componentCode: component.code, declaredPaise: amount });
   }
 
   const values = {
     employeeId,
     financialYear,
     regime,
-    section80CPaise: section80C,
-    section80DPaise: section80D,
-    hraExemptionPaise: money(form.get("hraExemption")),
-    otherIncomePaise: money(form.get("otherIncome")),
     status: can(session, "tax.manage")
       ? str(form.get("status")) || "Verified"
       : "Declared",
@@ -197,14 +214,210 @@ export async function saveDeclaration(
           .set(values)
           .where(eq(tdsEmployeeDeclaration.id, existing.id)),
     );
+    await writeLines(existing.id, declared);
   } else {
-    await recordCreated(
-      actor,
-      "tds_employee_declaration",
-      await db.insert(tdsEmployeeDeclaration).values(values).returning(),
-    );
+    const [created] = await db.insert(tdsEmployeeDeclaration).values(values).returning();
+    await recordCreated(actor, "tds_employee_declaration", [created]);
+    await writeLines(created.id, declared);
   }
 
+  revalidateTax();
+  return OK;
+}
+
+/** The declared figures, replaced wholesale — a declaration is one statement. */
+async function writeLines(declarationId: number, declared: { componentCode: string; declaredPaise: number }[]): Promise<void> {
+  await db.delete(tdsDeclarationLine).where(eq(tdsDeclarationLine.declarationId, declarationId));
+  if (declared.length === 0) return;
+  await db.insert(tdsDeclarationLine).values(declared.map((d) => ({ declarationId, ...d })));
+}
+
+/**
+ * Puts the computed components back in step after something they are
+ * worked out from changes — rent, today, which moves the HRA exemption.
+ */
+async function refreshDerivedLines(employeeId: number, financialYear: string): Promise<void> {
+  const declaration = await db.query.tdsEmployeeDeclaration.findFirst({
+    where: and(eq(tdsEmployeeDeclaration.employeeId, employeeId), eq(tdsEmployeeDeclaration.financialYear, financialYear)),
+  });
+  if (!declaration) return;
+  const asOf = `${financialYear.slice(0, 4)}-04-01`;
+  const companyCode = await companyOf(employeeId, asOf);
+  if (!companyCode) return;
+  for (const component of (await componentsFor(companyCode)).filter((c) => c.isDerived)) {
+    const declaredPaise = await derivedAmount(component.code, employeeId, financialYear, asOf);
+    const existing = await db
+      .select()
+      .from(tdsDeclarationLine)
+      .where(and(eq(tdsDeclarationLine.declarationId, declaration.id), eq(tdsDeclarationLine.componentCode, component.code)));
+    if (existing[0]) {
+      await db.update(tdsDeclarationLine).set({ declaredPaise }).where(eq(tdsDeclarationLine.id, existing[0].id));
+    } else {
+      await db.insert(tdsDeclarationLine).values({ declarationId: declaration.id, componentCode: component.code, declaredPaise });
+    }
+  }
+}
+
+/** A component the law computes rather than asks for. */
+async function derivedAmount(code: string, employeeId: number, financialYear: string, asOf: string): Promise<number> {
+  if (code === "HRA") return hraExemptionFor(employeeId, financialYear, asOf);
+  return 0;
+}
+
+/* ------------------------------------------- TDS-06 declaration components */
+
+const ComponentInput = z.object({
+  country: z.string().trim().min(1, "Enter the country this belongs to.").max(60),
+  code: z.string().trim().min(1, "Enter a section.").max(20).regex(/^[A-Za-z0-9()._-]+$/, "A section may use letters, numbers, brackets, dots, hyphens and underscores."),
+  name: z.string().trim().min(1, "Say what it covers.").max(120),
+  kind: z.enum(COMPONENT_KINDS),
+  capPaise: z.number().int().min(0, "A cap cannot be negative.").nullable(),
+  requiresProof: z.boolean(),
+  isDerived: z.boolean(),
+  sortOrder: z.number().int().min(0).max(999),
+  isActive: z.boolean(),
+});
+
+/** What may be declared, for one country. */
+export async function saveComponent(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("tax.manage");
+  const original = str(form.get("originalCode"));
+  const cap = str(form.get("cap"));
+
+  const parsed = ComponentInput.safeParse({
+    country: str(form.get("country")),
+    code: str(form.get("code")).toUpperCase(),
+    name: str(form.get("name")),
+    kind: str(form.get("kind")),
+    capPaise: cap ? money(form.get("cap")) : null,
+    requiresProof: bool(form.get("requiresProof")),
+    isDerived: bool(form.get("isDerived")),
+    sortOrder: Number(str(form.get("sortOrder")) || "0"),
+    isActive: bool(form.get("isActive")),
+  });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+  const v = parsed.data;
+
+  const existing = await db.query.txComponent.findFirst({
+    where: and(eq(txComponent.country, v.country), eq(txComponent.code, original || v.code)),
+  });
+
+  if (existing) {
+    await audited(
+      actorOf(session),
+      { entity: "tx_component", entityId: `${v.country}:${v.code}` },
+      () => db.query.txComponent.findFirst({ where: and(eq(txComponent.country, v.country), eq(txComponent.code, existing.code)) }),
+      () => db.update(txComponent).set(v).where(and(eq(txComponent.country, v.country), eq(txComponent.code, existing.code))),
+    );
+  } else {
+    await recordCreated(actorOf(session), "tx_component", await db.insert(txComponent).values(v).returning());
+  }
+
+  revalidateTax();
+  return OK;
+}
+
+export async function deleteComponent(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("tax.manage");
+  const code = str(form.get("code"));
+
+  // A component someone has declared against stays, or their declaration
+  // would lose a figure with no way to read it back.
+  const declared = await rawClient().execute({
+    sql: "SELECT COUNT(*) AS n FROM tds_declaration_line WHERE component_code = ? AND declared_paise > 0",
+    args: [code],
+  });
+  if (Number(declared.rows[0].n) > 0) {
+    return fail(`${code} has been declared against ${declared.rows[0].n} time${Number(declared.rows[0].n) === 1 ? "" : "s"}. Make it inactive instead.`);
+  }
+
+  await recordDeleted(actorOf(session), "tx_component", await db.delete(txComponent).where(eq(txComponent.code, code)).returning());
+  revalidateTax();
+  return OK;
+}
+
+/** Which of its country's components one company offers, and at what cap. */
+export async function saveCompanyComponent(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("tax.manage");
+  const companyCode = str(form.get("companyCode"));
+  if (!companyCode) return fail("Choose a company.");
+
+  const company = await db.query.omCompany.findFirst({ where: eq(omCompany.code, companyCode) });
+  if (!company) return fail(`There is no company ${companyCode}.`);
+  const country = company.country?.trim() || "India";
+
+  const components = await db.select().from(txComponent).where(eq(txComponent.country, country));
+  for (const component of components) {
+    const capText = str(form.get(`cap.${component.code}`));
+    const capOverridePaise = capText ? money(form.get(`cap.${component.code}`)) : null;
+    if (capOverridePaise !== null && component.capPaise !== null && capOverridePaise > component.capPaise) {
+      return fail(`${component.code} cannot be capped above the statutory ${formatINR(component.capPaise)}.`);
+    }
+    const values = {
+      companyCode,
+      componentCode: component.code,
+      isEnabled: bool(form.get(`enabled.${component.code}`)),
+      capOverridePaise,
+    };
+    const existing = await db.query.txCompanyComponent.findFirst({
+      where: and(eq(txCompanyComponent.companyCode, companyCode), eq(txCompanyComponent.componentCode, component.code)),
+    });
+    if (existing) {
+      await db
+        .update(txCompanyComponent)
+        .set(values)
+        .where(and(eq(txCompanyComponent.companyCode, companyCode), eq(txCompanyComponent.componentCode, component.code)));
+    } else {
+      await db.insert(txCompanyComponent).values(values);
+    }
+  }
+  await recordChanges(actorOf(session), [
+    { entity: "tx_company_component", entityId: companyCode, action: "update", after: { companyCode, country } },
+  ]);
+
+  revalidateTax();
+  return OK;
+}
+
+/** Which cities the HRA exemption treats as metro. */
+export async function saveCityCategory(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("tax.manage");
+  const original = str(form.get("originalCode"));
+  const parsed = z
+    .object({
+      country: z.string().trim().min(1, "Enter a country.").max(60),
+      city: z.string().trim().min(1, "Enter a city.").max(80),
+      category: z.enum(CITY_CATEGORIES),
+    })
+    .safeParse({
+      country: str(form.get("country")),
+      city: str(form.get("city")).toUpperCase(),
+      category: str(form.get("category")),
+    });
+  if (!parsed.success) return fail(firstIssue(parsed.error));
+  const v = parsed.data;
+
+  const existing = await db.query.txCityCategory.findFirst({
+    where: and(eq(txCityCategory.country, v.country), eq(txCityCategory.city, original ? original.toUpperCase() : v.city)),
+  });
+  if (existing) {
+    await audited(
+      actorOf(session),
+      { entity: "tx_city_category", entityId: `${v.country}:${v.city}` },
+      () => db.query.txCityCategory.findFirst({ where: and(eq(txCityCategory.country, v.country), eq(txCityCategory.city, existing.city)) }),
+      () => db.update(txCityCategory).set(v).where(and(eq(txCityCategory.country, v.country), eq(txCityCategory.city, existing.city))),
+    );
+  } else {
+    await recordCreated(actorOf(session), "tx_city_category", await db.insert(txCityCategory).values(v).returning());
+  }
+  revalidateTax();
+  return OK;
+}
+
+export async function deleteCityCategory(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePermission("tax.manage");
+  const city = str(form.get("code")).toUpperCase();
+  await recordDeleted(actorOf(session), "tx_city_category", await db.delete(txCityCategory).where(eq(txCityCategory.city, city)).returning());
   revalidateTax();
   return OK;
 }
@@ -391,20 +604,24 @@ export async function generateForm16(
     ),
   });
   const regime = (declaration?.regime as "Old" | "New") ?? "New";
-  // The certificate claims no more than TDS actually used, month to month.
-  const effective = await effectiveDeclarationAmounts(employeeId, financialYear, {
-    section80CPaise: declaration?.section80CPaise ?? 0,
-    section80DPaise: declaration?.section80DPaise ?? 0,
-    hraExemptionPaise: declaration?.hraExemptionPaise ?? 0,
-  });
+  // The certificate claims no more than TDS actually used, month to month:
+  // the same lines, capped by the same proof, rolled up the same way.
+  const asOf = `${financialYear.slice(0, 4)}-04-01`;
+  const companyCode = await companyOf(employeeId, asOf);
+  const components = await componentsFor(companyCode);
+  const needsProof = new Set(components.filter((c) => c.requiresProof).map((c) => c.code));
+  const effectiveLines = declaration
+    ? await effectiveDeclaredLines(employeeId, financialYear, await linesFor(declaration.id), (code) => needsProof.has(code))
+    : [];
+  const declared = rollUp(effectiveLines, components);
 
   const computation = await computeAnnualTax({
     grossSalaryPaise,
     regime,
     financialYear,
-    section10ExemptPaise: effective.hraExemptionPaise,
-    chapterViaPaise: effective.section80CPaise + effective.section80DPaise,
-    otherIncomePaise: declaration?.otherIncomePaise ?? 0,
+    section10ExemptPaise: declared.section10ExemptPaise,
+    chapterViaPaise: declared.chapterViaPaise,
+    otherIncomePaise: declared.otherIncomePaise,
   });
 
   const employer = await db.query.omCompany.findFirst({
@@ -508,8 +725,12 @@ export async function submitProof(_prev: ActionState, form: FormData): Promise<A
 
   const financialYear = str(form.get("financialYear"));
   if (!/^\d{4}-\d{2}$/.test(financialYear)) return fail("Choose a financial year.");
+  // What a proof may be filed against is the catalogue's to say, not a list
+  // in code: a company that offers 80E takes proof for 80E.
   const section = str(form.get("section"));
-  if (!["80C", "80D", "HRA"].includes(section)) return fail("Choose what this proves.");
+  const asOf = `${financialYear.slice(0, 4)}-04-01`;
+  const allowed = (await componentsFor(await companyOf(employeeId, asOf))).filter((c) => c.requiresProof);
+  if (!allowed.some((c) => c.code === section)) return fail("Choose what this proves.");
   const amount = money(form.get("amount"));
   if (!amount) return fail("Enter an amount above zero.");
 
@@ -583,6 +804,7 @@ export async function saveRent(_prev: ActionState, form: FormData): Promise<Acti
     monthlyRentPaise: monthlyRent,
     landlordName,
     landlordPan,
+    accommodationType: str(form.get("accommodationType")) || "Rented",
     isMetro: bool(form.get("isMetro")),
     updatedAt: now(),
   };
@@ -597,6 +819,9 @@ export async function saveRent(_prev: ActionState, form: FormData): Promise<Acti
   } else {
     await recordCreated(actor, "tds_rent", await db.insert(tdsRent).values(values).returning());
   }
+
+  // The HRA line is worked out from this, so it moves the moment rent does.
+  await refreshDerivedLines(employeeId, financialYear);
   revalidateTax();
   return OK;
 }

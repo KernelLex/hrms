@@ -92,6 +92,7 @@ const SUBPAGES: Command[] = [
   { label: "Calibration", href: "/performance/calibration", icon: "Target", anyOf: ["performance.manage"] },
   { label: "Increments", href: "/performance/increments", icon: "Target", anyOf: ["performance.manage"], keywords: "raise salary" },
   { label: "Tax sections and slabs", href: "/tax/sections", icon: "ReceiptText", anyOf: ["tax.manage"] },
+  { label: "Declaration components", href: "/tax/components", icon: "ReceiptText", anyOf: ["tax.manage"], keywords: "80C HRA section catalogue metro" },
   { label: "Tax declarations", href: "/tax/declarations", icon: "ReceiptText", anyOf: ["tax.manage"] },
   { label: "Deduction register", href: "/tax/register", icon: "ReceiptText", anyOf: ["tax.manage"], keywords: "tds 24q" },
   { label: "Record ownership", href: "/admin/integrations/ownership", icon: "Plug", anyOf: ["integrations.manage"], keywords: "erp owner master" },
