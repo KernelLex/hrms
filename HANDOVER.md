@@ -148,7 +148,7 @@ The value is in the seams:
 | Service | Status | Detail |
 |---|---|---|
 | GitHub | working | `KernelLex/hrms`; Actions runs CI on every push and pull request |
-| Turso | working, prototype only | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0036, seeded, and shaped with `npm run org:shape`. **The production database is MySQL** — Turso is the prototype's convenience, and the move happens once the prototype phase is signed off (§9.6). One database: production and the demo are the same (§10). |
+| Turso | working, prototype only | `hrms-kernellex.aws-us-west-2.turso.io`, migrated to 0036 and seeded. Dropped and rebuilt from the migrations on 24 Oct 2026 (see §7.2); the seed's own tree carries every level, so `npm run org:shape` — which exists for a tenant whose tree predates those levels — has nothing to add here. **The production database is MySQL** — Turso is the prototype's convenience, and the move happens once the prototype phase is signed off (§9.6). One database: production and the demo are the same (§10). |
 | Vercel | working | Project `amogh24/hrms`; deploys `main` on push; Vercel Cron calls `/api/cron/tick` daily |
 | Email | recording only | No provider connected: every email is written to the outbox and readable on the Outbox screen, not sent |
 | Cloudflare R2 | pending | Not enabled on the Cloudflare account (API error 10042). Documents are stored in the database until it is (§5.8). |
@@ -557,6 +557,7 @@ The hire wizard uses numbered steps with a live summary panel; balance cards are
 
 ### 7.2 Gotchas
 
+- **Re-seeding cannot clean a database.** Every seed insert is an upsert on the primary key, so `db:seed` adds what is missing and changes nothing else: hand-entered rows, renamed master data and the churn of a few hundred created-and-deleted test records all survive it. The demo reached a state where the five `om_level_type` rows — the *kinds* of level, used as the label on every org screen — had been renamed to one plant's own names, an Organisation sat four levels down under a Department, and employee ids ran 1, 2, 3, 69. The only fix is to drop every table and run `db:migrate` then `db:seed`; back the database up first, since it is also the live demo (§3.3). This is worth knowing before walking the product: data entered while trying a screen out stays until something removes it.
 - **`.onConflictDoNothing()` guards nothing without a matching unique index.** Three repeating infotypes (`pa_it0006_address`, `pa_it0105_communication`, `pa_it0021_family_member`) have none, because HR may legitimately record more than one of a type; the seed relied on it anyway, and every re-run of `db:seed` against the same database — which every phase since 9 has done — silently duplicated every seeded row in production. Fixed by checking before inserting (migration 0012 cleans up what had already accumulated); `tests/seed.test.ts` re-seeds twice and asserts no duplicates.
 - **drizzle-kit drops `ON DELETE` from `ALTER TABLE … ADD COLUMN … REFERENCES`** (migration 0006 restores it by hand), and its snapshot must match the schema exactly — regenerate rather than hand-edit a migration's DDL. Data statements appended by hand are marked in the file (0008).
 - **Index names are global in SQLite.** Two tables cannot both have `ix_request_status`; prefix new indexes with their table's module.
